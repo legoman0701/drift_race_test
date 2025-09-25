@@ -35,7 +35,8 @@ BRAKE_DECEL     = 1400.0
 DRAG            = 0.35
 ROLLING         = 1.6
 LATERAL_GRIP    = 3.2
-STEER_SENS      = 1/200
+STEER_SENS      = 1/80
+DRIFT_SENS      = 1/8000
 OVERSTEER       = 0.015
 MAX_SPEED       = 1200.0
 WALL_RESTITUTION = 0.3
@@ -68,13 +69,14 @@ def rand_name():
     return "Player" + "".join(random.choice(string.digits) for _ in range(4))
 
 class Car:
-    __slots__ = ("x", "y", "vx", "vy", "angle", "v_angle", "name")
+    __slots__ = ("x", "y", "vx", "vy", "angle", "v_angle", "name", "drift_ratio")
     def __init__(self, x, y, name):
         self.x, self.y = float(x), float(y)
         self.vx, self.vy = 0.0, 0.0
         self.angle = 0.0
         self.v_angle = 0.0
         self.name = name
+        self.drift_ratio = 0 
 
     def step(self, inputs, dt, players):
         # Unpack input controls
@@ -104,9 +106,13 @@ class Car:
         self.y  += self.vy * dt
 
         # Update angular velocity and angle
-        self.v_angle += (STEER_SENS * st * clamp(math.copysign(v_forward, th), -40, 40)
-                        + (OVERSTEER * -self.v_angle))
-        self.angle = (self.angle + self.v_angle * dt) % (2 * math.pi)
+        drift_moment = (STEER_SENS * st * math.copysign(v_forward, th) + (OVERSTEER * -self.v_angle))
+        
+        self.drift_ratio = clamp(abs(v_lateral)/200, 0, 1)
+        
+        self.v_angle += drift_moment
+        
+        self.angle += ((STEER_SENS * st * v_forward)*(1-self.drift_ratio) + self.v_angle*self.drift_ratio * dt) * dt
 
         # Check track boundaries
         self._handle_track_bounds(dt)
