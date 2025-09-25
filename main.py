@@ -448,7 +448,7 @@ def main():
                 last_ping = now
                 send_ping(sock, code)
 
-        my_car.step(read_inputs(), dt, remotes)
+        my_car.step(read_inputs(), dt, remotes) # Update car physics with local input
 
         # Draw screen and track
         screen.fill((18,20,28))
