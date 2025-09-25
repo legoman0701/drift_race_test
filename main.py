@@ -50,12 +50,11 @@ class Car:
         st = clamp(inp.get("st", 0.0), -1.0, 1.0)
         br = 1.0 if inp.get("br", 0.0) else 0.0
 
-        ca, sa = math.cos(self.ang), math.sin(self.ang)
-        fx, fy = ca, sa
-        rx, ry = -sa, ca
+        fx, fy = math.cos(self.ang), math.sin(self.ang)
+        rx, ry = -fy, fx
 
-        v_fwd = self.vx*fx + self.vy*fy
-        v_lat = self.vx*rx + self.vy*ry
+        v_forward = self.vx*fx + self.vy*fy
+        v_lateral = self.vx*rx + self.vy*ry
 
         acc_fx = acc_fy = 0.0
         if th > 0:
@@ -66,10 +65,10 @@ class Car:
         acc_fx += -self.vx * DRAG
         acc_fy += -self.vy * DRAG
 
-        acc_fx += -fx * (v_fwd * ROLLING)
-        acc_fy += -fy * (v_fwd * ROLLING)
-        acc_fx += -rx * (v_lat * LATERAL_GRIP)
-        acc_fy += -ry * (v_lat * LATERAL_GRIP)
+        acc_fx += -fx * (v_forward * ROLLING)
+        acc_fy += -fy * (v_forward * ROLLING)
+        acc_fx += -rx * (v_lateral * LATERAL_GRIP)
+        acc_fy += -ry * (v_lateral * LATERAL_GRIP)
 
         speed = math.hypot(self.vx, self.vy)
         if br and speed > 1e-3:
@@ -82,7 +81,7 @@ class Car:
             s = MAX_SPEED / spd; self.vx *= s; self.vy *= s
         self.x += self.vx * dt; self.y += self.vy * dt
 
-        self.omega += (STEER_SENS * st * v_fwd) + (OVERSTEER * v_lat) - (OMEGA_DAMP * self.omega * dt)
+        self.omega += (STEER_SENS * st * v_forward) + (OVERSTEER * v_lateral) - (OMEGA_DAMP * self.omega * dt)
         self.ang = (self.ang + self.omega * dt) % (2*math.pi)
 
         minx, maxx = TRACK_MARGIN, WIDTH - TRACK_MARGIN
@@ -190,8 +189,8 @@ def main():
 
     def read_inputs():
         keys = pygame.key.get_pressed()
-        th = (keys[pygame.K_w] or keys[pygame.K_UP]) - (keys[pygame.K_s] or keys[pygame.K_DOWN])
-        st = (keys[pygame.K_d] or keys[pygame.K_RIGHT]) - (keys[pygame.K_a] or keys[pygame.K_LEFT])
+        th = (keys[pygame.K_z] or keys[pygame.K_UP]) - (keys[pygame.K_s] or keys[pygame.K_DOWN])
+        st = (keys[pygame.K_d] or keys[pygame.K_RIGHT]) - (keys[pygame.K_q] or keys[pygame.K_LEFT])
         br = 1.0 if keys[pygame.K_SPACE] else 0.0
         th = 1.0 if th > 0 else -1.0 if th < 0 else 0.0
         st = 1.0 if st > 0 else -1.0 if st < 0 else 0.0
