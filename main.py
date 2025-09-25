@@ -275,7 +275,7 @@ def get_name_input(screen, font_big, font_small):
         disp_text = text if text else "(empty)"
         inp = font_big.render(disp_text, True, (180,255,180))
         screen.blit(inp, (WINDOW_WIDTH//2 - inp.get_width()//2, WINDOW_HEIGHT//2 - 10))
-        tip = font_small.render("Enter = OK   Esc = cancel", True, (180,180,180))
+        tip = font_small.render("Enter : OK  -  Esc : cancel", True, (180,180,180))
         screen.blit(tip, (WINDOW_WIDTH//2 - tip.get_width()//2, WINDOW_HEIGHT//2 + 40))
         if error_msg:
             error_surf = font_big.render(error_msg, True, (230,80,80))
@@ -294,7 +294,7 @@ def get_name_input(screen, font_big, font_small):
                         continue
                     return text
                 if ev.key == pygame.K_ESCAPE:
-                    return None
+                    return None # switch to menu page
                 if ev.key == pygame.K_BACKSPACE:
                     text = text[:-1]
                     error_msg = ""
@@ -315,7 +315,7 @@ def handle_network_messages(sock, remotes, dt, my_id):
             alpha_pos = min(1.0, dt * 10.0)
             alpha_angle = min(1.0, dt * 10.0)
             # Update remote players (smoothing)
-            for pid, d in players.items():
+            for pid, d in players.items(): # pid : player id
                 if pid == my_id:
                     continue
                 tx, ty, ta = float(d["x"]), float(d["y"]), float(d["a"])
@@ -412,32 +412,32 @@ def main():
                     if new_name is not None: # save name
                         my_name = new_name
                         my_car.name = my_name
-                    code = rand_code() # room code
-                    try:
-                        sock = connect_to_relay() # connect to relay
-                        join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id} # send "join" packet
-                        sock.send(json.dumps(join_pkt).encode("utf-8"))
-                        stage = "playing" # switch to playing page
-                    except Exception as ex:
-                        stage = "error" # switch to error page
-                        error_msg = f"Net error: {ex}"
+                        code = rand_code() # room code
+                        try:
+                            sock = connect_to_relay() # connect to relay
+                            join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id} # send "join" packet
+                            sock.send(json.dumps(join_pkt).encode("utf-8"))
+                            stage = "playing" # switch to playing page
+                        except Exception as ex:
+                            stage = "error" # switch to error page
+                            error_msg = f"Net error: {ex}"
                 elif ev.key == pygame.K_j:  # Join room
                     new_name = get_name_input(screen, font_big, font_small) # player enter name
                     if new_name is not None: # save name
                         my_name = new_name
                         my_car.name = my_name
-                    jcode = get_code_input(screen, font_big, font_small) # player enter room code
-                    if not jcode:
-                        continue
-                    try:
-                        sock = connect_to_relay() # connect to relay
-                        code = jcode.upper()
-                        join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id} # send "join" packet
-                        sock.send(json.dumps(join_pkt).encode("utf-8"))
-                        stage = "playing" # switch to playing page
-                    except Exception as ex:
-                        stage = "error" # switch to error page
-                        error_msg = f"Net error: {ex}"
+                        jcode = get_code_input(screen, font_big, font_small) # player enter room code
+                        if not jcode:
+                            continue
+                        try:
+                            sock = connect_to_relay() # connect to relay
+                            code = jcode.upper()
+                            join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id} # send "join" packet
+                            sock.send(json.dumps(join_pkt).encode("utf-8"))
+                            stage = "playing" # switch to playing page
+                        except Exception as ex:
+                            stage = "error" # switch to error page
+                            error_msg = f"Net error: {ex}"
 
         # Process networking : read msgs
         if sock:
