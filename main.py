@@ -338,7 +338,7 @@ def handle_network_messages(sock, remotes, dt, my_id):
             return msg.get("msg", "error")
     return None
 
-def send_network_state(sock, code, my_id, car):
+def send_network_state(sock, code, my_id, car): # send pos and trigger world broadcoast
     pkt = {
         "t": "state",
         "code": code,
