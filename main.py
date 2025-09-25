@@ -26,9 +26,9 @@ BRAKE_DECEL  = 1400.0
 DRAG   = 0.35
 ROLLING = 1.6
 LATERAL_GRIP = 3.2
-STEER_SENS   = 2.8 / 240.0
-OVERSTEER    = 0.0015
-OMEGA_DAMP   = 25
+STEER_SENS   = 1/200
+OVERSTEER    = 0.015
+v_angle_DAMP   = 25
 MAX_SPEED    = 1200.0
 WALL_RESTITUTION = 0.3
 
@@ -37,53 +37,36 @@ def rand_name(): return "Player" + "".join(random.choice(string.digits) for _ in
 def clamp(x, lo, hi): return lo if x < lo else hi if x > hi else x
 
 class Car:
-    __slots__ = ("x","y","vx","vy","ang","omega","name")
+    __slots__ = ("x","y","vx","vy","angle","v_angle","name")
     def __init__(self, x, y, name):
         self.x, self.y = float(x), float(y)
         self.vx, self.vy = 0.0, 0.0
-        self.ang = 0.0
-        self.omega = 0.0
+        self.angle = 0.0
+        self.v_angle = 0.0
         self.name = name
 
-    def step(self, inp, dt):
+    def step(self, inp, dt, players):
         th = clamp(inp.get("th", 0.0), -1.0, 1.0)
         st = clamp(inp.get("st", 0.0), -1.0, 1.0)
         br = 1.0 if inp.get("br", 0.0) else 0.0
 
-        ca, sa = math.cos(self.ang), math.sin(self.ang)
-        fx, fy = ca, sa
-        rx, ry = -sa, ca
+        fx, fy = math.cos(self.angle), math.sin(self.angle)
+        rx, ry = -fy, fx
 
-        v_fwd = self.vx*fx + self.vy*fy
-        v_lat = self.vx*rx + self.vy*ry
+        v_forward = self.vx*fx + self.vy*fy
+        v_lateral = self.vx*rx + self.vy*ry
 
-        acc_fx = acc_fy = 0.0
-        if th > 0:
-            acc_fx += fx * (th * ENGINE_ACC); acc_fy += fy * (th * ENGINE_ACC)
-        elif th < 0:
-            acc_fx += fx * (th * REVERSE_ACC); acc_fy += fy * (th * REVERSE_ACC)
+        a_forward = (th * ENGINE_ACC)
+        a_lateral = -(v_lateral * LATERAL_GRIP)
 
-        acc_fx += -self.vx * DRAG
-        acc_fy += -self.vy * DRAG
-
-        acc_fx += -fx * (v_fwd * ROLLING)
-        acc_fy += -fy * (v_fwd * ROLLING)
-        acc_fx += -rx * (v_lat * LATERAL_GRIP)
-        acc_fy += -ry * (v_lat * LATERAL_GRIP)
-
-        speed = math.hypot(self.vx, self.vy)
-        if br and speed > 1e-3:
-            acc_fx += -(self.vx / speed) * BRAKE_DECEL
-            acc_fy += -(self.vy / speed) * BRAKE_DECEL
-
+        acc_fx = (fx * a_forward) + (rx * a_lateral)
+        acc_fy = (fy * a_forward) + (ry * a_lateral)
+        
         self.vx += acc_fx * dt; self.vy += acc_fy * dt
-        spd = math.hypot(self.vx, self.vy)
-        if spd > MAX_SPEED:
-            s = MAX_SPEED / spd; self.vx *= s; self.vy *= s
         self.x += self.vx * dt; self.y += self.vy * dt
 
-        self.omega += (STEER_SENS * st * v_fwd) + (OVERSTEER * v_lat) - (OMEGA_DAMP * self.omega * dt)
-        self.ang = (self.ang + self.omega * dt) % (2*math.pi)
+        self.v_angle += (STEER_SENS * st * clamp(math.copysign(v_forward, th), -40, 40)) + (OVERSTEER * -self.v_angle)
+        self.angle = (self.angle + self.v_angle * dt) % (2*math.pi)
 
         minx, maxx = TRACK_MARGIN, WIDTH - TRACK_MARGIN
         miny, maxy = TRACK_MARGIN, HEIGHT - TRACK_MARGIN
@@ -92,10 +75,22 @@ class Car:
         if self.x > maxx: self.x = maxx; self.vx = -self.vx * WALL_RESTITUTION; hit = True
         if self.y < miny: self.y = miny; self.vy = -self.vy * WALL_RESTITUTION; hit = True
         if self.y > maxy: self.y = maxy; self.vy = -self.vy * WALL_RESTITUTION; hit = True
-        if hit: self.omega *= 0.5
+        if hit: self.v_angle *= 0.5
 
-def draw_car(surface, x, y, ang, name, color_body=(250,210,120), color_nose=(255,120,120)):
-    ca, sa = math.cos(ang), math.sin(ang)
+        for pid, d in players.items():
+            if d["name"] == self.name: continue
+            dx = d["x"] - self.x; dy = d["y"] - self.y
+            dist2 = dx*dx + dy*dy
+            if dist2 < (CAR_LEN*CAR_LEN):
+                dist = math.sqrt(dist2) if dist2 > 0 else 0.01
+                overlap = (CAR_LEN - dist) / 2.0
+                nx, ny = dx/dist, dy/dist
+                self.x -= nx * overlap; self.y -= ny * overlap
+                self.vx = (self.vx - 2*(self.vx*nx + self.vy*ny)*nx) * WALL_RESTITUTION
+                self.vy = (self.vy - 2*(self.vx*nx + self.vy*ny)*ny) * WALL_RESTITUTION
+
+def draw_car(surface, x, y, angle, name, color_body=(250,210,120), color_nose=(255,120,120)):
+    ca, sa = math.cos(angle), math.sin(angle)
     halfL, halfW = CAR_LEN*0.5, CAR_WID*0.5
     pts = [(+halfL,+halfW),(+halfL,-halfW),(-halfL,-halfW),(-halfL,+halfW)]
     wpts = []
@@ -241,15 +236,15 @@ def main():
 
     def read_inputs():
         keys = pygame.key.get_pressed()
-        th = (keys[pygame.K_w] or keys[pygame.K_UP]) - (keys[pygame.K_s] or keys[pygame.K_DOWN])
-        st = (keys[pygame.K_d] or keys[pygame.K_RIGHT]) - (keys[pygame.K_a] or keys[pygame.K_LEFT])
+        th = (keys[pygame.K_z] or keys[pygame.K_UP]) - (keys[pygame.K_s] or keys[pygame.K_DOWN])
+        st = (keys[pygame.K_d] or keys[pygame.K_RIGHT]) - (keys[pygame.K_q] or keys[pygame.K_LEFT])
         br = 1.0 if keys[pygame.K_SPACE] else 0.0
         th = 1.0 if th > 0 else -1.0 if th < 0 else 0.0
         st = 1.0 if st > 0 else -1.0 if st < 0 else 0.0
         return {"th": th, "st": st, "br": br}
 
     while True:
-        dt = clock.tick(60) / 1000.0
+        dt = clock.tick(75) / 1000.0
 
         # events
         for e in pygame.event.get():
@@ -287,11 +282,9 @@ def main():
                     except Exception as ex:
                         stage = "error"; error_msg = f"Net error: {ex}"
 
-        # simulate local car (always, so menu shows movement too)
-        my_car.step(read_inputs(), dt)
-
         # networking in
         if sock:
+            players = {}
             for msg in recv_jsons(sock):
                 t = msg.get("t")
                 if t == "join_ok":
@@ -300,7 +293,7 @@ def main():
                     players = msg.get("players", {}) or {}
                     # update remotes
                     alpha_pos = min(1.0, dt * 10.0)
-                    alpha_ang = min(1.0, dt * 10.0)
+                    alpha_angle = min(1.0, dt * 10.0)
                     # insert/update others
                     for pid, d in players.items():
                         if pid == my_id:  # we show our own locally; but keep name in case
@@ -314,7 +307,7 @@ def main():
                             cur["x"] += (tx - cur["x"]) * alpha_pos
                             cur["y"] += (ty - cur["y"]) * alpha_pos
                             da = ((ta - cur["a"] + math.pi) % (2*math.pi)) - math.pi
-                            cur["a"] = (cur["a"] + da * alpha_ang) % (2*math.pi)
+                            cur["a"] = (cur["a"] + da * alpha_angle) % (2*math.pi)
                             cur["name"] = nm
                     # remove disappeared pids
                     for pid in list(remotes.keys()):
@@ -323,6 +316,12 @@ def main():
                 elif t == "error":
                     stage = "error"; error_msg = msg.get("msg","error")
 
+        # simulate local car (always, so menu shows movement too)
+        if sock:
+            my_car.step(read_inputs(), dt, players)
+        else:
+            my_car.step(read_inputs(), dt, {})
+
         # networking out (send our state at SEND_HZ)
         if sock and code:
             now = time.time()
@@ -330,7 +329,7 @@ def main():
                 last_state_send = now
                 pkt = {
                     "t":"state","code":code,"id":my_id,
-                    "x": round(my_car.x,2),"y": round(my_car.y,2),"a": round(my_car.ang,4),
+                    "x": round(my_car.x,2),"y": round(my_car.y,2),"a": round(my_car.angle,4),
                     "vx": round(my_car.vx,2),"vy": round(my_car.vy,2)
                 }
                 try: sock.send(json.dumps(pkt).encode("utf-8"))
@@ -353,7 +352,10 @@ def main():
             screen.blit(tip2, (WIDTH//2 - tip2.get_width()//2, 210))
 
         # Draw my car always (menu + playing)
-        draw_car(screen, my_car.x, my_car.y, my_car.ang, my_name, color_body=(200,230,255))
+        if sock:
+            my_car.step(read_inputs(), dt, players)
+        else:
+            my_car.step(read_inputs(), dt, {})
 
         if stage == "playing":
             # show room code
