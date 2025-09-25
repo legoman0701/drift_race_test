@@ -10,6 +10,7 @@ env/
 ENV/
 .conda/
 .python-version
+requirements.txt
 
 # --- Packaging / build artifacts ---
 build/
