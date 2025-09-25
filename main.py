@@ -45,7 +45,7 @@ class Car:
         self.v_angle = 0.0
         self.name = name
 
-    def step(self, inp, dt):
+    def step(self, inp, dt, players):
         th = clamp(inp.get("th", 0.0), -1.0, 1.0)
         st = clamp(inp.get("st", 0.0), -1.0, 1.0)
         br = 1.0 if inp.get("br", 0.0) else 0.0
@@ -76,6 +76,18 @@ class Car:
         if self.y < miny: self.y = miny; self.vy = -self.vy * WALL_RESTITUTION; hit = True
         if self.y > maxy: self.y = maxy; self.vy = -self.vy * WALL_RESTITUTION; hit = True
         if hit: self.v_angle *= 0.5
+
+        for pid, d in players.items():
+            if d["name"] == self.name: continue
+            dx = d["x"] - self.x; dy = d["y"] - self.y
+            dist2 = dx*dx + dy*dy
+            if dist2 < (CAR_LEN*CAR_LEN):
+                dist = math.sqrt(dist2) if dist2 > 0 else 0.01
+                overlap = (CAR_LEN - dist) / 2.0
+                nx, ny = dx/dist, dy/dist
+                self.x -= nx * overlap; self.y -= ny * overlap
+                self.vx = (self.vx - 2*(self.vx*nx + self.vy*ny)*nx) * WALL_RESTITUTION
+                self.vy = (self.vy - 2*(self.vx*nx + self.vy*ny)*ny) * WALL_RESTITUTION
 
 def draw_car(surface, x, y, angle, name, color_body=(250,210,120), color_nose=(255,120,120)):
     ca, sa = math.cos(angle), math.sin(angle)
@@ -213,11 +225,9 @@ def main():
                     except Exception as ex:
                         stage = "error"; error_msg = f"Net error: {ex}"
 
-        # simulate local car (always, so menu shows movement too)
-        my_car.step(read_inputs(), dt)
-
         # networking in
         if sock:
+            players = {}
             for msg in recv_jsons(sock):
                 t = msg.get("t")
                 if t == "join_ok":
@@ -248,6 +258,12 @@ def main():
                             remotes.pop(pid, None)
                 elif t == "error":
                     stage = "error"; error_msg = msg.get("msg","error")
+
+        # simulate local car (always, so menu shows movement too)
+        if sock:
+            my_car.step(read_inputs(), dt, players)
+        else:
+            my_car.step(read_inputs(), dt, {})
 
         # networking out (send our state at SEND_HZ)
         if sock and code:
