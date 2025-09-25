@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+# relay_pi_trust.py — UDP room relay that TRUSTS client states (no server-side physics)
+# Expose via Playit.gg: william-allow.gl.at.ply.gg:4800 => 127.0.0.1:40123 (UDP)
+
+import socket, json, time
+
+RELAY_HOST = "0.0.0.0"
+RELAY_PORT = 40123
+MAX_PACKET = 1400
+CLIENT_TIMEOUT = 15.0   # seconds since last packet before drop
+WORLD_HZ = 20.0         # broadcast world snapshots at most this often
+TICK = 0.01             # main loop tick
+
+# Rooms:
+#   code -> {
+#       "clients": { addr: {"id","name","last"} },
+#       "states":  { id: {"x","y","a","vx","vy","name"} },
+#       "last_broadcast": float,
+#       "dirty": bool
+#   }
+rooms = {}
+
+def sendto_json(sock, addr, obj):
+    try:
+        data = json.dumps(obj, separators=(",", ":")).encode("utf-8")
+        if len(data) > MAX_PACKET:
+            data = b'{"t":"error","msg":"packet_too_big"}'
+        sock.sendto(data, addr)
+    except Exception:
+        pass
+
+def broadcast_world(sock, code, room):
+    now = time.time()
+    room["last_broadcast"] = now
+    world = {"t":"world", "code":code, "players": room["states"]}
+    for caddr in list(room["clients"].keys()):
+        sendto_json(sock, caddr, world)
+    room["dirty"] = False
+
+def loop():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind((RELAY_HOST, RELAY_PORT))
+    sock.settimeout(TICK)
+    print(f"[relay] UDP listening on {RELAY_HOST}:{RELAY_PORT}")
+    while True:
+        now = time.time()
+
+        # Prune idle clients & empty rooms; prune stale states
+        for code, room in list(rooms.items()):
+            for caddr, info in list(room["clients"].items()):
+                if now - info["last"] > CLIENT_TIMEOUT:
+                    # drop client and its state
+                    pid = info["id"]
+                    room["clients"].pop(caddr, None)
+                    room["states"].pop(pid, None)
+                    room["dirty"] = True
+            # remove room if empty
+            if not room["clients"]:
+                rooms.pop(code, None)
+
+        # Broadcast worlds for rooms marked dirty (throttled)
+        for code, room in list(rooms.items()):
+            if room["dirty"] and (now - room["last_broadcast"] >= (1.0 / WORLD_HZ)):
+                broadcast_world(sock, code, room)
+
+        # Receive packet
+        try:
+            data, addr = sock.recvfrom(4096)
+        except socket.timeout:
+            continue
+        except Exception:
+            continue
+
+        # Parse JSON
+        try:
+            msg = json.loads(data.decode("utf-8"))
+        except Exception:
+            sendto_json(sock, addr, {"t":"error","msg":"invalid_json"})
+            continue
+
+        mtype = msg.get("t")
+
+        if mtype == "join":
+            code = (msg.get("code") or "").upper().strip()
+            pid  = (msg.get("id") or "")[:16]
+            name = (msg.get("name") or f"Player{pid}")[:24]
+            if not code or not pid:
+                sendto_json(sock, addr, {"t":"error","msg":"missing_code_or_id"}); continue
+            room = rooms.get(code)
+            if not room:
+                room = {"clients": {}, "states": {}, "last_broadcast": 0.0, "dirty": True}
+                rooms[code] = room
+            room["clients"][addr] = {"id": pid, "name": name, "last": now}
+            # seed a minimal state if not present
+            room["states"].setdefault(pid, {"x": 500, "y": 350, "a": 0.0, "vx": 0.0, "vy": 0.0, "name": name})
+            room["dirty"] = True
+            sendto_json(sock, addr, {"t":"join_ok", "code": code})
+            # optionally push an immediate world
+            broadcast_world(sock, code, room)
+
+        elif mtype == "state":
+            # TRUST client: accept their state into room store
+            code = (msg.get("code") or "").upper().strip()
+            pid  = (msg.get("id") or "")[:16]
+            room = rooms.get(code)
+            if not room or addr not in room["clients"]:
+                sendto_json(sock, addr, {"t":"error","msg":"room_not_found_or_not_joined"}); continue
+            room["clients"][addr]["last"] = now
+            st = {
+                "x": float(msg.get("x", 0.0)),
+                "y": float(msg.get("y", 0.0)),
+                "a": float(msg.get("a", 0.0)),
+                "vx": float(msg.get("vx", 0.0)),
+                "vy": float(msg.get("vy", 0.0)),
+                "name": room["clients"][addr]["name"],
+            }
+            room["states"][pid] = st
+            room["dirty"] = True
+
+        elif mtype == "ping":
+            code = (msg.get("code") or "").upper().strip()
+            room = rooms.get(code)
+            if room and addr in room["clients"]:
+                room["clients"][addr]["last"] = now
+
+        elif mtype == "bye":
+            code = (msg.get("code") or "").upper().strip()
+            pid  = (msg.get("id") or "")[:16]
+            room = rooms.get(code)
+            if not room: 
+                continue
+            room["clients"].pop(addr, None)
+            if pid: room["states"].pop(pid, None)
+            room["dirty"] = True
+            if not room["clients"]:
+                rooms.pop(code, None)
+
+        else:
+            sendto_json(sock, addr, {"t":"error","msg":"unknown_type"})
+
+def main():
+    loop()
+
+if __name__ == "__main__":
+    main()
