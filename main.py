@@ -137,7 +137,8 @@ def get_code_input(screen, big, font):
     pygame.key.set_repeat(250,35)
     t = ""
     while True:
-        screen.fill((20,20,25)); draw_track(screen)
+        screen.fill((20,20,25))
+        draw_track(screen)
         surf = big.render("Enter ROOM CODE (A-Z/0-9)", True, (230,230,240))
         screen.blit(surf, (WIDTH//2 - surf.get_width()//2, HEIGHT//2 - 70))
         inp = big.render(t or "(empty)", True, (180,255,180))
@@ -146,7 +147,8 @@ def get_code_input(screen, big, font):
         screen.blit(tip, (WIDTH//2 - tip.get_width()//2, HEIGHT//2 + 40))
         pygame.display.flip()
         for ev in pygame.event.get():
-            if ev.type == pygame.QUIT: pygame.quit(); sys.exit(0)
+            if ev.type == pygame.QUIT:
+                pygame.quit(); sys.exit(0)
             if ev.type == pygame.KEYDOWN:
                 if ev.key == pygame.K_RETURN: return t if t else None
                 if ev.key == pygame.K_ESCAPE: return None
@@ -154,6 +156,55 @@ def get_code_input(screen, big, font):
                 else:
                     ch = ev.unicode.upper()
                     if ch in ALPHABET and len(t) < 12: t += ch
+
+def get_name_input(screen, big, font):
+    pygame.key.set_repeat(250,35)
+    t = ""
+    wrong_attempts = [0]*2
+    error_length, error_prophanity = 0, 1
+    while True:
+        screen.fill((20,20,25))
+        draw_track(screen)
+        surf = big.render("Enter your name", True, (230,230,240))
+        screen.blit(surf, (WIDTH//2 - surf.get_width()//2, HEIGHT//2 - 70))
+        inp = big.render(t or "(empty)", True, (180,255,180))
+        screen.blit(inp, (WIDTH//2 - inp.get_width()//2, HEIGHT//2 - 10))
+        tip = font.render("Enter = OK   Esc = cancel", True, (180,180,180))
+        screen.blit(tip, (WIDTH//2 - tip.get_width()//2, HEIGHT//2 + 40))
+        if wrong_attempts[error_length] > 0:
+            error_msg = "Name must be at least 3 characters long."
+            surf = big.render(error_msg, True, (230,80,80))
+            screen.blit(surf, (WIDTH//2 - surf.get_width()//2, HEIGHT//2 - 120))
+
+        if wrong_attempts[error_prophanity] > 0:
+            error_msg = "Inappropriate name. Choose another."
+            surf = big.render(error_msg, True, (230,80,80))
+            screen.blit(surf, (WIDTH//2 - surf.get_width()//2, HEIGHT//2 - 120))
+
+        pygame.display.flip()
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                pygame.quit(); sys.exit(0)
+            if ev.type == pygame.KEYDOWN:
+                if ev.key == pygame.K_RETURN:
+                    if t in ["nigger", "nigga", "niga"]:
+                        wrong_attempts[error_prophanity] += 1
+                        wrong_attempts[error_length] = 0
+                        continue
+                    if len(t) >= 3  :
+                        return t if t else None
+                    else:
+                        wrong_attempts[error_length] += 1
+                        wrong_attempts[error_prophanity] = 0
+
+                if ev.key == pygame.K_ESCAPE:
+                    return None
+                if ev.key == pygame.K_BACKSPACE:
+                    t = t[:-1]
+                else:
+                    ch = ev.unicode
+                    if ch.isprintable() and len(t) < 12:
+                        t += ch
 
 def main():
     pygame.init()
@@ -205,7 +256,10 @@ def main():
                 pygame.quit(); return
 
             if stage == "menu" and e.type == pygame.KEYDOWN:
-                if e.key == pygame.K_h:  # "Host" = just pick a new room code and join it
+                if e.key == pygame.K_h:  # "Host" = create room
+                    new_name = get_name_input(screen, big, font)
+                    if new_name is not None:
+                        my_name = new_name
                     code = rand_code()
                     try:
                         sock = connect_to_relay()
@@ -215,6 +269,9 @@ def main():
                     except Exception as ex:
                         stage = "error"; error_msg = f"Net error: {ex}"
                 if e.key == pygame.K_j:
+                    new_name = get_name_input(screen, big, font)
+                    if new_name is not None:
+                        my_name = new_name
                     jcode = get_code_input(screen, big, font)
                     if not jcode: continue
                     try:
@@ -289,12 +346,17 @@ def main():
         if stage == "menu":
             title = big.render("Top-Down Drift — Client Trust", True, (240,240,250))
             screen.blit(title, (WIDTH//2 - title.get_width()//2, 120))
-            tip1 = font.render("H = Create room (no server physics)   •   J = Join room", True, (200,200,210))
+            tip1 = font.render("H = Create room (change name)   •   J = Join room", True, (200,200,210))
             tip2 = font.render(f"Relay: {RELAY_PUBLIC_ENDPOINT}", True, (180,180,180))
             screen.blit(tip1, (WIDTH//2 - tip1.get_width()//2, 180))
             screen.blit(tip2, (WIDTH//2 - tip2.get_width()//2, 210))
 
         # Draw my car always (menu + playing)
+        if sock:
+            my_car.step(read_inputs(), dt, players)
+        else:
+            my_car.step(read_inputs(), dt, {})
+            
         draw_car(screen, my_car.x, my_car.y, my_car.angle, my_car.name, color_body=(200,230,255))
 
         if stage == "playing":
