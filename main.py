@@ -165,6 +165,8 @@ def get_code_input(screen, big, font):
 def get_name_input(screen, big, font):
     pygame.key.set_repeat(250,35)
     t = ""
+    wrong_attempts = [0]*2
+    error_length, error_prophanity = 0, 1
     while True:
         screen.fill((20,20,25))
         draw_track(screen)
@@ -174,13 +176,32 @@ def get_name_input(screen, big, font):
         screen.blit(inp, (WIDTH//2 - inp.get_width()//2, HEIGHT//2 - 10))
         tip = font.render("Enter = OK   Esc = cancel", True, (180,180,180))
         screen.blit(tip, (WIDTH//2 - tip.get_width()//2, HEIGHT//2 + 40))
+        if wrong_attempts[error_length] > 0:
+            error_msg = "Name must be at least 3 characters long."
+            surf = big.render(error_msg, True, (230,80,80))
+            screen.blit(surf, (WIDTH//2 - surf.get_width()//2, HEIGHT//2 - 120))
+
+        if wrong_attempts[error_prophanity] > 0:
+            error_msg = "Inappropriate name. Choose another."
+            surf = big.render(error_msg, True, (230,80,80))
+            screen.blit(surf, (WIDTH//2 - surf.get_width()//2, HEIGHT//2 - 120))
+
         pygame.display.flip()
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
                 pygame.quit(); sys.exit(0)
             if ev.type == pygame.KEYDOWN:
                 if ev.key == pygame.K_RETURN:
-                    return t if t else None
+                    if t in ["nigger", "nigga", "niga"]:
+                        wrong_attempts[error_prophanity] += 1
+                        wrong_attempts[error_length] = 0
+                        continue
+                    if len(t) >= 3  :
+                        return t if t else None
+                    else:
+                        wrong_attempts[error_length] += 1
+                        wrong_attempts[error_prophanity] = 0
+
                 if ev.key == pygame.K_ESCAPE:
                     return None
                 if ev.key == pygame.K_BACKSPACE:
