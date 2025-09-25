@@ -1,0 +1,71 @@
+# --- Python bytecode / caches ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+ENV/
+.conda/
+.python-version
+
+# --- Packaging / build artifacts ---
+build/
+dist/
+pip-wheel-metadata/
+*.egg-info/
+.eggs/
+*.egg
+*.spec  # PyInstaller
+
+# --- Tests / coverage ---
+.pytest_cache/
+.tox/
+.nox/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+test.py
+
+# --- Type checkers / linters ---
+.mypy_cache/
+.pytype/
+.ruff_cache/
+
+# --- Logs / temp ---
+*.log
+tmp/
+temp/
+*.tmp
+
+# --- Notebooks ---
+.ipynb_checkpoints/
+
+# --- Environment files (optional) ---
+.env
+.env.*
+
+# --- OS-specific junk ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- IDE/editor settings ---
+.vscode/
+.idea/
+*.code-workspace
+*.swp
+*.swo
+
+# --- Pygame/game assets (keep actual assets tracked) ---
+# Uncomment any of these if you generate temporary outputs:
+# screenshots/
+# recordings/
+# cache/
+# assets/cache/
+
+# --- SDL2/Windows runtime (only if dropped locally during bundling) ---
+# *.dll
