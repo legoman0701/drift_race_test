@@ -18,11 +18,12 @@ TRACK_BORDER_COLOR = (80, 90, 100)
 TRACK_BORDER_WIDTH = 4
 
 # Gameplay rates
+FPS = 75
 SEND_HZ = 30.0       # client -> relay state rate
 PING_HZ = 0.2        # keepalive (~5 s)
 
 # Join room code parameters
-JOIN_CODE_LEN = 6
+JOIN_CODE_LEN = 4
 ROOM_ALPHABET = string.ascii_uppercase + string.digits
 MAX_CODE_LENGTH = 12
 
@@ -51,6 +52,13 @@ MAX_NAME_LENGTH = 12
 PROFANITY_SET = {"NIGGER", "NIGGA", "NIGA"}
 
 # Colors
+BLACK = (0, 0, 0)
+GREY_20 = (20,20,28)
+GREY_180 = (180, 180, 180)
+GREY_200 = (200, 200, 200)
+WHITE_240 = (240,240,240)
+WHITE = (255, 255, 255)
+
 COLOR_BODY_DEFAULT = (250,210,120)
 COLOR_NOSE_DEFAULT = (255,120,120)
 COLOR_BODY_REMOTE  = (255,200,120)
@@ -368,7 +376,8 @@ def main():
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
     pygame.display.set_caption("Top-Down Drift — Client Trust (Pi relay)")
     clock = pygame.time.Clock()
-    font_small = pygame.font.SysFont(None, 28)
+    font_small = pygame.font.SysFont(None, 20)
+    font_medium = pygame.font.SysFont(None, 30)
     font_big = pygame.font.SysFont(None, 46)
 
     stage = "menu"  # menu | playing | error
@@ -387,10 +396,9 @@ def main():
     my_car = Car(spawnx, spawny, my_name)
 
     while True:
-        dt = clock.tick(75) / 1000.0
-        # Process global events
-        for ev in pygame.event.get():
-            if ev.type == pygame.QUIT:
+        dt = clock.tick(FPS) / 1000.0
+        for ev in pygame.event.get(): # event handling
+            if ev.type == pygame.QUIT: # send "bye" packet then quit
                 if sock and code:
                     try:
                         sock.send(json.dumps({"t": "bye", "code": code, "id": my_id}).encode("utf-8"))
@@ -398,44 +406,44 @@ def main():
                         pass
                 pygame.quit()
                 sys.exit(0)
-            if stage == "menu" and ev.type == pygame.KEYDOWN:
+            if stage == "menu" and ev.type == pygame.KEYDOWN: # menu page
                 if ev.key == pygame.K_h:  # Host: create room
-                    new_name = get_name_input(screen, font_big, font_small)
-                    if new_name is not None:
+                    new_name = get_name_input(screen, font_big, font_small) # player enter name
+                    if new_name is not None: # save name
                         my_name = new_name
                         my_car.name = my_name
-                    code = rand_code()
+                    code = rand_code() # room code
                     try:
-                        sock = connect_to_relay()
-                        join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id}
+                        sock = connect_to_relay() # connect to relay
+                        join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id} # send "join" packet
                         sock.send(json.dumps(join_pkt).encode("utf-8"))
-                        stage = "playing"
+                        stage = "playing" # switch to playing page
                     except Exception as ex:
-                        stage = "error"
+                        stage = "error" # switch to error page
                         error_msg = f"Net error: {ex}"
                 elif ev.key == pygame.K_j:  # Join room
-                    new_name = get_name_input(screen, font_big, font_small)
-                    if new_name is not None:
+                    new_name = get_name_input(screen, font_big, font_small) # player enter name
+                    if new_name is not None: # save name
                         my_name = new_name
                         my_car.name = my_name
-                    jcode = get_code_input(screen, font_big, font_small)
+                    jcode = get_code_input(screen, font_big, font_small) # player enter room code
                     if not jcode:
                         continue
                     try:
-                        sock = connect_to_relay()
+                        sock = connect_to_relay() # connect to relay
                         code = jcode.upper()
-                        join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id}
+                        join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id} # send "join" packet
                         sock.send(json.dumps(join_pkt).encode("utf-8"))
-                        stage = "playing"
+                        stage = "playing" # switch to playing page
                     except Exception as ex:
-                        stage = "error"
+                        stage = "error" # switch to error page
                         error_msg = f"Net error: {ex}"
 
-        # Process networking
+        # Process networking : read msgs
         if sock:
-            err = handle_network_messages(sock, remotes, dt, my_id)
-            if err:
-                stage = "error"
+            err = handle_network_messages(sock, remotes, dt, my_id) # update remote players' list
+            if err: # if error
+                stage = "error" # switch to error page
                 error_msg = err
 
         # Networking Out: send state & ping at defined intervals
@@ -451,24 +459,26 @@ def main():
         my_car.step(read_inputs(), dt, remotes) # Update car physics with local input
 
         # Draw screen and track
-        screen.fill((18,20,28))
+        screen.fill(GREY_20)
         draw_track(screen)
 
         # Menu draws
         if stage == "menu":
-            title = font_big.render("Top-Down Drift — Client Trust", True, (240,240,250))
-            screen.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, 120))
-            tip1 = font_small.render("H = Create room (change name)   •   J = Join room", True, (200,200,210))
-            tip2 = font_small.render(f"Relay: {RELAY_PUBLIC_ENDPOINT}", True, (180,180,180))
-            screen.blit(tip1, (WINDOW_WIDTH//2 - tip1.get_width()//2, 180))
-            screen.blit(tip2, (WINDOW_WIDTH//2 - tip2.get_width()//2, 210))
+            title = font_big.render("Menu", True, WHITE_240)
+            screen.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, 7))
+            tip1 = font_medium.render("H : Host room", True, GREY_200)
+            tip2 = font_medium.render("J : Join room", True, GREY_200)
+            relay = font_small.render(f"Relay: {RELAY_PUBLIC_ENDPOINT}", True, GREY_180)
+            screen.blit(tip1, (WINDOW_WIDTH*.3 - tip1.get_width()//2, 13))
+            screen.blit(tip2, (WINDOW_WIDTH*.7 - tip2.get_width()//2, 13))
+            screen.blit(relay, (WINDOW_WIDTH//2 - relay.get_width()//2, WINDOW_HEIGHT-30))
 
         # Always draw my car
         draw_car(screen, my_car.x, my_car.y, my_car.angle, my_car.name, color_body=COLOR_MY_CAR)
 
         # Game playing: draw room code and remote players
         if stage == "playing":
-            hud = font_small.render(f"Room: {code}", True, (180,180,180))
+            hud = font_small.render(f"Room: {code}", True, GREY_180)
             screen.blit(hud, (10, WINDOW_HEIGHT - 30))
             for pid, d in remotes.items():
                 draw_car(screen, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
@@ -479,7 +489,7 @@ def main():
             screen.blit(errh, (WINDOW_WIDTH//2 - errh.get_width()//2, WINDOW_HEIGHT//2 - 40))
             msg = font_small.render(error_msg, True, (255,200,200))
             screen.blit(msg, (WINDOW_WIDTH//2 - msg.get_width()//2, WINDOW_HEIGHT//2))
-            tip = font_small.render("Restart to try again.", True, (200,200,200))
+            tip = font_small.render("Restart to try again.", True, GREY_200)
             screen.blit(tip, (WINDOW_WIDTH//2 - tip.get_width()//2, WINDOW_HEIGHT//2 + 40))
 
         pygame.display.flip()
