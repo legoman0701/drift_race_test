@@ -196,7 +196,8 @@ def draw_car(surface, x, y, angle, name,
     #                     (int(lft[0]), int(lft[1])),
     #                     (int(rgt[0]), int(rgt[1]))])
     
-    surface.blit(car_sprite[int((-angle+(math.pi/2)%(2*math.pi))/(2*math.pi)*32)%32], (int(x-150/2), int(y-150/2))) 
+    show_angle = (-angle + math.pi/2) % (2*math.pi) / (2*math.pi)
+    surface.blit(car_sprite[int(show_angle*32)%32], (int(x-150/2), int(y-150/2))) 
     
     if name:
         font = pygame.font.SysFont(None, 22)
@@ -592,7 +593,7 @@ def main():
             screen.blit(hud, (10, WINDOW_HEIGHT - 30))
             for pid, d in remotes.items():
                 drift_points = draw_car(screen, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
-                         color_body=COLOR_BODY_REMOTE)
+                         color_body=COLOR_BODY_REMOTE, car_sprite=au86_sprite)
                 
                 if d["drift_ratio"] > 0.8 and pid in drift_points_old_remotes:
                     old_pts = drift_points_old_remotes[pid]
