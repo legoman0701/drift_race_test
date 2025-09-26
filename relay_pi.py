@@ -128,7 +128,7 @@ def loop():
                 "vx": float(msg.get("vx", 0.0)),
                 "vy": float(msg.get("vy", 0.0)),
                 "name": room["clients"][addr]["name"],
-                "drift_ratio": float(msg.get("drift_ratio", 0.0))
+                "drift_ratio": float(msg.get("drift_ratio") or 0.0)
             }
             room["states"][pid] = st
             room["dirty"] = True
