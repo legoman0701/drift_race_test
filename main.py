@@ -19,8 +19,8 @@ TRACK_BORDER_WIDTH = 4
 
 # Gameplay rates
 FPS = 75
-SEND_HZ = 30.0       # client -> relay state rate
-PING_HZ = 0.2        # keepalive (~5 s)
+SEND_HZ = 60.0       # client -> relay state rate
+PING_HZ = 1/5        # keepalive (~5 s)
 
 # Join room code parameters
 JOIN_CODE_LEN = 4
@@ -198,6 +198,8 @@ def draw_car(surface, x, y, angle, name,
         text = font.render(name, True, (230,230,255))
         surface.blit(text, (int(x) + 12, int(y) - 10))
 
+    return (wpts[2], wpts[3])  # return rear left and right points
+
 def draw_track(surface):
     pygame.draw.rect(surface, TRACK_COLOR, (0,0,WINDOW_WIDTH,WINDOW_HEIGHT))
     pygame.draw.rect(surface, TRACK_BORDER_COLOR,
@@ -321,22 +323,23 @@ def handle_network_messages(sock, remotes, dt, my_id):
             alpha_angle = min(1.0, dt * 10.0)
             # Update remote players (smoothing)
             # You can adjust these constants to change the smoothing amount.
-            POS_SMOOTHING_MULTIPLIER = 50.0   # Increase for faster positional smoothing
-            ANGLE_SMOOTHING_MULTIPLIER = 50.0 # Increase for faster angular smoothing
+            POS_SMOOTHING_MULTIPLIER = 300.0   # Increase for faster positional smoothing
+            ANGLE_SMOOTHING_MULTIPLIER = 300.0 # Increase for faster angular smoothing
 
             alpha_pos = min(1.0, dt * POS_SMOOTHING_MULTIPLIER)
             alpha_angle = min(1.0, dt * ANGLE_SMOOTHING_MULTIPLIER)
             for pid, d in players.items(): # pid: player id
                 if pid == my_id:
                     continue
-                tx, ty, ta = float(d["x"]), float(d["y"]), float(d["a"])
+                tx, ty, ta, tdr = float(d["x"]), float(d["y"]), float(d["a"]), float(d["drift_ratio"])
                 name = d.get("name", f"Player{pid}")
                 if pid not in remotes:
-                    remotes[pid] = {"x": tx, "y": ty, "a": ta, "name": name}
+                    remotes[pid] = {"x": tx, "y": ty, "a": ta, "name": name, "drift_ratio": tdr}
                 else:
                     cur = remotes[pid]
                     cur["x"] += (tx - cur["x"]) * alpha_pos
                     cur["y"] += (ty - cur["y"]) * alpha_pos
+                    cur["drift_ratio"] += (tdr - cur["drift_ratio"]) * alpha_pos
                     # Angle smoothing with wrap-around
                     da = ((ta - cur["a"] + math.pi) % (2 * math.pi)) - math.pi
                     cur["a"] = (cur["a"] + da * alpha_angle) % (2 * math.pi)
@@ -358,7 +361,8 @@ def send_network_state(sock, code, my_id, car): # send pos and trigger world bro
         "y": round(car.y, 2),
         "a": round(car.angle, 4),
         "vx": round(car.vx, 2),
-        "vy": round(car.vy, 2)
+        "vy": round(car.vy, 2),
+        "drift_ratio": round(car.drift_ratio, 2)
     }
     try:
         sock.send(json.dumps(pkt).encode("utf-8"))
@@ -447,6 +451,12 @@ def main():
         except Exception as ex:
             stage = "error"
             error_msg = f"Net error: {ex}"
+
+    tire_mark = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+    tire_mark.fill((255, 255, 255, 0))
+
+    drift_points_old = []
+    drift_points_old_remotes = {}
 
     while True:
         dt = clock.tick(FPS) / 1000.0
@@ -555,15 +565,32 @@ def main():
             screen.blit(relay, (WINDOW_WIDTH//2 - relay.get_width()//2, WINDOW_HEIGHT-30))
 
         # Always draw my car
-        draw_car(screen, my_car.x, my_car.y, my_car.angle, my_car.name, color_body=COLOR_MY_CAR)
+
+
+        screen.blit(tire_mark, (0,0))
+        drift_points = draw_car(screen, my_car.x, my_car.y, my_car.angle, my_car.name, color_body=COLOR_MY_CAR)
+        if my_car.drift_ratio > 0.8 and drift_points_old != []:
+            pygame.draw.line(tire_mark, (255,255,255,100), drift_points[0], drift_points_old[0], 3)
+            pygame.draw.line(tire_mark, (255,255,255,100), drift_points[1], drift_points_old[1], 3)
+            # Fade tire marks
+        drift_points_old = drift_points
+        tire_mark.fill((255, 255, 255, 250), special_flags=pygame.BLEND_RGBA_MULT)
         
+
         # Game playing: draw room code and remote players
         if stage == "playing":
             hud = font_small.render(f"Room: {code}", True, GREY_180)
             screen.blit(hud, (10, WINDOW_HEIGHT - 30))
             for pid, d in remotes.items():
-                draw_car(screen, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
+                drift_points = draw_car(screen, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
                          color_body=COLOR_BODY_REMOTE)
+                
+                if d["drift_ratio"] > 0.8 and pid in drift_points_old_remotes:
+                    old_pts = drift_points_old_remotes[pid]
+                    pygame.draw.line(tire_mark, (255,255,255,100), drift_points[0], old_pts[0], 3)
+                    pygame.draw.line(tire_mark, (255,255,255,100), drift_points[1], old_pts[1], 3)
+                drift_points_old_remotes[pid] = drift_points
+                
 
         if stage == "error":
             errh = font_big.render("ERROR", True, (255,120,120))
