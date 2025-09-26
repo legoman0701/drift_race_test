@@ -580,7 +580,8 @@ def main():
             hud = font_small.render(f"Room: {code}", True, GREY_180)
             screen.blit(hud, (10, WINDOW_HEIGHT - 30))
             for pid, d in remotes.items():
-                print(d["drift_ratio"])
+                try :print(d["drift_ratio"])
+                except: pass
                 draw_car(screen, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
                          color_body=COLOR_BODY_REMOTE)
 
