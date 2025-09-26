@@ -19,8 +19,8 @@ TRACK_BORDER_WIDTH = 4
 
 # Gameplay rates
 FPS = 75
-SEND_HZ = 30.0       # client -> relay state rate
-PING_HZ = 0.2        # keepalive (~5 s)
+SEND_HZ = 60.0       # client -> relay state rate
+PING_HZ = 1/5        # keepalive (~5 s)
 
 # Join room code parameters
 JOIN_CODE_LEN = 4
@@ -321,8 +321,8 @@ def handle_network_messages(sock, remotes, dt, my_id):
             alpha_angle = min(1.0, dt * 10.0)
             # Update remote players (smoothing)
             # You can adjust these constants to change the smoothing amount.
-            POS_SMOOTHING_MULTIPLIER = 50.0   # Increase for faster positional smoothing
-            ANGLE_SMOOTHING_MULTIPLIER = 50.0 # Increase for faster angular smoothing
+            POS_SMOOTHING_MULTIPLIER = 300.0   # Increase for faster positional smoothing
+            ANGLE_SMOOTHING_MULTIPLIER = 300.0 # Increase for faster angular smoothing
 
             alpha_pos = min(1.0, dt * POS_SMOOTHING_MULTIPLIER)
             alpha_angle = min(1.0, dt * ANGLE_SMOOTHING_MULTIPLIER)

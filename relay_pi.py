@@ -8,7 +8,7 @@ RELAY_HOST = "0.0.0.0"
 RELAY_PORT = 40123
 MAX_PACKET = 1400
 CLIENT_TIMEOUT = 15.0   # seconds since last packet before drop
-WORLD_HZ = 20.0         # broadcast world snapshots at most this often
+WORLD_HZ = 60.0         # broadcast world snapshots at most this often
 TICK = 0.01             # main loop tick
 
 # Rooms:
