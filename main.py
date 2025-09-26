@@ -4,7 +4,7 @@ Top-down drift game client (client-trust network via Pi relay)
 Refactored to remove magic numbers and reduce spaghetti code.
 """
 
-import pygame, socket, json, time, random, string, sys, math, uuid
+import pygame, socket, json, time, random, string, sys, math, uuid, argparse
 
 # ======= CONFIGURATION =======
 # Relay endpoint
@@ -36,8 +36,9 @@ BRAKE_DECEL     = 1400.0
 DRAG            = 0.35
 ROLLING         = 1.6
 LATERAL_GRIP    = 3.2
-STEER_SENS      = 1/200
-OVERSTEER       = 0.015
+STEER_SENS      = 1/50
+DRIFT_SENS      = 1/8000
+OVERSTEER       = 1.5/100
 MAX_SPEED       = 1200.0
 WALL_RESTITUTION = 0.3
 ANGLE_DAMP      = 25
@@ -76,13 +77,14 @@ def rand_name():
     return "Player" + "".join(random.choice(string.digits) for _ in range(4))
 
 class Car:
-    __slots__ = ("x", "y", "vx", "vy", "angle", "v_angle", "name")
+    __slots__ = ("x", "y", "vx", "vy", "angle", "v_angle", "name", "drift_ratio")
     def __init__(self, x, y, name):
         self.x, self.y = float(x), float(y)
         self.vx, self.vy = 0.0, 0.0
         self.angle = 0.0
         self.v_angle = 0.0
         self.name = name
+        self.drift_ratio = 0 
 
     def step(self, inputs, dt, players):
         # Unpack input controls
@@ -112,9 +114,14 @@ class Car:
         self.y  += self.vy * dt
 
         # Update angular velocity and angle
-        self.v_angle += (STEER_SENS * st * clamp(math.copysign(v_forward, th), -40, 40)
-                        + (OVERSTEER * -self.v_angle))
-        self.angle = (self.angle + self.v_angle * dt) % (2 * math.pi)
+        drift_moment = (STEER_SENS * st * math.copysign(v_forward, th) + (OVERSTEER * -self.v_angle))
+        drift_moment +=  math.copysign(self.v_angle/100, st)
+        
+        self.drift_ratio = clamp(abs(v_lateral)/200, 0, 1)
+        
+        self.v_angle += drift_moment
+        
+        self.angle += ((STEER_SENS * st * v_forward)*(1-self.drift_ratio) + self.v_angle*self.drift_ratio * dt) * dt
 
         # Check track boundaries
         self._handle_track_bounds(dt)
@@ -155,12 +162,10 @@ class Car:
     def _handle_collision(self, dx, dy, dist2):
         dist = math.sqrt(dist2) if dist2 > 0 else 0.01
         overlap = (CAR_LEN - dist) / 2.0
-        nx, ny = dx / dist, dy / dist
-        self.x -= nx * overlap
-        self.y -= ny * overlap
-        dot = self.vx * nx + self.vy * ny
-        self.vx = (self.vx - 2 * dot * nx) * WALL_RESTITUTION
-        self.vy = (self.vy - 2 * dot * ny) * WALL_RESTITUTION
+        self.x -= (dx / dist) * overlap*0.9
+        self.y -= (dy / dist) * overlap*0.9
+        self.vx -= (dx / dist) * overlap * 5
+        self.vy -= (dy / dist) * overlap * 5
 
 def draw_car(surface, x, y, angle, name,
              color_body=COLOR_BODY_DEFAULT,
@@ -315,7 +320,13 @@ def handle_network_messages(sock, remotes, dt, my_id):
             alpha_pos = min(1.0, dt * 10.0)
             alpha_angle = min(1.0, dt * 10.0)
             # Update remote players (smoothing)
-            for pid, d in players.items(): # pid : player id
+            # You can adjust these constants to change the smoothing amount.
+            POS_SMOOTHING_MULTIPLIER = 50.0   # Increase for faster positional smoothing
+            ANGLE_SMOOTHING_MULTIPLIER = 50.0 # Increase for faster angular smoothing
+
+            alpha_pos = min(1.0, dt * POS_SMOOTHING_MULTIPLIER)
+            alpha_angle = min(1.0, dt * ANGLE_SMOOTHING_MULTIPLIER)
+            for pid, d in players.items(): # pid: player id
                 if pid == my_id:
                     continue
                 tx, ty, ta = float(d["x"]), float(d["y"]), float(d["a"])
@@ -327,8 +338,8 @@ def handle_network_messages(sock, remotes, dt, my_id):
                     cur["x"] += (tx - cur["x"]) * alpha_pos
                     cur["y"] += (ty - cur["y"]) * alpha_pos
                     # Angle smoothing with wrap-around
-                    da = ((ta - cur["a"] + math.pi) % (2*math.pi)) - math.pi
-                    cur["a"] = (cur["a"] + da * alpha_angle) % (2*math.pi)
+                    da = ((ta - cur["a"] + math.pi) % (2 * math.pi)) - math.pi
+                    cur["a"] = (cur["a"] + da * alpha_angle) % (2 * math.pi)
                     cur["name"] = name
             # Remove players that are no longer present
             for pid in list(remotes.keys()):
@@ -372,6 +383,14 @@ def read_inputs():
     return {"th": th, "st": st, "br": br}
 
 def main():
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", choices=["host", "join"])
+    parser.add_argument("--code")
+    parser.add_argument("--name")
+    args, unknown = parser.parse_known_args()
+
+
     pygame.init()
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
     pygame.display.set_caption("Top-Down Drift — Client Trust (Pi relay)")
@@ -395,6 +414,40 @@ def main():
     spawny = random.randint(TRACK_MARGIN + 120, WINDOW_HEIGHT - TRACK_MARGIN - 120)
     my_car = Car(spawnx, spawny, my_name)
 
+    if args.mode == "host" and args.code and args.name:
+        my_name = args.name
+        my_car.name = my_name
+        code = args.code
+        try:
+            sock = connect_to_relay()
+            join_pkt = {"t": "create", "code": code, "name": my_name, "id": my_id}
+            sock.send(json.dumps(join_pkt).encode("utf-8"))
+            stage = "playing"
+        except Exception as ex:
+            stage = "error"
+            error_msg = f"Net error: {ex}"
+    elif args.mode == "join" and args.code and args.name:
+        my_name = args.name
+        my_car.name = my_name
+        code = args.code
+        try:
+            sock = connect_to_relay()
+            join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id}
+            sock.send(json.dumps(join_pkt).encode("utf-8"))
+            join_ok_received = False
+            timeout = time.time() + 1.0
+            while not join_ok_received and time.time() < timeout:
+                for msg in recv_jsons(sock):
+                    if msg.get("t") == "join_ok":
+                        join_ok_received = True
+                        break
+            if not join_ok_received:
+                raise Exception("Failed to connect: no join confirmation received")
+            stage = "playing"
+        except Exception as ex:
+            stage = "error"
+            error_msg = f"Net error: {ex}"
+
     while True:
         dt = clock.tick(FPS) / 1000.0
         for ev in pygame.event.get(): # event handling
@@ -415,7 +468,7 @@ def main():
                         code = rand_code() # room code
                         try:
                             sock = connect_to_relay() # connect to relay
-                            join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id} # send "join" packet
+                            join_pkt = {"t": "create", "code": code, "name": my_name, "id": my_id} # <-- changed here
                             sock.send(json.dumps(join_pkt).encode("utf-8"))
                             stage = "playing" # switch to playing page
                         except Exception as ex:
@@ -432,12 +485,40 @@ def main():
                         try:
                             sock = connect_to_relay() # connect to relay
                             code = jcode.upper()
-                            join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id} # send "join" packet
+                            join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id} # unchanged
                             sock.send(json.dumps(join_pkt).encode("utf-8"))
+                            join_ok_received = False
+                            timeout = time.time() + 1.0  # wait up to 5 seconds
+                            while not join_ok_received and time.time() < timeout:
+                                for msg in recv_jsons(sock):
+                                    if msg.get("t") == "join_ok":
+                                        join_ok_received = True
+                                        break
+
+                            if not join_ok_received:
+                                raise Exception("Failed to connect: no join confirmation received")
                             stage = "playing" # switch to playing page
+
                         except Exception as ex:
                             stage = "error" # switch to error page
                             error_msg = f"Net error: {ex}"
+
+            elif stage == "error" and ev.type == pygame.KEYDOWN:
+                    if  ev.key == pygame.K_r:
+                        stage = "menu"
+                        error_msg = ""
+                        remotes.clear()
+                        if sock:
+                            try:
+                                sock.send(json.dumps({"t": "bye", "code": code, "id": my_id}).encode("utf-8"))
+                            except Exception:
+                                pass
+                            sock.close()
+                            sock = None
+                        code = None
+                        spawnx = random.randint(TRACK_MARGIN + 200, WINDOW_WIDTH - TRACK_MARGIN - 200)
+                        spawny = random.randint(TRACK_MARGIN + 120, WINDOW_HEIGHT - TRACK_MARGIN - 120)
+                        my_car = Car(spawnx, spawny, my_name)
 
         # Process networking : read msgs
         if sock:
@@ -475,7 +556,7 @@ def main():
 
         # Always draw my car
         draw_car(screen, my_car.x, my_car.y, my_car.angle, my_car.name, color_body=COLOR_MY_CAR)
-
+        
         # Game playing: draw room code and remote players
         if stage == "playing":
             hud = font_small.render(f"Room: {code}", True, GREY_180)
@@ -489,7 +570,7 @@ def main():
             screen.blit(errh, (WINDOW_WIDTH//2 - errh.get_width()//2, WINDOW_HEIGHT//2 - 40))
             msg = font_small.render(error_msg, True, (255,200,200))
             screen.blit(msg, (WINDOW_WIDTH//2 - msg.get_width()//2, WINDOW_HEIGHT//2))
-            tip = font_small.render("Restart to try again.", True, GREY_200)
+            tip = font_small.render("Press R to restart", True, GREY_200)
             screen.blit(tip, (WINDOW_WIDTH//2 - tip.get_width()//2, WINDOW_HEIGHT//2 + 40))
 
         pygame.display.flip()
