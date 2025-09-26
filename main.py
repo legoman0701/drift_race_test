@@ -4,7 +4,7 @@ Top-down drift game client with camera (zoom & pan)
 Refactored to remove magic numbers and reduce spaghetti code.
 """
 
-import pygame, socket, json, time, random, string, sys, math, uuid, argparse
+import pygame, socket, json, time, random, string, sys, math, uuid, argparse, camera, car
 
 # ======= CONFIGURATION =======
 RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
@@ -15,6 +15,17 @@ TRACK_MARGIN = 40
 TRACK_COLOR = (35, 40, 50)
 TRACK_BORDER_COLOR = (80, 90, 100)
 TRACK_BORDER_WIDTH = 4
+
+# key binds
+UP_KEY = [pygame.K_UP, pygame.K_z]
+DOWN_KEY = [pygame.K_DOWN, pygame.K_s]
+LEFT_KEY = [pygame.K_LEFT, pygame.K_q]
+RIGHT_KEY = [pygame.K_RIGHT, pygame.K_d]
+ESCAPE_KEY = pygame.K_ESCAPE
+BRAKE_KEY = pygame.K_SPACE
+RESET_KEY = pygame.K_r
+HOST_KEY = pygame.K_h
+JOIN_KEY = pygame.K_j
 
 FPS = 75
 SEND_HZ = 60.0       # client -> relay state rate
@@ -27,18 +38,18 @@ MAX_CODE_LENGTH = 12
 # Car constants
 CAR_LEN = 58.0
 CAR_WID  = 30.0
-ENGINE_ACC      = 950.0
-REVERSE_ACC     = 700.0
-BRAKE_DECEL     = 1400.0
-DRAG            = 0.35
-ROLLING         = 1.6
-LATERAL_GRIP    = 10
-STEER_SENS      = 1/50
-DRIFT_SENS      = 1/8000
-OVERSTEER       = 1.5/100
-MAX_SPEED       = 1200.0
-WALL_RESTITUTION = 0.3
-ANGLE_DAMP      = 25
+#ENGINE_ACC      = 950.0
+# REVERSE_ACC     = 700.0
+# BRAKE_DECEL     = 1400.0
+# DRAG            = 0.35
+# ROLLING         = 1.6
+# LATERAL_GRIP    = 10
+# STEER_SENS      = 1/50
+# DRIFT_SENS      = 1/8000
+# OVERSTEER       = 1.5/100
+# MAX_SPEED       = 1200.0
+# WALL_RESTITUTION = 0.3
+# ANGLE_DAMP      = 25
 
 VIEW_ANGLE = 70 * math.pi / 180.0  # radians
 
@@ -72,91 +83,6 @@ def rand_code(n=JOIN_CODE_LEN):
 
 def rand_name():
     return "Player" + "".join(random.choice(string.digits) for _ in range(4))
-
-class Car:
-    __slots__ = ("x", "y", "vx", "vy", "angle", "v_angle", "name", "drift_ratio")
-    def __init__(self, x, y, name):
-        self.x, self.y = float(x), float(y)
-        self.vx, self.vy = 0.0, 0.0
-        self.angle = 0.0
-        self.v_angle = 0.0
-        self.name = name
-        self.drift_ratio = 0 
-
-    def step(self, inputs, dt, players):
-        th = clamp(inputs.get("th", 0.0), -1.0, 1.0)
-        st = clamp(inputs.get("st", 0.0), -1.0, 1.0)
-        br = inputs.get("br", 0.0)
-
-        fx, fy = math.cos(self.angle), math.sin(self.angle)
-        rx, ry = -fy, fx
-
-        v_forward = self.vx * fx + self.vy * fy
-        v_lateral = self.vx * rx + self.vy * ry
-        
-        self.drift_ratio = clamp(abs(v_lateral)/200, 0, 1)
-
-        a_forward = th * ENGINE_ACC
-        a_lateral = -v_lateral * LATERAL_GRIP * (1-self.drift_ratio/2) * (1-br)
-        
-        acc_fx = fx * a_forward + rx * a_lateral
-        acc_fy = fy * a_forward + ry * a_lateral
-        
-        acc_fx += -self.vx - self.vx*br
-        acc_fy += -self.vy - self.vy*br
-        
-        self.vx += acc_fx * dt
-        self.vy += acc_fy * dt
-        self.x  += self.vx * dt
-        self.y  += self.vy * dt
-
-        drift_moment = (STEER_SENS * st * math.copysign(v_forward, th) + (OVERSTEER * -self.v_angle))
-        drift_moment +=  math.copysign(self.v_angle/100, st)
-        self.v_angle += drift_moment
-        
-        self.angle += ((STEER_SENS * st * v_forward)*(1-self.drift_ratio) + self.v_angle*self.drift_ratio * dt) * dt
-
-        self._handle_track_bounds(dt)
-
-        for pid, d in players.items():
-            if d["name"] == self.name:
-                continue
-            dx = d["x"] - self.x
-            dy = d["y"] - self.y
-            dist2 = dx * dx + dy * dy
-            if dist2 < (CAR_LEN * CAR_LEN):
-                self._handle_collision(dx, dy, dist2)
-    
-    def _handle_track_bounds(self, dt):
-        minx, maxx = TRACK_MARGIN, WINDOW_WIDTH - TRACK_MARGIN
-        miny, maxy = TRACK_MARGIN, WINDOW_HEIGHT - TRACK_MARGIN
-        hit = False
-        if self.x < minx:
-            self.x = minx
-            self.vx = -self.vx * WALL_RESTITUTION
-            hit = True
-        if self.x > maxx:
-            self.x = maxx
-            self.vx = -self.vx * WALL_RESTITUTION
-            hit = True
-        if self.y < miny:
-            self.y = miny
-            self.vy = -self.vy * WALL_RESTITUTION
-            hit = True
-        if self.y > maxy:
-            self.y = maxy
-            self.vy = -self.vy * WALL_RESTITUTION
-            hit = True
-        if hit:
-            self.v_angle *= 0.5
-
-    def _handle_collision(self, dx, dy, dist2):
-        dist = math.sqrt(dist2) if dist2 > 0 else 0.01
-        overlap = (CAR_LEN - dist) / 2.0
-        self.x -= (dx / dist) * overlap*0.9
-        self.y -= (dy / dist) * overlap*0.9
-        self.vx -= (dx / dist) * overlap * 5
-        self.vy -= (dy / dist) * overlap * 5
 
 def draw_car(surface, x, y, angle, name,
              color_body=COLOR_BODY_DEFAULT,
@@ -235,7 +161,7 @@ def get_text_input(surface, title_text, tip_text, font_big, font_small, allowed_
             if ev.type == pygame.KEYDOWN:
                 if ev.key == pygame.K_RETURN:
                     return text or None
-                if ev.key == pygame.K_ESCAPE:
+                if ev.key == ESCAPE_KEY:
                     return None
                 if ev.key == pygame.K_BACKSPACE:
                     text = text[:-1]
@@ -281,7 +207,7 @@ def get_name_input(surface, font_big, font_small):
                         error_msg = "Name must be at least 3 characters long."
                         continue
                     return text
-                if ev.key == pygame.K_ESCAPE:
+                if ev.key == ESCAPE_KEY:
                     return None
                 if ev.key == pygame.K_BACKSPACE:
                     text = text[:-1]
@@ -351,9 +277,9 @@ def send_ping(sock, code):
 
 def read_inputs(joysticks):
     keys = pygame.key.get_pressed()
-    th = (keys[pygame.K_z] or keys[pygame.K_UP]) - (keys[pygame.K_s] or keys[pygame.K_DOWN])
-    st = (keys[pygame.K_d] or keys[pygame.K_RIGHT]) - (keys[pygame.K_q] or keys[pygame.K_LEFT])
-    br = 1.0 if keys[pygame.K_SPACE] else 0.0
+    th = (1 if any(keys[key] for key in UP_KEY) else 0) - (1 if any(keys[key] for key in DOWN_KEY) else 0)
+    st = (1 if any(keys[key] for key in RIGHT_KEY) else 0) - (1 if any(keys[key] for key in LEFT_KEY) else 0)
+    br = 1.0 if keys[BRAKE_KEY] else 0.0
     if th != 0:
         th = 1.0 if th > 0 else -1.0
     if st != 0:
@@ -368,32 +294,6 @@ def read_inputs(joysticks):
         th = throttle if throttle != 0 else th
         br = breaks if breaks != 0 else br
     return {"th": th, "st": st, "br": br}
-
-class Camera:
-    def __init__(self, width, height, zoom=1.0):
-        self.width = width
-        self.height = height
-        self.zoom = zoom
-        self.x = width // 2
-        self.y = height // 2
-        self.offset = [0, 0]  # additional pan offset
-
-    def update(self, target):
-        # Follow the target with any offset
-        self.x = target.x + self.offset[0]
-        self.y = target.y + self.offset[1]
-
-    def apply(self, world_surf):
-        view_w = int(self.width / self.zoom)
-        view_h = int(self.height / self.zoom)
-        left = int(self.x - view_w // 2)
-        top = int(self.y - view_h // 2)
-        # Clamp the view rect within the world surface
-        left = max(0, min(world_surf.get_width()-view_w, left))
-        top = max(0, min(world_surf.get_height()-view_h, top))
-        view_rect = pygame.Rect(left, top, view_w, view_h)
-        view = world_surf.subsurface(view_rect)
-        return pygame.transform.scale(view, (self.width, self.height))
 
 def main():
     parser = argparse.ArgumentParser()
@@ -430,7 +330,7 @@ def main():
 
     spawnx = random.randint(TRACK_MARGIN + 200, WINDOW_WIDTH - TRACK_MARGIN - 200)
     spawny = random.randint(TRACK_MARGIN + 120, WINDOW_HEIGHT - TRACK_MARGIN - 120)
-    my_car = Car(spawnx, spawny, my_name)
+    my_car = car.Car(spawnx, spawny, my_name)
 
     if args.mode == "host" and args.code and args.name:
         my_name = args.name
@@ -476,7 +376,7 @@ def main():
         js.init()
 
     # Create a camera object; mouse wheel will adjust zoom and middle mouse drag will pan.
-    camera = Camera(WINDOW_WIDTH, WINDOW_HEIGHT, zoom=1.0)
+    cam = camera.Camera(WINDOW_WIDTH, WINDOW_HEIGHT, zoom=1.0)
     dragging = False
 
     while True:
@@ -492,8 +392,8 @@ def main():
                 sys.exit(0)
             if ev.type == pygame.MOUSEWHEEL:
                 # Adjust zoom (clamp between 0.5 and 3.0)
-                camera.zoom *= 1.1 if ev.y > 0 else 0.9
-                camera.zoom = clamp(camera.zoom, 0.5, 3.0)
+                cam.zoom *= 1.1 if ev.y > 0 else 0.9
+                cam.zoom = clamp(cam.zoom, 1, 3.0)
             if ev.type == pygame.MOUSEBUTTONDOWN:
                 if ev.button == 2:  # Middle mouse for panning
                     dragging = True
@@ -502,11 +402,11 @@ def main():
                     dragging = False
             if ev.type == pygame.MOUSEMOTION and dragging:
                 # Adjust pan offset (divide by zoom so that panning is smooth)
-                camera.offset[0] -= ev.rel[0] / camera.zoom
-                camera.offset[1] -= ev.rel[1] / camera.zoom
+                cam.offset[0] -= ev.rel[0] / cam.zoom
+                cam.offset[1] -= ev.rel[1] / cam.zoom
 
             if stage == "menu" and ev.type == pygame.KEYDOWN:
-                if ev.key == pygame.K_h:  # Host room
+                if ev.key == HOST_KEY:  # Host room
                     new_name = get_name_input(screen, font_big, font_small)
                     if new_name is not None:
                         my_name = new_name
@@ -520,7 +420,7 @@ def main():
                         except Exception as ex:
                             stage = "error"
                             error_msg = f"Net error: {ex}"
-                elif ev.key == pygame.K_j:  # Join room
+                elif ev.key == JOIN_KEY:  # Join room
                     new_name = get_name_input(screen, font_big, font_small)
                     if new_name is not None:
                         my_name = new_name
@@ -547,7 +447,7 @@ def main():
                             stage = "error"
                             error_msg = f"Net error: {ex}"
             elif stage == "error" and ev.type == pygame.KEYDOWN:
-                if ev.key == pygame.K_r:
+                if ev.key == RESET_KEY:
                     stage = "menu"
                     error_msg = ""
                     remotes.clear()
@@ -561,7 +461,7 @@ def main():
                     code = None
                     spawnx = random.randint(TRACK_MARGIN + 200, WINDOW_WIDTH - TRACK_MARGIN - 200)
                     spawny = random.randint(TRACK_MARGIN + 120, WINDOW_HEIGHT - TRACK_MARGIN - 120)
-                    my_car = Car(spawnx, spawny, my_name)
+                    my_car = car.Car(spawnx, spawny, my_name)
 
         if sock:
             err = handle_network_messages(sock, remotes, dt, my_id)
@@ -579,7 +479,7 @@ def main():
                 send_ping(sock, code)
 
         my_car.step(read_inputs(joysticks), dt, remotes)
-        camera.update(my_car)
+        cam.update(my_car)
 
         # Draw game world onto an off-screen surface.
         world_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
@@ -625,7 +525,7 @@ def main():
             world_surf.blit(tip, (WINDOW_WIDTH//2 - tip.get_width()//2, WINDOW_HEIGHT//2 + 40))
 
         # Apply camera transform (zoom & pan) and blit to screen.
-        final_surf = camera.apply(world_surf)
+        final_surf = cam.apply(world_surf)
         screen.blit(final_surf, (0,0))
         pygame.display.flip()
 
