@@ -43,6 +43,8 @@ MAX_SPEED       = 1200.0
 WALL_RESTITUTION = 0.3
 ANGLE_DAMP      = 25
 
+VIEW_ANGLE = 70 * math.pi / 180.0  # radians
+
 # Input repetition settings
 KEY_REPEAT_DELAY = 250
 KEY_REPEAT_INTERVAL = 35
@@ -169,7 +171,7 @@ class Car:
 
 def draw_car(surface, x, y, angle, name,
              color_body=COLOR_BODY_DEFAULT,
-             color_nose=COLOR_NOSE_DEFAULT):
+             color_nose=COLOR_NOSE_DEFAULT, car_sprite=[]):
     ca, sa = math.cos(angle), math.sin(angle)
     halfL, halfW = CAR_LEN * 0.5, CAR_WID * 0.5
     # Car rectangle points
@@ -182,21 +184,25 @@ def draw_car(surface, x, y, angle, name,
         rx = px * ca - py * sa
         ry = px * sa + py * ca
         wpts.append((int(x + rx), int(y + ry)))
-    pygame.draw.polygon(surface, color_body, wpts)
-    # Draw the nose
-    nose = (x + ca * halfL, y + sa * halfL)
-    lft = (x + ca * (halfL * 0.4) - sa * (halfW * 0.9),
-           y + sa * (halfL * 0.4) + ca * (halfW * 0.9))
-    rgt = (x + ca * (halfL * 0.4) + sa * (halfW * 0.9),
-           y + sa * (halfL * 0.4) - ca * (halfW * 0.9))
-    pygame.draw.polygon(surface, color_nose,
-                        [(int(nose[0]), int(nose[1])),
-                         (int(lft[0]), int(lft[1])),
-                         (int(rgt[0]), int(rgt[1]))])
+    #pygame.draw.polygon(surface, color_body, wpts)
+    ## Draw the nose
+    #nose = (x + ca * halfL, y + sa * halfL)
+    #lft = (x + ca * (halfL * 0.4) - sa * (halfW * 0.9),
+    #       y + sa * (halfL * 0.4) + ca * (halfW * 0.9))
+    #rgt = (x + ca * (halfL * 0.4) + sa * (halfW * 0.9),
+    #       y + sa * (halfL * 0.4) - ca * (halfW * 0.9))
+    #pygame.draw.polygon(surface, color_nose,
+    #                    [(int(nose[0]), int(nose[1])),
+    #                     (int(lft[0]), int(lft[1])),
+    #                     (int(rgt[0]), int(rgt[1]))])
+    
+    surface.blit(car_sprite[int((-angle+(math.pi/2)%(2*math.pi))/(2*math.pi)*32)%32], (int(x-150/2), int(y-150/2))) 
+    
     if name:
         font = pygame.font.SysFont(None, 22)
         text = font.render(name, True, (230,230,255))
-        surface.blit(text, (int(x) + 12, int(y) - 10))
+        surface.blit(text, (int(x-text.get_width()/2), int(y-40)))
+        
 
     return (wpts[2], wpts[3])  # return rear left and right points
 
@@ -386,7 +392,6 @@ def read_inputs():
     return {"th": th, "st": st, "br": br}
 
 def main():
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["host", "join"])
     parser.add_argument("--code")
@@ -401,6 +406,10 @@ def main():
     font_small = pygame.font.SysFont(None, 20)
     font_medium = pygame.font.SysFont(None, 30)
     font_big = pygame.font.SysFont(None, 46)
+    
+    au86_sprite = []
+    for i in range(32):
+        au86_sprite.append(pygame.image.load(f"images/AE86/{i:04}.png"))
 
     stage = "menu"  # menu | playing | error
     error_msg = ""
@@ -566,7 +575,7 @@ def main():
 
 
         screen.blit(tire_mark, (0,0))
-        drift_points = draw_car(screen, my_car.x, my_car.y, my_car.angle, my_car.name, color_body=COLOR_MY_CAR)
+        drift_points = draw_car(screen, my_car.x, my_car.y, my_car.angle, my_car.name, color_body=COLOR_MY_CAR, car_sprite=au86_sprite)
         if my_car.drift_ratio > 0.8 and drift_points_old != []:
             pygame.draw.line(tire_mark, (255,255,255,100), drift_points[0], drift_points_old[0], 3)
             pygame.draw.line(tire_mark, (255,255,255,100), drift_points[1], drift_points_old[1], 3)
@@ -583,7 +592,7 @@ def main():
                 try :print(d["drift_ratio"])
                 except: pass
                 draw_car(screen, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
-                         color_body=COLOR_BODY_REMOTE)
+                         color_body=COLOR_BODY_REMOTE, car_sprite=au86_sprite)
 
         if stage == "error":
             errh = font_big.render("ERROR", True, (255,120,120))
