@@ -4,7 +4,7 @@ Top-down drift game client with camera (zoom & pan)
 Refactored to remove magic numbers and reduce spaghetti code.
 """
 
-import pygame, socket, json, time, random, string, sys, math, uuid, argparse, camera, car
+import pygame, socket, json, time, random, string, sys, math, uuid, argparse, camera, car, button as btn
 
 # ======= CONFIGURATION =======
 RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
@@ -38,18 +38,6 @@ MAX_CODE_LENGTH = 12
 # Car constants
 CAR_LEN = 58.0
 CAR_WID  = 30.0
-#ENGINE_ACC      = 950.0
-# REVERSE_ACC     = 700.0
-# BRAKE_DECEL     = 1400.0
-# DRAG            = 0.35
-# ROLLING         = 1.6
-# LATERAL_GRIP    = 10
-# STEER_SENS      = 1/50
-# DRIFT_SENS      = 1/8000
-# OVERSTEER       = 1.5/100
-# MAX_SPEED       = 1200.0
-# WALL_RESTITUTION = 0.3
-# ANGLE_DAMP      = 25
 
 VIEW_ANGLE = 70 * math.pi / 180.0  # radians
 
@@ -59,6 +47,8 @@ KEY_REPEAT_INTERVAL = 35
 MIN_NAME_LENGTH = 3
 MAX_NAME_LENGTH = 12
 PROFANITY_SET = {"NIGGER", "NIGGA", "NIGA"}
+
+BTN_WIDTH, BTN_HEIGHT = 150, 50
 
 # Colors
 BLACK = (0, 0, 0)
@@ -317,7 +307,7 @@ def main():
         img = pygame.image.load(f"images/AE86/{i:04}.png").convert_alpha()
         au86_sprite.append(img)
 
-    stage = "menu"  # menu | playing | error
+    stage = "menu"  # menu | playing | settings | keys | error
     error_msg = ""
     remotes = {}
 
@@ -446,6 +436,15 @@ def main():
                         except Exception as ex:
                             stage = "error"
                             error_msg = f"Net error: {ex}"
+                            
+            elif stage == "playing" and ev.type == pygame.KEYDOWN:
+                if ev.key == ESCAPE_KEY: # open settings menu
+                    stage = "settings"
+                            
+            elif stage == "settings" and ev.type == pygame.KEYDOWN:
+                if ev.key == ESCAPE_KEY: # leave settings menu
+                    stage = "playing"
+
             elif stage == "error" and ev.type == pygame.KEYDOWN:
                 if ev.key == RESET_KEY:
                     stage = "menu"
@@ -516,6 +515,31 @@ def main():
             world_surf.blit(tip2, (int(WINDOW_WIDTH*.7 - tip2.get_width()//2), 13))
             world_surf.blit(relay, (WINDOW_WIDTH//2 - relay.get_width()//2, WINDOW_HEIGHT-30))
 
+        def leave_room():
+            global stage
+            stage = "menu"
+            # socket bye
+
+        def show_key_binds():
+            print("Showing key binds...")
+            # to do
+
+        def resume_game():
+            global stage
+            stage = "playing"
+            # make so we dont see the btns anymore
+
+        buttons = [
+            btn.Button("Leave Room", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.4, BTN_WIDTH, BTN_HEIGHT, (200, 0, 0), (255, 50, 50), leave_room),
+            btn.Button("Key Binds", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.5, BTN_WIDTH, BTN_HEIGHT, (50, 50, 200), (100, 100, 255), show_key_binds),
+            btn.Button("Resume", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.6, BTN_WIDTH, BTN_HEIGHT, (0, 150, 0), (0, 200, 0), resume_game),
+        ]
+
+        if stage == "settings":
+            title = font_big.render("Settings", True, WHITE_240)
+            world_surf.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, 7))
+            for button in buttons: button.draw(world_surf)
+
         if stage == "error":
             errh = font_big.render("ERROR", True, (255,120,120))
             world_surf.blit(errh, (WINDOW_WIDTH//2 - errh.get_width()//2, WINDOW_HEIGHT//2 - 40))
@@ -523,6 +547,8 @@ def main():
             world_surf.blit(msg, (WINDOW_WIDTH//2 - msg.get_width()//2, WINDOW_HEIGHT//2))
             tip = font_small.render("Press R to restart", True, GREY_200)
             world_surf.blit(tip, (WINDOW_WIDTH//2 - tip.get_width()//2, WINDOW_HEIGHT//2 + 40))
+
+        # print(stage)
 
         # Apply camera transform (zoom & pan) and blit to screen.
         final_surf = cam.apply(world_surf)
