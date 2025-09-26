@@ -1,28 +1,25 @@
 #!/usr/bin/env python3
 """
-Top-down drift game client (client-trust network via Pi relay)
+Top-down drift game client with camera (zoom & pan)
 Refactored to remove magic numbers and reduce spaghetti code.
 """
 
 import pygame, socket, json, time, random, string, sys, math, uuid, argparse
 
 # ======= CONFIGURATION =======
-# Relay endpoint
 RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
 
-# Window and track settings
+# World dimensions
 WINDOW_WIDTH, WINDOW_HEIGHT = 1000, 700
 TRACK_MARGIN = 40
 TRACK_COLOR = (35, 40, 50)
 TRACK_BORDER_COLOR = (80, 90, 100)
 TRACK_BORDER_WIDTH = 4
 
-# Gameplay rates
 FPS = 75
 SEND_HZ = 60.0       # client -> relay state rate
 PING_HZ = 1/5        # keepalive (~5 s)
 
-# Join room code parameters
 JOIN_CODE_LEN = 4
 ROOM_ALPHABET = string.ascii_uppercase + string.digits
 MAX_CODE_LENGTH = 12
@@ -45,11 +42,9 @@ ANGLE_DAMP      = 25
 
 VIEW_ANGLE = 70 * math.pi / 180.0  # radians
 
-# Input repetition settings
 KEY_REPEAT_DELAY = 250
 KEY_REPEAT_INTERVAL = 35
 
-# Name input
 MIN_NAME_LENGTH = 3
 MAX_NAME_LENGTH = 12
 PROFANITY_SET = {"NIGGER", "NIGGA", "NIGA"}
@@ -89,49 +84,40 @@ class Car:
         self.drift_ratio = 0 
 
     def step(self, inputs, dt, players):
-        # Unpack input controls
         th = clamp(inputs.get("th", 0.0), -1.0, 1.0)
         st = clamp(inputs.get("st", 0.0), -1.0, 1.0)
         br = inputs.get("br", 0.0)
 
-        # Calculate forward and lateral axes
         fx, fy = math.cos(self.angle), math.sin(self.angle)
         rx, ry = -fy, fx
 
-        # Get current velocity components
         v_forward = self.vx * fx + self.vy * fy
         v_lateral = self.vx * rx + self.vy * ry
         
         self.drift_ratio = clamp(abs(v_lateral)/200, 0, 1)
 
-        # Compute accelerations
         a_forward = th * ENGINE_ACC
         a_lateral = -v_lateral * LATERAL_GRIP * (1-self.drift_ratio/2) * (1-br)
         
-        # Update acceleration in world coordinates
         acc_fx = fx * a_forward + rx * a_lateral
         acc_fy = fy * a_forward + ry * a_lateral
         
-        acc_fx += -self.vx + -self.vx*br
-        acc_fy += -self.vy + -self.vy*br
+        acc_fx += -self.vx - self.vx*br
+        acc_fy += -self.vy - self.vy*br
         
         self.vx += acc_fx * dt
         self.vy += acc_fy * dt
         self.x  += self.vx * dt
         self.y  += self.vy * dt
 
-        # Update angular velocity and angle
         drift_moment = (STEER_SENS * st * math.copysign(v_forward, th) + (OVERSTEER * -self.v_angle))
         drift_moment +=  math.copysign(self.v_angle/100, st)
-        
         self.v_angle += drift_moment
         
         self.angle += ((STEER_SENS * st * v_forward)*(1-self.drift_ratio) + self.v_angle*self.drift_ratio * dt) * dt
 
-        # Check track boundaries
         self._handle_track_bounds(dt)
 
-        # Collision with other players (simplified circle overlap)
         for pid, d in players.items():
             if d["name"] == self.name:
                 continue
@@ -177,7 +163,6 @@ def draw_car(surface, x, y, angle, name,
              color_nose=COLOR_NOSE_DEFAULT, car_sprite=[]):
     ca, sa = math.cos(angle), math.sin(angle)
     halfL, halfW = CAR_LEN * 0.5, CAR_WID * 0.5
-    # Car rectangle points
     pts = [(+halfL, +halfW),
            (+halfL, -halfW),
            (-halfL, -halfW),
@@ -187,28 +172,14 @@ def draw_car(surface, x, y, angle, name,
         rx = px * ca - py * sa
         ry = px * sa + py * ca
         wpts.append((int(x + rx), int(y + ry)))
-    #pygame.draw.polygon(surface, color_body, wpts)
-    ## Draw the nose
-    #nose = (x + ca * halfL, y + sa * halfL)
-    #lft = (x + ca * (halfL * 0.4) - sa * (halfW * 0.9),
-    #       y + sa * (halfL * 0.4) + ca * (halfW * 0.9))
-    #rgt = (x + ca * (halfL * 0.4) + sa * (halfW * 0.9),
-    #       y + sa * (halfL * 0.4) - ca * (halfW * 0.9))
-    #pygame.draw.polygon(surface, color_nose,
-    #                    [(int(nose[0]), int(nose[1])),
-    #                     (int(lft[0]), int(lft[1])),
-    #                     (int(rgt[0]), int(rgt[1]))])
-    
     show_angle = (-angle + math.pi/2) % (2*math.pi) / (2*math.pi)
-    surface.blit(car_sprite[int(show_angle*32)%32], (int(x-150/2), int(y-150/2))) 
-    
+    sprite_index = int(show_angle * 32) % 32
+    surface.blit(car_sprite[sprite_index], (int(x-75/2), int(y-75/2))) 
     if name:
         font = pygame.font.SysFont(None, 22)
         text = font.render(name, True, (230,230,255))
         surface.blit(text, (int(x-text.get_width()/2), int(y-40)))
-        
-
-    return (wpts[2], wpts[3])  # return rear left and right points
+    return (wpts[2], wpts[3])  # rear left and right
 
 def draw_track(surface):
     pygame.draw.rect(surface, TRACK_COLOR, (0,0,WINDOW_WIDTH,WINDOW_HEIGHT))
@@ -244,19 +215,19 @@ def connect_to_relay():
     s.connect(addr_info[4])
     return s
 
-def get_text_input(screen, title_text, tip_text, font_big, font_small, allowed_set=None):
+def get_text_input(surface, title_text, tip_text, font_big, font_small, allowed_set=None):
     pygame.key.set_repeat(KEY_REPEAT_DELAY, KEY_REPEAT_INTERVAL)
     text = ""
     while True:
-        screen.fill((20,20,25))
-        draw_track(screen)
+        surface.fill((20,20,25))
+        draw_track(surface)
         title = font_big.render(title_text, True, (230,230,240))
-        screen.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, WINDOW_HEIGHT//2 - 70))
+        surface.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, WINDOW_HEIGHT//2 - 70))
         disp_text = text if text else "(empty)"
         inp = font_big.render(disp_text, True, (180,255,180))
-        screen.blit(inp, (WINDOW_WIDTH//2 - inp.get_width()//2, WINDOW_HEIGHT//2 - 10))
+        surface.blit(inp, (WINDOW_WIDTH//2 - inp.get_width()//2, WINDOW_HEIGHT//2 - 10))
         tip = font_small.render(tip_text, True, (180,180,180))
-        screen.blit(tip, (WINDOW_WIDTH//2 - tip.get_width()//2, WINDOW_HEIGHT//2 + 40))
+        surface.blit(tip, (WINDOW_WIDTH//2 - tip.get_width()//2, WINDOW_HEIGHT//2 + 40))
         pygame.display.flip()
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
@@ -274,29 +245,29 @@ def get_text_input(screen, title_text, tip_text, font_big, font_small, allowed_s
                         if len(text) < MAX_CODE_LENGTH:
                             text += ch
 
-def get_code_input(screen, font_big, font_small):
-    return get_text_input(screen,
+def get_code_input(surface, font_big, font_small):
+    return get_text_input(surface,
                           "Enter ROOM CODE (A-Z/0-9)",
                           "Enter = OK   Esc = cancel",
                           font_big, font_small, allowed_set=ROOM_ALPHABET)
 
-def get_name_input(screen, font_big, font_small):
+def get_name_input(surface, font_big, font_small):
     pygame.key.set_repeat(KEY_REPEAT_DELAY, KEY_REPEAT_INTERVAL)
     text = ""
     error_msg = ""
     while True:
-        screen.fill((20,20,25))
-        draw_track(screen)
+        surface.fill((20,20,25))
+        draw_track(surface)
         title = font_big.render("Enter your name", True, (230,230,240))
-        screen.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, WINDOW_HEIGHT//2 - 70))
+        surface.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, WINDOW_HEIGHT//2 - 70))
         disp_text = text if text else "(empty)"
         inp = font_big.render(disp_text, True, (180,255,180))
-        screen.blit(inp, (WINDOW_WIDTH//2 - inp.get_width()//2, WINDOW_HEIGHT//2 - 10))
+        surface.blit(inp, (WINDOW_WIDTH//2 - inp.get_width()//2, WINDOW_HEIGHT//2 - 10))
         tip = font_small.render("Enter : OK  -  Esc : cancel", True, (180,180,180))
-        screen.blit(tip, (WINDOW_WIDTH//2 - tip.get_width()//2, WINDOW_HEIGHT//2 + 40))
+        surface.blit(tip, (WINDOW_WIDTH//2 - tip.get_width()//2, WINDOW_HEIGHT//2 + 40))
         if error_msg:
             error_surf = font_big.render(error_msg, True, (230,80,80))
-            screen.blit(error_surf, (WINDOW_WIDTH//2 - error_surf.get_width()//2, WINDOW_HEIGHT//2 - 120))
+            surface.blit(error_surf, (WINDOW_WIDTH//2 - error_surf.get_width()//2, WINDOW_HEIGHT//2 - 120))
         pygame.display.flip()
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
@@ -311,13 +282,13 @@ def get_name_input(screen, font_big, font_small):
                         continue
                     return text
                 if ev.key == pygame.K_ESCAPE:
-                    return None # switch to menu page
+                    return None
                 if ev.key == pygame.K_BACKSPACE:
                     text = text[:-1]
                     error_msg = ""
                 else:
                     ch = ev.unicode
-                    if (ch.isprintable()) and (len(text) < MAX_NAME_LENGTH):
+                    if ch.isprintable() and len(text) < MAX_NAME_LENGTH:
                         text += ch
                         error_msg = ""
 
@@ -329,16 +300,11 @@ def handle_network_messages(sock, remotes, dt, my_id):
             pass
         elif t == "world":
             players = msg.get("players", {}) or {}
-            alpha_pos = min(1.0, dt * 10.0)
-            alpha_angle = min(1.0, dt * 10.0)
-            # Update remote players (smoothing)
-            # You can adjust these constants to change the smoothing amount.
-            POS_SMOOTHING_MULTIPLIER = 300.0   # Increase for faster positional smoothing
-            ANGLE_SMOOTHING_MULTIPLIER = 300.0 # Increase for faster angular smoothing
-
+            POS_SMOOTHING_MULTIPLIER = 300.0
+            ANGLE_SMOOTHING_MULTIPLIER = 300.0
             alpha_pos = min(1.0, dt * POS_SMOOTHING_MULTIPLIER)
             alpha_angle = min(1.0, dt * ANGLE_SMOOTHING_MULTIPLIER)
-            for pid, d in players.items(): # pid: player id
+            for pid, d in players.items():
                 if pid == my_id:
                     continue
                 tx, ty, ta, tdr = float(d["x"]), float(d["y"]), float(d["a"]), float(d["drift_ratio"])
@@ -350,11 +316,9 @@ def handle_network_messages(sock, remotes, dt, my_id):
                     cur["x"] += (tx - cur["x"]) * alpha_pos
                     cur["y"] += (ty - cur["y"]) * alpha_pos
                     cur["drift_ratio"] += (tdr - cur["drift_ratio"]) * alpha_pos
-                    # Angle smoothing with wrap-around
                     da = ((ta - cur["a"] + math.pi) % (2 * math.pi)) - math.pi
                     cur["a"] = (cur["a"] + da * alpha_angle) % (2 * math.pi)
                     cur["name"] = name
-            # Remove players that are no longer present
             for pid in list(remotes.keys()):
                 if pid not in players:
                     remotes.pop(pid, None)
@@ -362,7 +326,7 @@ def handle_network_messages(sock, remotes, dt, my_id):
             return msg.get("msg", "error")
     return None
 
-def send_network_state(sock, code, my_id, car): # send pos and trigger world broadcoast
+def send_network_state(sock, code, my_id, car):
     pkt = {
         "t": "state",
         "code": code,
@@ -394,20 +358,42 @@ def read_inputs(joysticks):
         th = 1.0 if th > 0 else -1.0
     if st != 0:
         st = 1.0 if st > 0 else -1.0
-        
-    
-    # Read joystick axes (assuming axis 1 for throttle, axis 0 for steering)
-    if joysticks[0] != []:
+
+    if joysticks and joysticks[0] != []:
         js = joysticks[0]
-        steering = js.get_axis(0)  # Left trigger
-        throttle = (js.get_axis(5)+1)/2  # Right trigger
-        breaks = (js.get_axis(4)+1)/2  # Right trigger
-        
+        steering = js.get_axis(0)
+        throttle = (js.get_axis(5)+1)/2
+        breaks = (js.get_axis(4)+1)/2
         st = steering if steering != 0 else st
         th = throttle if throttle != 0 else th
         br = breaks if breaks != 0 else br
-        
     return {"th": th, "st": st, "br": br}
+
+class Camera:
+    def __init__(self, width, height, zoom=1.0):
+        self.width = width
+        self.height = height
+        self.zoom = zoom
+        self.x = width // 2
+        self.y = height // 2
+        self.offset = [0, 0]  # additional pan offset
+
+    def update(self, target):
+        # Follow the target with any offset
+        self.x = target.x + self.offset[0]
+        self.y = target.y + self.offset[1]
+
+    def apply(self, world_surf):
+        view_w = int(self.width / self.zoom)
+        view_h = int(self.height / self.zoom)
+        left = int(self.x - view_w // 2)
+        top = int(self.y - view_h // 2)
+        # Clamp the view rect within the world surface
+        left = max(0, min(world_surf.get_width()-view_w, left))
+        top = max(0, min(world_surf.get_height()-view_h, top))
+        view_rect = pygame.Rect(left, top, view_w, view_h)
+        view = world_surf.subsurface(view_rect)
+        return pygame.transform.scale(view, (self.width, self.height))
 
 def main():
     parser = argparse.ArgumentParser()
@@ -415,7 +401,6 @@ def main():
     parser.add_argument("--code")
     parser.add_argument("--name")
     args, unknown = parser.parse_known_args()
-
 
     pygame.init()
     pygame.joystick.init()
@@ -426,9 +411,11 @@ def main():
     font_medium = pygame.font.SysFont(None, 30)
     font_big = pygame.font.SysFont(None, 46)
     
+    # Load car sprites
     au86_sprite = []
     for i in range(32):
-        au86_sprite.append(pygame.image.load(f"images/AE86/{i:04}.png"))
+        img = pygame.image.load(f"images/AE86/{i:04}.png").convert_alpha()
+        au86_sprite.append(img)
 
     stage = "menu"  # menu | playing | error
     error_msg = ""
@@ -481,18 +468,21 @@ def main():
 
     tire_mark = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
     tire_mark.fill((255, 255, 255, 0))
-
     drift_points_old = []
     drift_points_old_remotes = {}
-    
+
     joysticks = [pygame.joystick.Joystick(i) for i in range(pygame.joystick.get_count())]
     for js in joysticks:
         js.init()
 
+    # Create a camera object; mouse wheel will adjust zoom and middle mouse drag will pan.
+    camera = Camera(WINDOW_WIDTH, WINDOW_HEIGHT, zoom=1.0)
+    dragging = False
+
     while True:
         dt = clock.tick(FPS) / 1000.0
-        for ev in pygame.event.get(): # event handling
-            if ev.type == pygame.QUIT: # send "bye" packet then quit
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
                 if sock and code:
                     try:
                         sock.send(json.dumps({"t": "bye", "code": code, "id": my_id}).encode("utf-8"))
@@ -500,75 +490,85 @@ def main():
                         pass
                 pygame.quit()
                 sys.exit(0)
-            if stage == "menu" and ev.type == pygame.KEYDOWN: # menu page
-                if ev.key == pygame.K_h:  # Host: create room
-                    new_name = get_name_input(screen, font_big, font_small) # player enter name
-                    if new_name is not None: # save name
+            if ev.type == pygame.MOUSEWHEEL:
+                # Adjust zoom (clamp between 0.5 and 3.0)
+                camera.zoom *= 1.1 if ev.y > 0 else 0.9
+                camera.zoom = clamp(camera.zoom, 0.5, 3.0)
+            if ev.type == pygame.MOUSEBUTTONDOWN:
+                if ev.button == 2:  # Middle mouse for panning
+                    dragging = True
+            if ev.type == pygame.MOUSEBUTTONUP:
+                if ev.button == 2:
+                    dragging = False
+            if ev.type == pygame.MOUSEMOTION and dragging:
+                # Adjust pan offset (divide by zoom so that panning is smooth)
+                camera.offset[0] -= ev.rel[0] / camera.zoom
+                camera.offset[1] -= ev.rel[1] / camera.zoom
+
+            if stage == "menu" and ev.type == pygame.KEYDOWN:
+                if ev.key == pygame.K_h:  # Host room
+                    new_name = get_name_input(screen, font_big, font_small)
+                    if new_name is not None:
                         my_name = new_name
                         my_car.name = my_name
-                        code = rand_code() # room code
+                        code = rand_code()
                         try:
-                            sock = connect_to_relay() # connect to relay
-                            join_pkt = {"t": "create", "code": code, "name": my_name, "id": my_id} # <-- changed here
+                            sock = connect_to_relay()
+                            join_pkt = {"t": "create", "code": code, "name": my_name, "id": my_id}
                             sock.send(json.dumps(join_pkt).encode("utf-8"))
-                            stage = "playing" # switch to playing page
+                            stage = "playing"
                         except Exception as ex:
-                            stage = "error" # switch to error page
+                            stage = "error"
                             error_msg = f"Net error: {ex}"
                 elif ev.key == pygame.K_j:  # Join room
-                    new_name = get_name_input(screen, font_big, font_small) # player enter name
-                    if new_name is not None: # save name
+                    new_name = get_name_input(screen, font_big, font_small)
+                    if new_name is not None:
                         my_name = new_name
                         my_car.name = my_name
-                        jcode = get_code_input(screen, font_big, font_small) # player enter room code
+                        jcode = get_code_input(screen, font_big, font_small)
                         if not jcode:
                             continue
                         try:
-                            sock = connect_to_relay() # connect to relay
+                            sock = connect_to_relay()
                             code = jcode.upper()
-                            join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id} # unchanged
+                            join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id}
                             sock.send(json.dumps(join_pkt).encode("utf-8"))
                             join_ok_received = False
-                            timeout = time.time() + 1.0  # wait up to 5 seconds
+                            timeout = time.time() + 1.0
                             while not join_ok_received and time.time() < timeout:
                                 for msg in recv_jsons(sock):
                                     if msg.get("t") == "join_ok":
                                         join_ok_received = True
                                         break
-
                             if not join_ok_received:
                                 raise Exception("Failed to connect: no join confirmation received")
-                            stage = "playing" # switch to playing page
-
+                            stage = "playing"
                         except Exception as ex:
-                            stage = "error" # switch to error page
+                            stage = "error"
                             error_msg = f"Net error: {ex}"
-
             elif stage == "error" and ev.type == pygame.KEYDOWN:
-                    if  ev.key == pygame.K_r:
-                        stage = "menu"
-                        error_msg = ""
-                        remotes.clear()
-                        if sock:
-                            try:
-                                sock.send(json.dumps({"t": "bye", "code": code, "id": my_id}).encode("utf-8"))
-                            except Exception:
-                                pass
-                            sock.close()
-                            sock = None
-                        code = None
-                        spawnx = random.randint(TRACK_MARGIN + 200, WINDOW_WIDTH - TRACK_MARGIN - 200)
-                        spawny = random.randint(TRACK_MARGIN + 120, WINDOW_HEIGHT - TRACK_MARGIN - 120)
-                        my_car = Car(spawnx, spawny, my_name)
+                if ev.key == pygame.K_r:
+                    stage = "menu"
+                    error_msg = ""
+                    remotes.clear()
+                    if sock:
+                        try:
+                            sock.send(json.dumps({"t": "bye", "code": code, "id": my_id}).encode("utf-8"))
+                        except Exception:
+                            pass
+                        sock.close()
+                        sock = None
+                    code = None
+                    spawnx = random.randint(TRACK_MARGIN + 200, WINDOW_WIDTH - TRACK_MARGIN - 200)
+                    spawny = random.randint(TRACK_MARGIN + 120, WINDOW_HEIGHT - TRACK_MARGIN - 120)
+                    my_car = Car(spawnx, spawny, my_name)
 
-        # Process networking : read msgs
         if sock:
-            err = handle_network_messages(sock, remotes, dt, my_id) # update remote players' list
-            if err: # if error
-                stage = "error" # switch to error page
+            err = handle_network_messages(sock, remotes, dt, my_id)
+            if err:
+                stage = "error"
                 error_msg = err
 
-        # Networking Out: send state & ping at defined intervals
         if sock and code:
             now = time.time()
             if now - last_state_send >= 1.0 / SEND_HZ:
@@ -578,59 +578,55 @@ def main():
                 last_ping = now
                 send_ping(sock, code)
 
-        my_car.step(read_inputs(joysticks), dt, remotes) # Update car physics with local input
+        my_car.step(read_inputs(joysticks), dt, remotes)
+        camera.update(my_car)
 
-        # Draw screen and track
-        screen.fill(GREY_20)
-        draw_track(screen)
+        # Draw game world onto an off-screen surface.
+        world_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+        world_surf.fill(GREY_20)
+        draw_track(world_surf)
+        world_surf.blit(tire_mark, (0,0))
+        drift_points = draw_car(world_surf, my_car.x, my_car.y, my_car.angle, my_car.name,
+                                  color_body=COLOR_MY_CAR, car_sprite=au86_sprite)
+        if my_car.drift_ratio > 0.8 and drift_points_old:
+            pygame.draw.line(tire_mark, (255,255,255,100), drift_points[0], drift_points_old[0], 3)
+            pygame.draw.line(tire_mark, (255,255,255,100), drift_points[1], drift_points_old[1], 3)
+        drift_points_old = drift_points
+        tire_mark.fill((255, 255, 255, 250), special_flags=pygame.BLEND_RGBA_MULT)
 
-        # Menu draws
+        if stage == "playing":
+            hud = font_small.render(f"Room: {code}", True, GREY_180)
+            world_surf.blit(hud, (10, WINDOW_HEIGHT - 30))
+            for pid, d in remotes.items():
+                drift_points_remote = draw_car(world_surf, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
+                                               color_body=COLOR_BODY_REMOTE, car_sprite=au86_sprite)
+                if d["drift_ratio"] > 0.8 and pid in drift_points_old_remotes:
+                    old_pts = drift_points_old_remotes[pid]
+                    pygame.draw.line(tire_mark, (255,255,255,100), drift_points_remote[0], old_pts[0], 3)
+                    pygame.draw.line(tire_mark, (255,255,255,100), drift_points_remote[1], old_pts[1], 3)
+                drift_points_old_remotes[pid] = drift_points_remote
+
         if stage == "menu":
             title = font_big.render("Menu", True, WHITE_240)
-            screen.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, 7))
+            world_surf.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, 7))
             tip1 = font_medium.render("H : Host room", True, GREY_200)
             tip2 = font_medium.render("J : Join room", True, GREY_200)
             relay = font_small.render(f"Relay: {RELAY_PUBLIC_ENDPOINT}", True, GREY_180)
-            screen.blit(tip1, (WINDOW_WIDTH*.3 - tip1.get_width()//2, 13))
-            screen.blit(tip2, (WINDOW_WIDTH*.7 - tip2.get_width()//2, 13))
-            screen.blit(relay, (WINDOW_WIDTH//2 - relay.get_width()//2, WINDOW_HEIGHT-30))
-
-        # Always draw my car
-
-
-        screen.blit(tire_mark, (0,0))
-        drift_points = draw_car(screen, my_car.x, my_car.y, my_car.angle, my_car.name, color_body=COLOR_MY_CAR, car_sprite=au86_sprite)
-        if my_car.drift_ratio > 0.8 and drift_points_old != []:
-            pygame.draw.line(tire_mark, (255,255,255,100), drift_points[0], drift_points_old[0], 3)
-            pygame.draw.line(tire_mark, (255,255,255,100), drift_points[1], drift_points_old[1], 3)
-            # Fade tire marks
-        drift_points_old = drift_points
-        tire_mark.fill((255, 255, 255, 250), special_flags=pygame.BLEND_RGBA_MULT)
-        
-
-        # Game playing: draw room code and remote players
-        if stage == "playing":
-            hud = font_small.render(f"Room: {code}", True, GREY_180)
-            screen.blit(hud, (10, WINDOW_HEIGHT - 30))
-            for pid, d in remotes.items():
-                drift_points = draw_car(screen, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
-                         color_body=COLOR_BODY_REMOTE, car_sprite=au86_sprite)
-                
-                if d["drift_ratio"] > 0.8 and pid in drift_points_old_remotes:
-                    old_pts = drift_points_old_remotes[pid]
-                    pygame.draw.line(tire_mark, (255,255,255,100), drift_points[0], old_pts[0], 3)
-                    pygame.draw.line(tire_mark, (255,255,255,100), drift_points[1], old_pts[1], 3)
-                drift_points_old_remotes[pid] = drift_points
-                
+            world_surf.blit(tip1, (int(WINDOW_WIDTH*.3 - tip1.get_width()//2), 13))
+            world_surf.blit(tip2, (int(WINDOW_WIDTH*.7 - tip2.get_width()//2), 13))
+            world_surf.blit(relay, (WINDOW_WIDTH//2 - relay.get_width()//2, WINDOW_HEIGHT-30))
 
         if stage == "error":
             errh = font_big.render("ERROR", True, (255,120,120))
-            screen.blit(errh, (WINDOW_WIDTH//2 - errh.get_width()//2, WINDOW_HEIGHT//2 - 40))
+            world_surf.blit(errh, (WINDOW_WIDTH//2 - errh.get_width()//2, WINDOW_HEIGHT//2 - 40))
             msg = font_small.render(error_msg, True, (255,200,200))
-            screen.blit(msg, (WINDOW_WIDTH//2 - msg.get_width()//2, WINDOW_HEIGHT//2))
+            world_surf.blit(msg, (WINDOW_WIDTH//2 - msg.get_width()//2, WINDOW_HEIGHT//2))
             tip = font_small.render("Press R to restart", True, GREY_200)
-            screen.blit(tip, (WINDOW_WIDTH//2 - tip.get_width()//2, WINDOW_HEIGHT//2 + 40))
+            world_surf.blit(tip, (WINDOW_WIDTH//2 - tip.get_width()//2, WINDOW_HEIGHT//2 + 40))
 
+        # Apply camera transform (zoom & pan) and blit to screen.
+        final_surf = camera.apply(world_surf)
+        screen.blit(final_surf, (0,0))
         pygame.display.flip()
 
 if __name__ == "__main__":
