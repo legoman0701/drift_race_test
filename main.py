@@ -198,6 +198,8 @@ def draw_car(surface, x, y, angle, name,
         text = font.render(name, True, (230,230,255))
         surface.blit(text, (int(x) + 12, int(y) - 10))
 
+    return (wpts[2], wpts[3])  # return rear left and right points
+
 def draw_track(surface):
     pygame.draw.rect(surface, TRACK_COLOR, (0,0,WINDOW_WIDTH,WINDOW_HEIGHT))
     pygame.draw.rect(surface, TRACK_BORDER_COLOR,
@@ -358,7 +360,8 @@ def send_network_state(sock, code, my_id, car): # send pos and trigger world bro
         "y": round(car.y, 2),
         "a": round(car.angle, 4),
         "vx": round(car.vx, 2),
-        "vy": round(car.vy, 2)
+        "vy": round(car.vy, 2),
+        "drift_ratio": round(car.drift_ratio, 2)
     }
     try:
         sock.send(json.dumps(pkt).encode("utf-8"))
@@ -447,6 +450,11 @@ def main():
         except Exception as ex:
             stage = "error"
             error_msg = f"Net error: {ex}"
+
+    tire_mark = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+    tire_mark.fill((255, 255, 255, 0))
+
+    drift_points_old = []
 
     while True:
         dt = clock.tick(FPS) / 1000.0
@@ -555,13 +563,24 @@ def main():
             screen.blit(relay, (WINDOW_WIDTH//2 - relay.get_width()//2, WINDOW_HEIGHT-30))
 
         # Always draw my car
-        draw_car(screen, my_car.x, my_car.y, my_car.angle, my_car.name, color_body=COLOR_MY_CAR)
+
+
+        screen.blit(tire_mark, (0,0))
+        drift_points = draw_car(screen, my_car.x, my_car.y, my_car.angle, my_car.name, color_body=COLOR_MY_CAR)
+        if my_car.drift_ratio > 0.8 and drift_points_old != []:
+            pygame.draw.line(tire_mark, (255,255,255,100), drift_points[0], drift_points_old[0], 3)
+            pygame.draw.line(tire_mark, (255,255,255,100), drift_points[1], drift_points_old[1], 3)
+            # Fade tire marks
+        drift_points_old = drift_points
+        tire_mark.fill((255, 255, 255, 250), special_flags=pygame.BLEND_RGBA_MULT)
         
+
         # Game playing: draw room code and remote players
         if stage == "playing":
             hud = font_small.render(f"Room: {code}", True, GREY_180)
             screen.blit(hud, (10, WINDOW_HEIGHT - 30))
             for pid, d in remotes.items():
+                print(d["drift_ratio"])
                 draw_car(screen, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
                          color_body=COLOR_BODY_REMOTE)
 
