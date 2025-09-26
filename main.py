@@ -162,8 +162,10 @@ class Car:
     def _handle_collision(self, dx, dy, dist2):
         dist = math.sqrt(dist2) if dist2 > 0 else 0.01
         overlap = (CAR_LEN - dist) / 2.0
-        self.vx -= (dx / dist) * overlap * WALL_RESTITUTION
-        self.vy -= (dy / dist) * overlap * WALL_RESTITUTION
+        self.x -= (dx / dist) * overlap*0.9
+        self.y -= (dy / dist) * overlap*0.9
+        self.vx -= (dx / dist) * overlap * 5
+        self.vy -= (dy / dist) * overlap * 5
 
 def draw_car(surface, x, y, angle, name,
              color_body=COLOR_BODY_DEFAULT,
