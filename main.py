@@ -4,7 +4,7 @@ Top-down drift game client (client-trust network via Pi relay)
 Refactored to remove magic numbers and reduce spaghetti code.
 """
 
-import pygame, socket, json, time, random, string, sys, math, uuid
+import pygame, socket, json, time, random, string, sys, math, uuid, argparse
 
 # ======= CONFIGURATION =======
 # Relay endpoint
@@ -162,12 +162,8 @@ class Car:
     def _handle_collision(self, dx, dy, dist2):
         dist = math.sqrt(dist2) if dist2 > 0 else 0.01
         overlap = (CAR_LEN - dist) / 2.0
-        nx, ny = dx / dist, dy / dist
-        self.x -= nx * overlap
-        self.y -= ny * overlap
-        dot = self.vx * nx + self.vy * ny
-        self.vx = (self.vx - 2 * dot * nx) * WALL_RESTITUTION
-        self.vy = (self.vy - 2 * dot * ny) * WALL_RESTITUTION
+        self.vx -= (dx / dist) * overlap * WALL_RESTITUTION
+        self.vy -= (dy / dist) * overlap * WALL_RESTITUTION
 
 def draw_car(surface, x, y, angle, name,
              color_body=COLOR_BODY_DEFAULT,
@@ -322,7 +318,13 @@ def handle_network_messages(sock, remotes, dt, my_id):
             alpha_pos = min(1.0, dt * 10.0)
             alpha_angle = min(1.0, dt * 10.0)
             # Update remote players (smoothing)
-            for pid, d in players.items(): # pid : player id
+            # You can adjust these constants to change the smoothing amount.
+            POS_SMOOTHING_MULTIPLIER = 50.0   # Increase for faster positional smoothing
+            ANGLE_SMOOTHING_MULTIPLIER = 50.0 # Increase for faster angular smoothing
+
+            alpha_pos = min(1.0, dt * POS_SMOOTHING_MULTIPLIER)
+            alpha_angle = min(1.0, dt * ANGLE_SMOOTHING_MULTIPLIER)
+            for pid, d in players.items(): # pid: player id
                 if pid == my_id:
                     continue
                 tx, ty, ta = float(d["x"]), float(d["y"]), float(d["a"])
@@ -334,8 +336,8 @@ def handle_network_messages(sock, remotes, dt, my_id):
                     cur["x"] += (tx - cur["x"]) * alpha_pos
                     cur["y"] += (ty - cur["y"]) * alpha_pos
                     # Angle smoothing with wrap-around
-                    da = ((ta - cur["a"] + math.pi) % (2*math.pi)) - math.pi
-                    cur["a"] = (cur["a"] + da * alpha_angle) % (2*math.pi)
+                    da = ((ta - cur["a"] + math.pi) % (2 * math.pi)) - math.pi
+                    cur["a"] = (cur["a"] + da * alpha_angle) % (2 * math.pi)
                     cur["name"] = name
             # Remove players that are no longer present
             for pid in list(remotes.keys()):
@@ -379,6 +381,14 @@ def read_inputs():
     return {"th": th, "st": st, "br": br}
 
 def main():
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", choices=["host", "join"])
+    parser.add_argument("--code")
+    parser.add_argument("--name")
+    args, unknown = parser.parse_known_args()
+
+
     pygame.init()
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
     pygame.display.set_caption("Top-Down Drift — Client Trust (Pi relay)")
@@ -401,6 +411,40 @@ def main():
     spawnx = random.randint(TRACK_MARGIN + 200, WINDOW_WIDTH - TRACK_MARGIN - 200)
     spawny = random.randint(TRACK_MARGIN + 120, WINDOW_HEIGHT - TRACK_MARGIN - 120)
     my_car = Car(spawnx, spawny, my_name)
+
+    if args.mode == "host" and args.code and args.name:
+        my_name = args.name
+        my_car.name = my_name
+        code = args.code
+        try:
+            sock = connect_to_relay()
+            join_pkt = {"t": "create", "code": code, "name": my_name, "id": my_id}
+            sock.send(json.dumps(join_pkt).encode("utf-8"))
+            stage = "playing"
+        except Exception as ex:
+            stage = "error"
+            error_msg = f"Net error: {ex}"
+    elif args.mode == "join" and args.code and args.name:
+        my_name = args.name
+        my_car.name = my_name
+        code = args.code
+        try:
+            sock = connect_to_relay()
+            join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id}
+            sock.send(json.dumps(join_pkt).encode("utf-8"))
+            join_ok_received = False
+            timeout = time.time() + 1.0
+            while not join_ok_received and time.time() < timeout:
+                for msg in recv_jsons(sock):
+                    if msg.get("t") == "join_ok":
+                        join_ok_received = True
+                        break
+            if not join_ok_received:
+                raise Exception("Failed to connect: no join confirmation received")
+            stage = "playing"
+        except Exception as ex:
+            stage = "error"
+            error_msg = f"Net error: {ex}"
 
     while True:
         dt = clock.tick(FPS) / 1000.0
