@@ -493,7 +493,7 @@ def main():
             if ev.type == pygame.MOUSEWHEEL:
                 # Adjust zoom (clamp between 0.5 and 3.0)
                 camera.zoom *= 1.1 if ev.y > 0 else 0.9
-                camera.zoom = clamp(camera.zoom, 0.5, 3.0)
+                camera.zoom = clamp(camera.zoom, 1, 3.0)
             if ev.type == pygame.MOUSEBUTTONDOWN:
                 if ev.button == 2:  # Middle mouse for panning
                     dragging = True
