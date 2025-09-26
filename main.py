@@ -35,7 +35,7 @@ REVERSE_ACC     = 700.0
 BRAKE_DECEL     = 1400.0
 DRAG            = 0.35
 ROLLING         = 1.6
-LATERAL_GRIP    = 3.2
+LATERAL_GRIP    = 10
 STEER_SENS      = 1/50
 DRIFT_SENS      = 1/8000
 OVERSTEER       = 1.5/100
@@ -92,7 +92,7 @@ class Car:
         # Unpack input controls
         th = clamp(inputs.get("th", 0.0), -1.0, 1.0)
         st = clamp(inputs.get("st", 0.0), -1.0, 1.0)
-        br = 1.0 if inputs.get("br", 0.0) else 0.0
+        br = inputs.get("br", 0.0)
 
         # Calculate forward and lateral axes
         fx, fy = math.cos(self.angle), math.sin(self.angle)
@@ -101,14 +101,19 @@ class Car:
         # Get current velocity components
         v_forward = self.vx * fx + self.vy * fy
         v_lateral = self.vx * rx + self.vy * ry
+        
+        self.drift_ratio = clamp(abs(v_lateral)/200, 0, 1)
 
         # Compute accelerations
         a_forward = th * ENGINE_ACC
-        a_lateral = -v_lateral * LATERAL_GRIP
+        a_lateral = -v_lateral * LATERAL_GRIP * (1-self.drift_ratio/2) * (1-br)
         
         # Update acceleration in world coordinates
         acc_fx = fx * a_forward + rx * a_lateral
         acc_fy = fy * a_forward + ry * a_lateral
+        
+        acc_fx += -self.vx + -self.vx*br
+        acc_fy += -self.vy + -self.vy*br
         
         self.vx += acc_fx * dt
         self.vy += acc_fy * dt
@@ -118,8 +123,6 @@ class Car:
         # Update angular velocity and angle
         drift_moment = (STEER_SENS * st * math.copysign(v_forward, th) + (OVERSTEER * -self.v_angle))
         drift_moment +=  math.copysign(self.v_angle/100, st)
-        
-        self.drift_ratio = clamp(abs(v_lateral)/200, 0, 1)
         
         self.v_angle += drift_moment
         
@@ -382,7 +385,7 @@ def send_ping(sock, code):
     except Exception:
         pass
 
-def read_inputs():
+def read_inputs(joysticks):
     keys = pygame.key.get_pressed()
     th = (keys[pygame.K_z] or keys[pygame.K_UP]) - (keys[pygame.K_s] or keys[pygame.K_DOWN])
     st = (keys[pygame.K_d] or keys[pygame.K_RIGHT]) - (keys[pygame.K_q] or keys[pygame.K_LEFT])
@@ -391,6 +394,19 @@ def read_inputs():
         th = 1.0 if th > 0 else -1.0
     if st != 0:
         st = 1.0 if st > 0 else -1.0
+        
+    
+    # Read joystick axes (assuming axis 1 for throttle, axis 0 for steering)
+    if joysticks[0] != []:
+        js = joysticks[0]
+        steering = js.get_axis(0)  # Left trigger
+        throttle = (js.get_axis(5)+1)/2  # Right trigger
+        breaks = (js.get_axis(4)+1)/2  # Right trigger
+        
+        st = steering if steering != 0 else st
+        th = throttle if throttle != 0 else th
+        br = breaks if breaks != 0 else br
+        
     return {"th": th, "st": st, "br": br}
 
 def main():
@@ -402,6 +418,7 @@ def main():
 
 
     pygame.init()
+    pygame.joystick.init()
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
     pygame.display.set_caption("Top-Down Drift — Client Trust (Pi relay)")
     clock = pygame.time.Clock()
@@ -467,6 +484,10 @@ def main():
 
     drift_points_old = []
     drift_points_old_remotes = {}
+    
+    joysticks = [pygame.joystick.Joystick(i) for i in range(pygame.joystick.get_count())]
+    for js in joysticks:
+        js.init()
 
     while True:
         dt = clock.tick(FPS) / 1000.0
@@ -557,7 +578,7 @@ def main():
                 last_ping = now
                 send_ping(sock, code)
 
-        my_car.step(read_inputs(), dt, remotes) # Update car physics with local input
+        my_car.step(read_inputs(joysticks), dt, remotes) # Update car physics with local input
 
         # Draw screen and track
         screen.fill(GREY_20)
