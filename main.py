@@ -36,9 +36,9 @@ BRAKE_DECEL     = 1400.0
 DRAG            = 0.35
 ROLLING         = 1.6
 LATERAL_GRIP    = 3.2
-STEER_SENS      = 1/80
+STEER_SENS      = 1/50
 DRIFT_SENS      = 1/8000
-OVERSTEER       = 0.015
+OVERSTEER       = 1.5/100
 MAX_SPEED       = 1200.0
 WALL_RESTITUTION = 0.3
 ANGLE_DAMP      = 25
@@ -115,6 +115,7 @@ class Car:
 
         # Update angular velocity and angle
         drift_moment = (STEER_SENS * st * math.copysign(v_forward, th) + (OVERSTEER * -self.v_angle))
+        drift_moment +=  math.copysign(self.v_angle/100, st)
         
         self.drift_ratio = clamp(abs(v_lateral)/200, 0, 1)
         
@@ -440,10 +441,38 @@ def main():
                             code = jcode.upper()
                             join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id} # send "join" packet
                             sock.send(json.dumps(join_pkt).encode("utf-8"))
+                            join_ok_received = False
+                            timeout = time.time() + 1.0  # wait up to 5 seconds
+                            while not join_ok_received and time.time() < timeout:
+                                for msg in recv_jsons(sock):
+                                    if msg.get("t") == "join_ok":
+                                        join_ok_received = True
+                                        break
+
+                            if not join_ok_received:
+                                raise Exception("Failed to connect: no join confirmation received")
                             stage = "playing" # switch to playing page
+
                         except Exception as ex:
                             stage = "error" # switch to error page
                             error_msg = f"Net error: {ex}"
+
+            elif stage == "error" and ev.type == pygame.KEYDOWN:
+                if  ev.key == pygame.K_r:
+                    stage = "menu"
+                    error_msg = ""
+                    remotes.clear()
+                    if sock:
+                        try:
+                            sock.send(json.dumps({"t": "bye", "code": code, "id": my_id}).encode("utf-8"))
+                        except Exception:
+                            pass
+                        sock.close()
+                        sock = None
+                    code = None
+                    spawnx = random.randint(TRACK_MARGIN + 200, WINDOW_WIDTH - TRACK_MARGIN - 200)
+                    spawny = random.randint(TRACK_MARGIN + 120, WINDOW_HEIGHT - TRACK_MARGIN - 120)
+                    my_car = Car(spawnx, spawny, my_name)
 
         # Process networking : read msgs
         if sock:
@@ -495,7 +524,7 @@ def main():
             screen.blit(errh, (WINDOW_WIDTH//2 - errh.get_width()//2, WINDOW_HEIGHT//2 - 40))
             msg = font_small.render(error_msg, True, (255,200,200))
             screen.blit(msg, (WINDOW_WIDTH//2 - msg.get_width()//2, WINDOW_HEIGHT//2))
-            tip = font_small.render("Restart to try again.", True, GREY_200)
+            tip = font_small.render("Press R to restart", True, GREY_200)
             screen.blit(tip, (WINDOW_WIDTH//2 - tip.get_width()//2, WINDOW_HEIGHT//2 + 40))
 
         pygame.display.flip()
