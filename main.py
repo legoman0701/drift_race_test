@@ -331,14 +331,15 @@ def handle_network_messages(sock, remotes, dt, my_id):
             for pid, d in players.items(): # pid: player id
                 if pid == my_id:
                     continue
-                tx, ty, ta = float(d["x"]), float(d["y"]), float(d["a"])
+                tx, ty, ta, tdr = float(d["x"]), float(d["y"]), float(d["a"]), float(d["drift_ratio"])
                 name = d.get("name", f"Player{pid}")
                 if pid not in remotes:
-                    remotes[pid] = {"x": tx, "y": ty, "a": ta, "name": name}
+                    remotes[pid] = {"x": tx, "y": ty, "a": ta, "name": name, "drift_ratio": tdr}
                 else:
                     cur = remotes[pid]
                     cur["x"] += (tx - cur["x"]) * alpha_pos
                     cur["y"] += (ty - cur["y"]) * alpha_pos
+                    cur["drift_ratio"] += (tdr - cur["drift_ratio"]) * alpha_pos
                     # Angle smoothing with wrap-around
                     da = ((ta - cur["a"] + math.pi) % (2 * math.pi)) - math.pi
                     cur["a"] = (cur["a"] + da * alpha_angle) % (2 * math.pi)
@@ -455,6 +456,7 @@ def main():
     tire_mark.fill((255, 255, 255, 0))
 
     drift_points_old = []
+    drift_points_old_remotes = {}
 
     while True:
         dt = clock.tick(FPS) / 1000.0
@@ -580,10 +582,15 @@ def main():
             hud = font_small.render(f"Room: {code}", True, GREY_180)
             screen.blit(hud, (10, WINDOW_HEIGHT - 30))
             for pid, d in remotes.items():
-                try :print(d["drift_ratio"])
-                except: pass
-                draw_car(screen, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
+                drift_points = draw_car(screen, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
                          color_body=COLOR_BODY_REMOTE)
+                
+                if d["drift_ratio"] > 0.8 and pid in drift_points_old_remotes:
+                    old_pts = drift_points_old_remotes[pid]
+                    pygame.draw.line(tire_mark, (255,255,255,100), drift_points[0], old_pts[0], 3)
+                    pygame.draw.line(tire_mark, (255,255,255,100), drift_points[1], old_pts[1], 3)
+                drift_points_old_remotes[pid] = drift_points
+                
 
         if stage == "error":
             errh = font_big.render("ERROR", True, (255,120,120))
