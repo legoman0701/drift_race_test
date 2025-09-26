@@ -413,50 +413,50 @@ def main():
                         pass
                 pygame.quit()
                 sys.exit(0)
-            if stage == "menu" and ev.type == pygame.KEYDOWN: # menu page
-                if ev.key == pygame.K_h:  # Host: create room
-                    new_name = get_name_input(screen, font_big, font_small) # player enter name
-                    if new_name is not None: # save name
-                        my_name = new_name
-                        my_car.name = my_name
-                        code = rand_code() # room code
-                        try:
-                            sock = connect_to_relay() # connect to relay
-                            join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id} # send "join" packet
-                            sock.send(json.dumps(join_pkt).encode("utf-8"))
-                            stage = "playing" # switch to playing page
-                        except Exception as ex:
-                            stage = "error" # switch to error page
-                            error_msg = f"Net error: {ex}"
-                elif ev.key == pygame.K_j:  # Join room
-                    new_name = get_name_input(screen, font_big, font_small) # player enter name
-                    if new_name is not None: # save name
-                        my_name = new_name
-                        my_car.name = my_name
-                        jcode = get_code_input(screen, font_big, font_small) # player enter room code
-                        if not jcode:
-                            continue
-                        try:
-                            sock = connect_to_relay() # connect to relay
-                            code = jcode.upper()
-                            join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id} # send "join" packet
-                            sock.send(json.dumps(join_pkt).encode("utf-8"))
-                            join_ok_received = False
-                            timeout = time.time() + 1.0  # wait up to 5 seconds
-                            while not join_ok_received and time.time() < timeout:
-                                print(recv_jsons(sock))
-                                for msg in recv_jsons(sock):
-                                    if msg.get("t") == "join_ok":
-                                        join_ok_received = True
-                                        break
+        if stage == "menu" and ev.type == pygame.KEYDOWN: # menu page
+            if ev.key == pygame.K_h:  # Host: create room
+                new_name = get_name_input(screen, font_big, font_small) # player enter name
+                if new_name is not None: # save name
+                    my_name = new_name
+                    my_car.name = my_name
+                    code = rand_code() # room code
+                    try:
+                        sock = connect_to_relay() # connect to relay
+                        join_pkt = {"t": "create", "code": code, "name": my_name, "id": my_id} # <-- changed here
+                        sock.send(json.dumps(join_pkt).encode("utf-8"))
+                        stage = "playing" # switch to playing page
+                    except Exception as ex:
+                        stage = "error" # switch to error page
+                        error_msg = f"Net error: {ex}"
+            elif ev.key == pygame.K_j:  # Join room
+                new_name = get_name_input(screen, font_big, font_small) # player enter name
+                if new_name is not None: # save name
+                    my_name = new_name
+                    my_car.name = my_name
+                    jcode = get_code_input(screen, font_big, font_small) # player enter room code
+                    if not jcode:
+                        continue
+                    try:
+                        sock = connect_to_relay() # connect to relay
+                        code = jcode.upper()
+                        join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id} # unchanged
+                        sock.send(json.dumps(join_pkt).encode("utf-8"))
+                        join_ok_received = False
+                        timeout = time.time() + 1.0  # wait up to 5 seconds
+                        while not join_ok_received and time.time() < timeout:
+                            for msg in recv_jsons(sock):
+                                print(msg.get("t"))
+                                if msg.get("t") == "join_ok":
+                                    join_ok_received = True
+                                    break
 
-                            if not join_ok_received and False:
-                                raise Exception("Failed to connect: no join confirmation received")
-                            stage = "playing" # switch to playing page
+                        if not join_ok_received:
+                            raise Exception("Failed to connect: no join confirmation received")
+                        stage = "playing" # switch to playing page
 
-                        except Exception as ex:
-                            stage = "error" # switch to error page
-                            error_msg = f"Net error: {ex}"
+                    except Exception as ex:
+                        stage = "error" # switch to error page
+                        error_msg = f"Net error: {ex}"
 
             elif stage == "error" and ev.type == pygame.KEYDOWN:
                 if  ev.key == pygame.K_r:
