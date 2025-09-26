@@ -16,6 +16,17 @@ TRACK_COLOR = (35, 40, 50)
 TRACK_BORDER_COLOR = (80, 90, 100)
 TRACK_BORDER_WIDTH = 4
 
+# key binds
+UP_KEY = [pygame.K_UP, pygame.K_z]
+DOWN_KEY = [pygame.K_DOWN, pygame.K_s]
+LEFT_KEY = [pygame.K_LEFT, pygame.K_q]
+RIGHT_KEY = [pygame.K_RIGHT, pygame.K_d]
+ESCAPE_KEY = pygame.K_ESCAPE
+BRAKE_KEY = pygame.K_SPACE
+RESET_KEY = pygame.K_r
+HOST_KEY = pygame.K_h
+JOIN_KEY = pygame.K_j
+
 FPS = 75
 SEND_HZ = 60.0       # client -> relay state rate
 PING_HZ = 1/5        # keepalive (~5 s)
@@ -235,7 +246,7 @@ def get_text_input(surface, title_text, tip_text, font_big, font_small, allowed_
             if ev.type == pygame.KEYDOWN:
                 if ev.key == pygame.K_RETURN:
                     return text or None
-                if ev.key == pygame.K_ESCAPE:
+                if ev.key == ESCAPE_KEY:
                     return None
                 if ev.key == pygame.K_BACKSPACE:
                     text = text[:-1]
@@ -281,7 +292,7 @@ def get_name_input(surface, font_big, font_small):
                         error_msg = "Name must be at least 3 characters long."
                         continue
                     return text
-                if ev.key == pygame.K_ESCAPE:
+                if ev.key == ESCAPE_KEY:
                     return None
                 if ev.key == pygame.K_BACKSPACE:
                     text = text[:-1]
@@ -351,9 +362,9 @@ def send_ping(sock, code):
 
 def read_inputs(joysticks):
     keys = pygame.key.get_pressed()
-    th = (keys[pygame.K_z] or keys[pygame.K_UP]) - (keys[pygame.K_s] or keys[pygame.K_DOWN])
-    st = (keys[pygame.K_d] or keys[pygame.K_RIGHT]) - (keys[pygame.K_q] or keys[pygame.K_LEFT])
-    br = 1.0 if keys[pygame.K_SPACE] else 0.0
+    th = (1 if any(keys[key] for key in UP_KEY) else 0) - (1 if any(keys[key] for key in DOWN_KEY) else 0)
+    st = (1 if any(keys[key] for key in RIGHT_KEY) else 0) - (1 if any(keys[key] for key in LEFT_KEY) else 0)
+    br = 1.0 if keys[BRAKE_KEY] else 0.0
     if th != 0:
         th = 1.0 if th > 0 else -1.0
     if st != 0:
@@ -506,7 +517,7 @@ def main():
                 camera.offset[1] -= ev.rel[1] / camera.zoom
 
             if stage == "menu" and ev.type == pygame.KEYDOWN:
-                if ev.key == pygame.K_h:  # Host room
+                if ev.key == HOST_KEY:  # Host room
                     new_name = get_name_input(screen, font_big, font_small)
                     if new_name is not None:
                         my_name = new_name
@@ -520,7 +531,7 @@ def main():
                         except Exception as ex:
                             stage = "error"
                             error_msg = f"Net error: {ex}"
-                elif ev.key == pygame.K_j:  # Join room
+                elif ev.key == JOIN_KEY:  # Join room
                     new_name = get_name_input(screen, font_big, font_small)
                     if new_name is not None:
                         my_name = new_name
@@ -547,7 +558,7 @@ def main():
                             stage = "error"
                             error_msg = f"Net error: {ex}"
             elif stage == "error" and ev.type == pygame.KEYDOWN:
-                if ev.key == pygame.K_r:
+                if ev.key == RESET_KEY:
                     stage = "menu"
                     error_msg = ""
                     remotes.clear()
