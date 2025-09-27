@@ -396,8 +396,6 @@ def main():
     font_small = pygame.font.SysFont(None, FONT_SMALL_SIZE)
     font_medium = pygame.font.SysFont(None, FONT_MEDIUM_SIZE)
     font_big = pygame.font.SysFont(None, FONT_BIG_SIZE)
-    
-    # bg_map = pygame.image.load("assets/map/01.png").convert_alpha()
 
     # Load car sprites
     ae86_sprite = []
@@ -414,6 +412,8 @@ def main():
     for i in range(32):
         img = pygame.image.load(f"assets/AE86/Light_Spray/{i:04}.png").convert_alpha()
         light_spray_sprite.append(img)
+        
+    track_image = pygame.image.load(f"assets/Map/Map1.png")
 
     stage = "menu"  # menu | playing | settings | keys | error
     error_msg = ""
@@ -543,11 +543,25 @@ def main():
                 send_ping(sock, code)
 
         my_car.step(read_inputs(joysticks), dt, remotes)
-        cam.update(my_car)
+        cam.update(my_car, (track_image.get_width(), track_image.get_height()))
 
         # Draw game world onto an off-screen surface.
-        world_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
-        world_surf.fill(GREY_20)
+        if stage != "playing":
+            world_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+            world_surf.fill(GREY_20)
+        else:
+            world_surf = pygame.Surface((track_image.get_width(), track_image.get_height()), pygame.HWSURFACE)
+            # Calculate the camera viewport in the track image coordinates.
+            
+            top_right_pos = cam.x-(WINDOW_WIDTH/2)/cam.zoom, cam.y-(WINDOW_HEIGHT/2)/cam.zoom
+            camera_rect = pygame.Rect(top_right_pos[0],
+                                      top_right_pos[1],
+                                      WINDOW_WIDTH/cam.zoom,
+                                      WINDOW_HEIGHT/cam.zoom)
+            visible_track = track_image.subsurface(camera_rect)
+            #pygame.draw.rect(world_surf, TRACK_COLOR, camera_rect)
+            world_surf.blit(visible_track, top_right_pos)
+            
         ui_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
         ui_surf.fill((0,0,0,0))
         
@@ -555,7 +569,7 @@ def main():
         # world_surf.blit(bg_map, (0, 0))
         world_surf.blit(tire_mark, (0,0))
         drift_points = draw_car(world_surf, my_car.x, my_car.y, my_car.angle, my_car.name,
-                                  color_body=COLOR_MY_CAR, car_sprites_list=[ae86_sprite, shadow_sprite, light_spray_sprite], lights_on=lights_on)
+                                  color_body=COLOR_MY_CAR, car_sprites_list=[shadow_sprite, ae86_sprite, light_spray_sprite], lights_on=lights_on)
         if my_car.drift_ratio > 0.8 and drift_points_old:
             pygame.draw.line(tire_mark, TIRE_MARK_SMOKE, drift_points[0], drift_points_old[0], 3)
             pygame.draw.line(tire_mark, TIRE_MARK_SMOKE, drift_points[1], drift_points_old[1], 3)
@@ -580,7 +594,7 @@ def main():
             ui_surf.blit(hud, (10, RELAY_Y))
             for pid, d in remotes.items():
                 drift_points_remote = draw_car(world_surf, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
-                                               color_body=COLOR_BODY_REMOTE, car_sprites_list=[ae86_sprite, shadow_sprite, light_spray_sprite], lights_on=lights_on)
+                                               color_body=COLOR_BODY_REMOTE, car_sprites_list=[shadow_sprite, ae86_sprite, light_spray_sprite], lights_on=lights_on)
                 if d["drift_ratio"] > 0.8 and pid in drift_points_old_remotes:
                     old_pts = drift_points_old_remotes[pid]
                     pygame.draw.line(tire_mark, TIRE_MARK_SMOKE, drift_points_remote[0], old_pts[0], 3)

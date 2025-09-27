@@ -1,5 +1,8 @@
 import pygame
 
+def clamp(x, lo, hi):
+    return lo if x < lo else hi if x > hi else x
+
 class Camera:
     def __init__(self, width, height, zoom=1.0):
         self.width = width
@@ -9,10 +12,10 @@ class Camera:
         self.y = height // 2
         self.offset = [0, 0]  # additional pan offset
 
-    def update(self, target):
+    def update(self, target, world_size):
         # Follow the target with any offset
-        self.x = target.x + self.offset[0]
-        self.y = target.y + self.offset[1]
+        self.x = clamp(target.x + self.offset[0], self.width / 2 / self.zoom, (world_size[0] - self.width / 2) / self.zoom)
+        self.y = clamp(target.y + self.offset[1], self.height / 2 / self.zoom, (world_size[1] - self.height / 2) / self.zoom)
 
     def apply(self, world_surf):
         view_w = int(self.width / self.zoom)
