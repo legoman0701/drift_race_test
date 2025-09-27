@@ -74,17 +74,17 @@ sep 25 2025
 
 ## Demo assets
 
-### v3
+### v0.3
 ![v3-1](assets/demo/v3-1.png)
 ![v3-2](assets/demo/v3-2.png)
 ![v3-3](assets/demo/v3-3.png)
 
-### v2
+### v0.2
 ![v2-1](assets/demo/v2-1.png)
 ![v2-2](assets/demo/v2-2.png)
 ![v2-3](assets/demo/v2-3.png)
 
-### v1
+### v0.1
 ![v1-1](assets/demo/v1-1.png)
 ![v1-2](assets/demo/v1-2.png)
 ![v1-3](assets/demo/v1-3.png)
