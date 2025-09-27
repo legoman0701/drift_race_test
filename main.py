@@ -4,7 +4,7 @@ Top-down drift game client with camera (zoom & pan)
 Refactored to remove magic numbers and reduce spaghetti code.
 """
 
-import pygame, socket, json, time, random, string, sys, math, uuid, argparse, camera, car, button as btn
+import pygame, socket, json, time, random, string, os, sys, math, uuid, argparse, camera, car, button as btn
 
 # ======= CONFIGURATION =======
 RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
@@ -48,10 +48,25 @@ MIN_NAME_LENGTH = 3
 MAX_NAME_LENGTH = 12
 PROFANITY_SET = {"NIGGER", "NIGGA", "NIGA"}
 
-BTN_WIDTH, BTN_HEIGHT = 150, 50
+TOP_LINE_Y = 30
+BOTTOM_LINE_Y = WINDOW_HEIGHT-20
+BTN_WIDTH, BTN_HEIGHT = 200, 100
+
+TIRE_MARK_SMOKE = (255,255,255,100) # tire mark color at first step (smoke)
+TIRE_MARK_GROUND = (220, 220, 220, 220) # tire mark color at second step on the ground
+
+# visual const
+FONT_SMALL_SIZE = 18
+FONT_MEDIUM_SIZE = 26
+FONT_BIG_SIZE = 40
+TITLE_Y = 3
+TIP1_Y = 8
+TIP2_Y = 8
+RELAY_Y = 16
 
 # Colors
 BLACK = (0, 0, 0)
+DARK_NAVY_BLUE = (5, 15, 28)
 GREY_20 = (20,20,28)
 GREY_180 = (180, 180, 180)
 GREY_200 = (200, 200, 200)
@@ -97,13 +112,17 @@ def draw_car(surface, x, y, angle, name,
         surface.blit(text, (int(x-text.get_width()/2), int(y-40)))
     return (wpts[2], wpts[3])  # rear left and right
 
-def draw_track(surface):
-    pygame.draw.rect(surface, TRACK_COLOR, (0,0,WINDOW_WIDTH,WINDOW_HEIGHT))
-    pygame.draw.rect(surface, TRACK_BORDER_COLOR,
-                     (TRACK_MARGIN, TRACK_MARGIN,
-                      WINDOW_WIDTH - 2 * TRACK_MARGIN,
-                      WINDOW_HEIGHT - 2 * TRACK_MARGIN),
-                     width=TRACK_BORDER_WIDTH)
+def draw_track(screen):
+    pygame.draw.rect(screen, DARK_NAVY_BLUE, (0, TOP_LINE_Y, WINDOW_WIDTH, BOTTOM_LINE_Y-TOP_LINE_Y))
+    pygame.draw.line(screen, WHITE, (0, TOP_LINE_Y), (WINDOW_WIDTH, TOP_LINE_Y))
+    pygame.draw.line(screen, WHITE, (0, BOTTOM_LINE_Y), (WINDOW_WIDTH, BOTTOM_LINE_Y))
+
+    # pygame.draw.rect(screen, TRACK_COLOR, (0,0,WINDOW_WIDTH,WINDOW_HEIGHT))
+    # pygame.draw.rect(screen, TRACK_BORDER_COLOR,
+    #                  (TRACK_MARGIN, TRACK_MARGIN,
+    #                   WINDOW_WIDTH - 2 * TRACK_MARGIN,
+    #                   WINDOW_HEIGHT - 2 * TRACK_MARGIN),
+    #                  width=TRACK_BORDER_WIDTH)
 
 def recv_jsons(sock):
     msgs = []
@@ -356,17 +375,18 @@ def main():
     pygame.init()
     pygame.joystick.init()
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-    btn_screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
     pygame.display.set_caption("Top-Down Drift — Client Trust (Pi relay)")
     clock = pygame.time.Clock()
-    font_small = pygame.font.SysFont(None, 20)
-    font_medium = pygame.font.SysFont(None, 30)
-    font_big = pygame.font.SysFont(None, 46)
+    font_small = pygame.font.SysFont(None, FONT_SMALL_SIZE)
+    font_medium = pygame.font.SysFont(None, FONT_MEDIUM_SIZE)
+    font_big = pygame.font.SysFont(None, FONT_BIG_SIZE)
     
+    # bg_map = pygame.image.load("assets/map/01.png").convert_alpha()
+
     # Load car sprites
     au86_sprite = []
     for i in range(32):
-        img = pygame.image.load(f"images/AE86/{i:04}.png").convert_alpha()
+        img = pygame.image.load(f"assets/AE86/{i:04}.png").convert_alpha()
         au86_sprite.append(img)
 
     stage = "menu"  # menu | playing | settings | keys | error
@@ -442,19 +462,12 @@ def main():
         # stage, sock, code, remotes
         return "menu", None, None, remotes
 
-    def show_key_binds():
+    def show_key_binds(): # to do
         print("Showing key binds...")
-        # to do
-
-    def resume_game():
-        global stage
-        stage = "playing"
-        # make so we dont see the btns anymore
 
     buttons = [
-        btn.Button("Leave Room", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.4, BTN_WIDTH, BTN_HEIGHT, (200, 0, 0), (255, 50, 50), leave_room(stage, sock, code, remotes)),
-        btn.Button("Key Binds", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.5, BTN_WIDTH, BTN_HEIGHT, (50, 50, 200), (100, 100, 255), show_key_binds),
-        btn.Button("Resume", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.6, BTN_WIDTH, BTN_HEIGHT, (0, 150, 0), (0, 200, 0), resume_game),
+        btn.Button("Leave Room", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.4, BTN_WIDTH, BTN_HEIGHT, (200, 0, 0), (255, 50, 50), lambda: leave_room(sock, code, my_id, remotes)),
+        btn.Button("Key Binds", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.6, BTN_WIDTH, BTN_HEIGHT, (50, 50, 200), (100, 100, 255), show_key_binds),
     ]
 
     while True:
@@ -507,14 +520,25 @@ def main():
         world_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
         world_surf.fill(GREY_20)
         draw_track(world_surf)
+        # world_surf.blit(bg_map, (0, 0))
         world_surf.blit(tire_mark, (0,0))
         drift_points = draw_car(world_surf, my_car.x, my_car.y, my_car.angle, my_car.name,
                                   color_body=COLOR_MY_CAR, car_sprite=au86_sprite)
         if my_car.drift_ratio > 0.8 and drift_points_old:
-            pygame.draw.line(tire_mark, (255,255,255,100), drift_points[0], drift_points_old[0], 3)
-            pygame.draw.line(tire_mark, (255,255,255,100), drift_points[1], drift_points_old[1], 3)
+            pygame.draw.line(tire_mark, TIRE_MARK_SMOKE, drift_points[0], drift_points_old[0], 3)
+            pygame.draw.line(tire_mark, TIRE_MARK_SMOKE, drift_points[1], drift_points_old[1], 3)
         drift_points_old = drift_points
-        tire_mark.fill((255, 255, 255, 250), special_flags=pygame.BLEND_RGBA_MULT)
+        tire_mark.fill(TIRE_MARK_GROUND, special_flags=pygame.BLEND_RGBA_MULT)
+
+        if stage == "menu":
+            title = font_big.render("Menu", True, WHITE_240)
+            world_surf.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, TITLE_Y))
+            tip1 = font_medium.render("H : Host room", True, GREY_200)
+            tip2 = font_medium.render("J : Join room", True, GREY_200)
+            relay = font_small.render(f"Relay: {RELAY_PUBLIC_ENDPOINT}", True, GREY_180)
+            world_surf.blit(tip1, (int(WINDOW_WIDTH*.3 - tip1.get_width()//2), TIP1_Y))
+            world_surf.blit(tip2, (int(WINDOW_WIDTH*.7 - tip2.get_width()//2), TIP2_Y))
+            world_surf.blit(relay, (WINDOW_WIDTH//2 - relay.get_width()//2, WINDOW_HEIGHT-RELAY_Y))
 
         if stage == "playing":
             hud = font_small.render(f"Room: {code}", True, GREY_180)
@@ -527,16 +551,6 @@ def main():
                     pygame.draw.line(tire_mark, (255,255,255,100), drift_points_remote[0], old_pts[0], 3)
                     pygame.draw.line(tire_mark, (255,255,255,100), drift_points_remote[1], old_pts[1], 3)
                 drift_points_old_remotes[pid] = drift_points_remote
-
-        if stage == "menu":
-            title = font_big.render("Menu", True, WHITE_240)
-            world_surf.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, 7))
-            tip1 = font_medium.render("H : Host room", True, GREY_200)
-            tip2 = font_medium.render("J : Join room", True, GREY_200)
-            relay = font_small.render(f"Relay: {RELAY_PUBLIC_ENDPOINT}", True, GREY_180)
-            world_surf.blit(tip1, (int(WINDOW_WIDTH*.3 - tip1.get_width()//2), 13))
-            world_surf.blit(tip2, (int(WINDOW_WIDTH*.7 - tip2.get_width()//2), 13))
-            world_surf.blit(relay, (WINDOW_WIDTH//2 - relay.get_width()//2, WINDOW_HEIGHT-30))
 
         if stage == "settings":
             title = font_big.render("Settings", True, WHITE_240)
@@ -551,8 +565,6 @@ def main():
             world_surf.blit(msg, (WINDOW_WIDTH//2 - msg.get_width()//2, WINDOW_HEIGHT//2))
             tip = font_small.render("Press R to restart", True, GREY_200)
             world_surf.blit(tip, (WINDOW_WIDTH//2 - tip.get_width()//2, WINDOW_HEIGHT//2 + 40))
-
-        # print(stage)
 
         # Apply camera transform (zoom & pan) and blit to screen.
         final_surf = cam.apply(world_surf)
