@@ -1,36 +1,38 @@
-sep 25 2025
+sep 27 2025
 
-pygame init
-add of drift
-update of physics
-update of drift
-add of collisions
-update of collisions x3
-add of .gitignore
-update of drift (drift detection)
+- README.md (update : fix text format)
+- README.md (add)
+- headlights (add)
+- cleaning x3
+- settings menu (update) x2
+- settings menu (add)
 
 sep 26 2025
 
-add of commentaries & const x2
-handle esc key
-update of physics
-online network issue
-change of online network server
-add of autorun file for debug
-update of collisions
-higher server tick test
-add of tire marks that fade over time
-update of drift (drift ratio communication) x3
-add of ae86 assets rendering
-add of controller support
-update of physics
-add of camera object for zoom/dezoom with pan
-update of zoom (clamp to avoid crash)
+- zoom (update : clamp to avoid crash)
+- camera object (add : zoom/dezoom with pan feature)
+- physics (update)
+- controller support (add)
+- ae86 assets (add)
+- drift (update : drift ratio communication) x3
+- tiremarks (add : fade over the time)
+- issue : latency : higher server tick test
+- collisions (update)
+- autorun.py (add : debug)
+- issue : online network : change of server
+- issue : online network : fix failed
+- physics (update)
+- keys bind (update : esc)
+- cleaning
 
-sep 27 2025
+sep 25 2025
 
-add of settings menu
-update of settings menu x2
-files cleaning x3
-add of headlights
-add of README.md
+- drift (update : drift detection)
+- .gitignore (add)
+- collisions (update) x3
+- collisions (add)
+- drift (update)
+- physics (update)
+- drift (add)
+- physics (add)
+- pygame init
