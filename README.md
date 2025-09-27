@@ -15,14 +15,13 @@ sep 27 2025
 - track (add)
 - camera (update : clamp)
 - assets (update) x2
-- ui (update)
+- ui (update) **(v3)**
 - README.md (update : fix text format)
 - README.md (add)
 - headlights (add)
 - cleaning x3
 - settings menu (update) x2
 - settings menu (add)
-- track (add)
 
 sep 26 2025
 
@@ -40,7 +39,7 @@ sep 26 2025
 - issue : online network : fix failed
 - physics (update)
 - keys bind (update : esc)
-- cleaning
+- cleaning **(v2)**
 
 sep 25 2025
 
@@ -52,7 +51,7 @@ sep 25 2025
 - physics (update)
 - drift (add)
 - physics (add)
-- pygame init
+- pygame init **(v1)**
 
 ---
 
@@ -63,6 +62,7 @@ sep 25 2025
 - **J** : join a game
 
 ### In Game
+- **Mouse** : activate in settings and let the car follow your mouse cursor
 - **Up, Z** : move forward
 - **Down, S** : move back
 - **Left, Q** : turn left
