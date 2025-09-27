@@ -97,7 +97,9 @@ def car_local_to_world(cx, cy, angle, lx, ly):
 
 def draw_car(surface, x, y, angle, name,
              color_body=COLOR_BODY_DEFAULT,
-             color_nose=COLOR_NOSE_DEFAULT, car_sprite=[]):
+             color_nose=COLOR_NOSE_DEFAULT, car_sprites_list=[], lights_on=False):
+    
+    #car_sprite, shadow_sprite, light_spray_sprite = car_sprites_list
     ca, sa = math.cos(angle), math.sin(angle)
     halfL, halfW = CAR_LEN * 0.5, CAR_WID * 0.5
     pts = [(+halfL, +halfW),
@@ -110,9 +112,13 @@ def draw_car(surface, x, y, angle, name,
         ry = px * sa + py * ca
         wpts.append((int(x + rx), int(y + ry)))
 
-    show_angle = (-angle + math.pi/2) % (2*math.pi) / (2*math.pi)
-    sprite_index = int(show_angle * 32) % 32
-    surface.blit(car_sprite[sprite_index], (int(x-75/2), int(y-75/2))) 
+    for i, car_sprite in enumerate(car_sprites_list):
+        if i == 2 and not lights_on: # light spray
+            continue
+        show_angle = (-angle + math.pi/2) % (2*math.pi) / (2*math.pi)
+        sprite_index = int(show_angle * 32) % 32
+        sprite_size = car_sprite[sprite_index].get_width()
+        surface.blit(car_sprite[sprite_index], (int(x-sprite_size/2), int(y-sprite_size/2))) 
 
     if name:
         font = pygame.font.SysFont(None, 22)
@@ -392,10 +398,20 @@ def main():
     # bg_map = pygame.image.load("assets/map/01.png").convert_alpha()
 
     # Load car sprites
-    au86_sprite = []
+    ae86_sprite = []
     for i in range(32):
-        img = pygame.image.load(f"assets/AE86/{i:04}.png").convert_alpha()
-        au86_sprite.append(img)
+        img = pygame.image.load(f"assets/AE86/Diffuse/Image{i:04}.png").convert_alpha()
+        ae86_sprite.append(img)
+    
+    shadow_sprite = []
+    for i in range(32):
+        img = pygame.image.load(f"assets/AE86/Shadow_Map/Image{i:04}.png").convert_alpha()
+        shadow_sprite.append(img)
+    
+    light_spray_sprite = []
+    for i in range(32):
+        img = pygame.image.load(f"assets/AE86/Light_Spray/{i:04}.png").convert_alpha()
+        light_spray_sprite.append(img)
 
     stage = "menu"  # menu | playing | settings | keys | error
     error_msg = ""
@@ -408,7 +424,6 @@ def main():
     last_state_send = 0.0
     last_ping = 0.0
 
-    spraymap = lightspray.Spray(WINDOW_WIDTH, WINDOW_HEIGHT, HEADLIGHT_COLOR)
     lights_on = True
 
     spawnx = random.randint(TRACK_MARGIN + 200, WINDOW_WIDTH - TRACK_MARGIN - 200)
@@ -535,7 +550,7 @@ def main():
         # world_surf.blit(bg_map, (0, 0))
         world_surf.blit(tire_mark, (0,0))
         drift_points = draw_car(world_surf, my_car.x, my_car.y, my_car.angle, my_car.name,
-                                  color_body=COLOR_MY_CAR, car_sprite=au86_sprite)
+                                  color_body=COLOR_MY_CAR, car_sprites_list=[ae86_sprite, shadow_sprite, light_spray_sprite], lights_on=lights_on)
         if my_car.drift_ratio > 0.8 and drift_points_old:
             pygame.draw.line(tire_mark, TIRE_MARK_SMOKE, drift_points[0], drift_points_old[0], 3)
             pygame.draw.line(tire_mark, TIRE_MARK_SMOKE, drift_points[1], drift_points_old[1], 3)
@@ -559,7 +574,7 @@ def main():
             world_surf.blit(hud, (10, RELAY_Y))
             for pid, d in remotes.items():
                 drift_points_remote = draw_car(world_surf, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
-                                               color_body=COLOR_BODY_REMOTE, car_sprite=au86_sprite)
+                                               color_body=COLOR_BODY_REMOTE, car_sprites_list=[ae86_sprite, shadow_sprite, light_spray_sprite], lights_on=lights_on)
                 if d["drift_ratio"] > 0.8 and pid in drift_points_old_remotes:
                     old_pts = drift_points_old_remotes[pid]
                     pygame.draw.line(tire_mark, TIRE_MARK_SMOKE, drift_points_remote[0], old_pts[0], 3)
@@ -579,21 +594,6 @@ def main():
             world_surf.blit(msg, (WINDOW_WIDTH//2 - msg.get_width()//2, WINDOW_HEIGHT//2))
             tip = font_small.render("Press R to restart", True, GREY_200)
             world_surf.blit(tip, (WINDOW_WIDTH//2 - tip.get_width()//2, WINDOW_HEIGHT//2 + 40))
-
-        # ----- Pixel lighting -----
-        if lights_on:
-            spraymap.surface.fill((0, 0, 0, 0)) # transparent bg
-
-            # two pixelated headlight cones from front-left and front-right
-            halfL, halfW = CAR_LEN * 0.5, CAR_WID * 0.5
-            hl_base_L = car_local_to_world(my_car.x, my_car.y, my_car.angle,  halfL*0.85, -halfW*0.35)
-            hl_base_R = car_local_to_world(my_car.x, my_car.y, my_car.angle,  halfL*0.85,  halfW*0.35)
-
-            spraymap.add_cone(hl_base_L[0], hl_base_L[1], my_car.angle, HEADLIGHT_LEN, fov=HEADLIGHT_FOV)
-            spraymap.add_cone(hl_base_R[0], hl_base_R[1], my_car.angle, HEADLIGHT_LEN, fov=HEADLIGHT_FOV)
-
-            # Multiply lightmap over the world (white = keep, dark = darken)
-            world_surf.blit(spraymap.render(), (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
 
         # Apply camera transform (zoom & pan) and blit to screen.
         final_surf = cam.apply(world_surf)
