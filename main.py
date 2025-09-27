@@ -50,8 +50,8 @@ HOST_KEY = pygame.K_h
 JOIN_KEY = pygame.K_j
 
 # car
-CAR_LEN = 58.0
-CAR_WID  = 30.0
+CAR_LEN = 38.0
+CAR_WID  = 20.0
 TIRE_MARK_SMOKE = (255,255,255,100) # tire mark color at first step (smoke)
 TIRE_MARK_GROUND = (220, 220, 220, 220) # tire mark color at second step on the ground
 HEADLIGHT_LEN = 150
