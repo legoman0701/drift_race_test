@@ -15,21 +15,21 @@ TRACK_MARGIN = 40
 TRACK_COLOR = (35, 40, 50)
 TRACK_BORDER_COLOR = (80, 90, 100)
 TRACK_BORDER_WIDTH = 4
+FPS = 75
+SEND_HZ = 60.0       # client -> relay state rate
+PING_HZ = 1/5        # keepalive (~5 s)
 
 # key binds
 UP_KEY = [pygame.K_UP, pygame.K_z]
 DOWN_KEY = [pygame.K_DOWN, pygame.K_s]
 LEFT_KEY = [pygame.K_LEFT, pygame.K_q]
 RIGHT_KEY = [pygame.K_RIGHT, pygame.K_d]
-ESCAPE_KEY = pygame.K_ESCAPE
 BRAKE_KEY = pygame.K_SPACE
+# const key binds
+ESCAPE_KEY = pygame.K_ESCAPE
 RESET_KEY = pygame.K_r
 HOST_KEY = pygame.K_h
 JOIN_KEY = pygame.K_j
-
-FPS = 75
-SEND_HZ = 60.0       # client -> relay state rate
-PING_HZ = 1/5        # keepalive (~5 s)
 
 JOIN_CODE_LEN = 4
 ROOM_ALPHABET = string.ascii_uppercase + string.digits
@@ -285,6 +285,67 @@ def read_inputs(joysticks):
         br = breaks if breaks != 0 else br
     return {"th": th, "st": st, "br": br}
 
+def draw_menu(screen, font_big, font_medium):
+    title = font_big.render("Menu", True, WHITE_240)
+    screen.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, 7))
+    tip1 = font_medium.render("H : Host room", True, GREY_200)
+    tip2 = font_medium.render("J : Join room", True, GREY_200)
+    screen.blit(tip1, (int(WINDOW_WIDTH * 0.3 - tip1.get_width() // 2), 13))
+    screen.blit(tip2, (int(WINDOW_WIDTH * 0.7 - tip2.get_width() // 2), 13))
+
+def handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, code, sock, error_msg):
+    if ev.key == HOST_KEY:  # Host room
+        my_name = get_name_input(screen, font_big, font_small)
+        code = rand_code()
+        try:
+            sock = connect_to_relay()
+            join_pkt = {"t": "create", "code": code, "name": my_name, "id": my_id}
+            sock.send(json.dumps(join_pkt).encode("utf-8"))
+            stage = "playing"
+        except Exception as ex:
+            stage = "error"
+            error_msg = f"Net error: {ex}"
+    elif ev.key == JOIN_KEY:  # Join room
+        my_name = get_name_input(screen, font_big, font_small)
+        jcode = get_code_input(screen, font_big, font_small)
+        try:
+            sock = connect_to_relay()
+            code = jcode.upper()
+            join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id}
+            sock.send(json.dumps(join_pkt).encode("utf-8"))
+            stage = "playing"
+        except Exception as ex:
+            stage = "error"
+            error_msg = f"Net error: {ex}"
+
+    return stage, my_name, code, sock, error_msg
+
+def handle_game_events(screen, ev, stage, remotes, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg):
+    if ev.type == pygame.KEYDOWN:
+        if stage == "menu":
+            stage, my_name, code, sock, error_msg = handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, code, sock, error_msg)
+        elif stage == "playing" and ev.key == ESCAPE_KEY: # open settings menu
+                stage = "settings"          
+        elif stage == "settings" and ev.key == ESCAPE_KEY: # leave settings menu
+                stage = "playing"
+        elif stage == "error" and ev.key == RESET_KEY:
+                stage = "menu"
+                error_msg = ""
+                remotes.clear()
+                if sock:
+                    try:
+                        sock.send(json.dumps({"t": "bye", "code": code, "id": my_id}).encode("utf-8"))
+                    except Exception:
+                        pass
+                    sock.close()
+                    sock = None
+                code = None
+                spawnx = random.randint(TRACK_MARGIN + 200, WINDOW_WIDTH - TRACK_MARGIN - 200)
+                spawny = random.randint(TRACK_MARGIN + 120, WINDOW_HEIGHT - TRACK_MARGIN - 120)
+                my_car = car.Car(spawnx, spawny, my_name)
+
+    return ev, stage, remotes, sock, code, my_car, error_msg
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["host", "join"])
@@ -395,72 +456,7 @@ def main():
                 cam.offset[0] -= ev.rel[0] / cam.zoom
                 cam.offset[1] -= ev.rel[1] / cam.zoom
 
-            if stage == "menu" and ev.type == pygame.KEYDOWN:
-                if ev.key == HOST_KEY:  # Host room
-                    new_name = get_name_input(screen, font_big, font_small)
-                    if new_name is not None:
-                        my_name = new_name
-                        my_car.name = my_name
-                        code = rand_code()
-                        try:
-                            sock = connect_to_relay()
-                            join_pkt = {"t": "create", "code": code, "name": my_name, "id": my_id}
-                            sock.send(json.dumps(join_pkt).encode("utf-8"))
-                            stage = "playing"
-                        except Exception as ex:
-                            stage = "error"
-                            error_msg = f"Net error: {ex}"
-                elif ev.key == JOIN_KEY:  # Join room
-                    new_name = get_name_input(screen, font_big, font_small)
-                    if new_name is not None:
-                        my_name = new_name
-                        my_car.name = my_name
-                        jcode = get_code_input(screen, font_big, font_small)
-                        if not jcode:
-                            continue
-                        try:
-                            sock = connect_to_relay()
-                            code = jcode.upper()
-                            join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id}
-                            sock.send(json.dumps(join_pkt).encode("utf-8"))
-                            join_ok_received = False
-                            timeout = time.time() + 1.0
-                            while not join_ok_received and time.time() < timeout:
-                                for msg in recv_jsons(sock):
-                                    if msg.get("t") == "join_ok":
-                                        join_ok_received = True
-                                        break
-                            if not join_ok_received:
-                                raise Exception("Failed to connect: no join confirmation received")
-                            stage = "playing"
-                        except Exception as ex:
-                            stage = "error"
-                            error_msg = f"Net error: {ex}"
-                            
-            elif stage == "playing" and ev.type == pygame.KEYDOWN:
-                if ev.key == ESCAPE_KEY: # open settings menu
-                    stage = "settings"
-                            
-            elif stage == "settings" and ev.type == pygame.KEYDOWN:
-                if ev.key == ESCAPE_KEY: # leave settings menu
-                    stage = "playing"
-
-            elif stage == "error" and ev.type == pygame.KEYDOWN:
-                if ev.key == RESET_KEY:
-                    stage = "menu"
-                    error_msg = ""
-                    remotes.clear()
-                    if sock:
-                        try:
-                            sock.send(json.dumps({"t": "bye", "code": code, "id": my_id}).encode("utf-8"))
-                        except Exception:
-                            pass
-                        sock.close()
-                        sock = None
-                    code = None
-                    spawnx = random.randint(TRACK_MARGIN + 200, WINDOW_WIDTH - TRACK_MARGIN - 200)
-                    spawny = random.randint(TRACK_MARGIN + 120, WINDOW_HEIGHT - TRACK_MARGIN - 120)
-                    my_car = car.Car(spawnx, spawny, my_name)
+            ev, stage, remotes, sock, code, my_car, error_msg = handle_game_events(screen, ev, stage, remotes, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg)
 
         if sock:
             err = handle_network_messages(sock, remotes, dt, my_id)
