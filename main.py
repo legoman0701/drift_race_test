@@ -4,7 +4,8 @@ Top-down drift game client with camera (zoom & pan)
 Refactored to remove magic numbers and reduce spaghetti code.
 """
 
-import pygame, socket, json, time, random, string, os, sys, math, uuid, argparse, camera, car, button as btn
+import pygame, socket, json, time, random, string, sys, math, uuid, argparse # global imports
+import camera, car, button as btn, lightspray # local imports
 
 # ======= CONFIGURATION =======
 RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
@@ -19,51 +20,6 @@ FPS = 75
 SEND_HZ = 60.0       # client -> relay state rate
 PING_HZ = 1/5        # keepalive (~5 s)
 
-# key binds
-UP_KEY = [pygame.K_UP, pygame.K_z]
-DOWN_KEY = [pygame.K_DOWN, pygame.K_s]
-LEFT_KEY = [pygame.K_LEFT, pygame.K_q]
-RIGHT_KEY = [pygame.K_RIGHT, pygame.K_d]
-BRAKE_KEY = pygame.K_SPACE
-# const key binds
-ESCAPE_KEY = pygame.K_ESCAPE
-RESET_KEY = pygame.K_r
-HOST_KEY = pygame.K_h
-JOIN_KEY = pygame.K_j
-
-JOIN_CODE_LEN = 4
-ROOM_ALPHABET = string.ascii_uppercase + string.digits
-MAX_CODE_LENGTH = 12
-
-# Car constants
-CAR_LEN = 58.0
-CAR_WID  = 30.0
-
-VIEW_ANGLE = 70 * math.pi / 180.0  # radians
-
-KEY_REPEAT_DELAY = 250
-KEY_REPEAT_INTERVAL = 35
-
-MIN_NAME_LENGTH = 3
-MAX_NAME_LENGTH = 12
-PROFANITY_SET = {"NIGGER", "NIGGA", "NIGA"}
-
-TOP_LINE_Y = 30
-BOTTOM_LINE_Y = WINDOW_HEIGHT-20
-BTN_WIDTH, BTN_HEIGHT = 200, 100
-
-TIRE_MARK_SMOKE = (255,255,255,100) # tire mark color at first step (smoke)
-TIRE_MARK_GROUND = (220, 220, 220, 220) # tire mark color at second step on the ground
-
-# visual const
-FONT_SMALL_SIZE = 18
-FONT_MEDIUM_SIZE = 26
-FONT_BIG_SIZE = 40
-TITLE_Y = 3
-TIP1_Y = 8
-TIP2_Y = 8
-RELAY_Y = 16
-
 # Colors
 BLACK = (0, 0, 0)
 DARK_NAVY_BLUE = (5, 15, 28)
@@ -72,11 +28,55 @@ GREY_180 = (180, 180, 180)
 GREY_200 = (200, 200, 200)
 WHITE_240 = (240,240,240)
 WHITE = (255, 255, 255)
-
 COLOR_BODY_DEFAULT = (250,210,120)
 COLOR_NOSE_DEFAULT = (255,120,120)
 COLOR_BODY_REMOTE  = (255,200,120)
 COLOR_MY_CAR       = (200,230,255)
+HEADLIGHT_COLOR = (200, 200, 200)
+
+# key binds
+UP_KEY = [pygame.K_UP, pygame.K_z]
+DOWN_KEY = [pygame.K_DOWN, pygame.K_s]
+LEFT_KEY = [pygame.K_LEFT, pygame.K_q]
+RIGHT_KEY = [pygame.K_RIGHT, pygame.K_d]
+BRAKE_KEY = pygame.K_SPACE
+ESCAPE_KEY = pygame.K_ESCAPE
+RESET_KEY = pygame.K_r
+HOST_KEY = pygame.K_h
+JOIN_KEY = pygame.K_j
+
+# car
+CAR_LEN = 58.0
+CAR_WID  = 30.0
+TIRE_MARK_SMOKE = (255,255,255,100) # tire mark color at first step (smoke)
+TIRE_MARK_GROUND = (220, 220, 220, 220) # tire mark color at second step on the ground
+HEADLIGHT_LEN = 150
+HEADLIGHT_FOV = 25 # degrees per headlight cone (narrow beams)
+GLOW_RADIUS = 10 # soft round glow around the car
+
+# visual const
+TOP_LINE_Y = 30
+BOTTOM_LINE_Y = WINDOW_HEIGHT-20
+BTN_WIDTH, BTN_HEIGHT = 200, 100
+FONT_SMALL_SIZE = 18
+FONT_MEDIUM_SIZE = 26
+FONT_BIG_SIZE = 40
+TITLE_Y = 3
+TIP1_Y = 8
+TIP2_Y = 8
+RELAY_Y = WINDOW_HEIGHT-16
+
+# username & room code
+ROOM_ALPHABET = string.ascii_uppercase + string.digits
+JOIN_CODE_LEN = 4
+MAX_CODE_LENGTH = 12
+KEY_REPEAT_DELAY = 250
+KEY_REPEAT_INTERVAL = 35
+MIN_NAME_LENGTH = 3
+MAX_NAME_LENGTH = 12
+PROFANITY_SET = {"NIGGER", "NIGGA", "NIGA"}
+
+VIEW_ANGLE = 70 * math.pi / 180.0  # radians
 
 # =============================
 
@@ -88,6 +88,12 @@ def rand_code(n=JOIN_CODE_LEN):
 
 def rand_name():
     return "Player" + "".join(random.choice(string.digits) for _ in range(4))
+
+def car_local_to_world(cx, cy, angle, lx, ly):
+    """Convert a local (lx, ly) point on the car to world coords."""
+    ca, sa = math.cos(angle), math.sin(angle)
+    return (cx + lx * ca - ly * sa,
+            cy + lx * sa + ly * ca)
 
 def draw_car(surface, x, y, angle, name,
              color_body=COLOR_BODY_DEFAULT,
@@ -103,9 +109,13 @@ def draw_car(surface, x, y, angle, name,
         rx = px * ca - py * sa
         ry = px * sa + py * ca
         wpts.append((int(x + rx), int(y + ry)))
-    show_angle = (-angle + math.pi/2) % (2*math.pi) / (2*math.pi)
+
+    snapped_angle = round(angle / (math.pi / 16)) * (math.pi / 16)
+
+    show_angle = (-snapped_angle + math.pi/2) % (2*math.pi) / (2*math.pi)
     sprite_index = int(show_angle * 32) % 32
     surface.blit(car_sprite[sprite_index], (int(x-75/2), int(y-75/2))) 
+
     if name:
         font = pygame.font.SysFont(None, 22)
         text = font.render(name, True, (230,230,255))
@@ -400,6 +410,9 @@ def main():
     last_state_send = 0.0
     last_ping = 0.0
 
+    spraymap = lightspray.Spray(WINDOW_WIDTH, WINDOW_HEIGHT, HEADLIGHT_COLOR)
+    lights_on = True
+
     spawnx = random.randint(TRACK_MARGIN + 200, WINDOW_WIDTH - TRACK_MARGIN - 200)
     spawny = random.randint(TRACK_MARGIN + 120, WINDOW_HEIGHT - TRACK_MARGIN - 120)
     my_car = car.Car(spawnx, spawny, my_name)
@@ -475,12 +488,13 @@ def main():
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
                 if sock and code:
-                    try:
-                        sock.send(json.dumps({"t": "bye", "code": code, "id": my_id}).encode("utf-8"))
-                    except Exception:
-                        pass
+                    try: sock.send(json.dumps({"t": "bye", "code": code, "id": my_id}).encode("utf-8"))
+                    except Exception: pass
                 pygame.quit()
                 sys.exit(0)
+
+            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_l:
+                lights_on = not lights_on
             if ev.type == pygame.MOUSEWHEEL:
                 # Adjust zoom (clamp between 0.5 and 3.0)
                 cam.zoom *= 1.1 if ev.y > 0 else 0.9
@@ -538,11 +552,13 @@ def main():
             relay = font_small.render(f"Relay: {RELAY_PUBLIC_ENDPOINT}", True, GREY_180)
             world_surf.blit(tip1, (int(WINDOW_WIDTH*.3 - tip1.get_width()//2), TIP1_Y))
             world_surf.blit(tip2, (int(WINDOW_WIDTH*.7 - tip2.get_width()//2), TIP2_Y))
-            world_surf.blit(relay, (WINDOW_WIDTH//2 - relay.get_width()//2, WINDOW_HEIGHT-RELAY_Y))
+            world_surf.blit(relay, (WINDOW_WIDTH//2 - relay.get_width()//2, RELAY_Y))
 
         if stage == "playing":
+            title = font_big.render("Waiting for players", True, WHITE_240)
+            world_surf.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, TITLE_Y))
             hud = font_small.render(f"Room: {code}", True, GREY_180)
-            world_surf.blit(hud, (10, WINDOW_HEIGHT - 30))
+            world_surf.blit(hud, (10, RELAY_Y))
             for pid, d in remotes.items():
                 drift_points_remote = draw_car(world_surf, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
                                                color_body=COLOR_BODY_REMOTE, car_sprite=au86_sprite)
@@ -554,7 +570,7 @@ def main():
 
         if stage == "settings":
             title = font_big.render("Settings", True, WHITE_240)
-            world_surf.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, 7))
+            world_surf.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, TITLE_Y))
             for button in buttons: button.draw(world_surf)
             # world_surf.blit(btn_screen, (0, 0))
 
@@ -565,6 +581,21 @@ def main():
             world_surf.blit(msg, (WINDOW_WIDTH//2 - msg.get_width()//2, WINDOW_HEIGHT//2))
             tip = font_small.render("Press R to restart", True, GREY_200)
             world_surf.blit(tip, (WINDOW_WIDTH//2 - tip.get_width()//2, WINDOW_HEIGHT//2 + 40))
+
+        # ----- Pixel lighting -----
+        if lights_on:
+            spraymap.surface.fill((0, 0, 0, 0)) # transparent bg
+
+            # two pixelated headlight cones from front-left and front-right
+            halfL, halfW = CAR_LEN * 0.5, CAR_WID * 0.5
+            hl_base_L = car_local_to_world(my_car.x, my_car.y, my_car.angle,  halfL*0.85, -halfW*0.35)
+            hl_base_R = car_local_to_world(my_car.x, my_car.y, my_car.angle,  halfL*0.85,  halfW*0.35)
+
+            spraymap.add_cone(hl_base_L[0], hl_base_L[1], my_car.angle, HEADLIGHT_LEN, fov=HEADLIGHT_FOV)
+            spraymap.add_cone(hl_base_R[0], hl_base_R[1], my_car.angle, HEADLIGHT_LEN, fov=HEADLIGHT_FOV)
+
+            # Multiply lightmap over the world (white = keep, dark = darken)
+            world_surf.blit(spraymap.render(), (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
 
         # Apply camera transform (zoom & pan) and blit to screen.
         final_surf = cam.apply(world_surf)
