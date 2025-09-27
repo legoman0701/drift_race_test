@@ -110,9 +110,7 @@ def draw_car(surface, x, y, angle, name,
         ry = px * sa + py * ca
         wpts.append((int(x + rx), int(y + ry)))
 
-    snapped_angle = round(angle / (math.pi / 16)) * (math.pi / 16)
-
-    show_angle = (-snapped_angle + math.pi/2) % (2*math.pi) / (2*math.pi)
+    show_angle = (-angle + math.pi/2) % (2*math.pi) / (2*math.pi)
     sprite_index = int(show_angle * 32) % 32
     surface.blit(car_sprite[sprite_index], (int(x-75/2), int(y-75/2))) 
 
@@ -564,8 +562,8 @@ def main():
                                                color_body=COLOR_BODY_REMOTE, car_sprite=au86_sprite)
                 if d["drift_ratio"] > 0.8 and pid in drift_points_old_remotes:
                     old_pts = drift_points_old_remotes[pid]
-                    pygame.draw.line(tire_mark, (255,255,255,100), drift_points_remote[0], old_pts[0], 3)
-                    pygame.draw.line(tire_mark, (255,255,255,100), drift_points_remote[1], old_pts[1], 3)
+                    pygame.draw.line(tire_mark, TIRE_MARK_SMOKE, drift_points_remote[0], old_pts[0], 3)
+                    pygame.draw.line(tire_mark, TIRE_MARK_SMOKE, drift_points_remote[1], old_pts[1], 3)
                 drift_points_old_remotes[pid] = drift_points_remote
 
         if stage == "settings":
