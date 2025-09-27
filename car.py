@@ -7,12 +7,12 @@ TRACK_MARGIN = 40
 # car
 CAR_LEN = 58.0
 CAR_WID  = 30.0
-ENGINE_ACC      = 950.0
+ENGINE_ACC      = 450.0
 #REVERSE_ACC     = 700.0
 #BRAKE_DECEL     = 1400.0
 #DRAG            = 0.35
 #ROLLING         = 1.6
-LATERAL_GRIP    = 10
+LATERAL_GRIP    = 2
 STEER_SENS      = 1/50
 #DRIFT_SENS      = 1/8000
 OVERSTEER       = 1.5/100
@@ -44,7 +44,12 @@ class Car:
         v_forward = self.vx * fx + self.vy * fy
         v_lateral = self.vx * rx + self.vy * ry
         
-        self.drift_ratio = clamp(abs(v_lateral)/200, 0, 1)
+        vel_vec = (v_forward/math.sqrt(v_forward**2+v_lateral**2+1e-4),
+                   v_lateral/math.sqrt(v_forward**2+v_lateral**2+1e-4))
+        
+        angle = ((math.atan2(vel_vec[0], vel_vec[1])-math.pi/2 + math.pi)%(2*math.pi) - math.pi) * clamp(abs(v_forward)-10, 0, 1)
+        
+        self.drift_ratio = clamp(abs(angle), 0, 1)
 
         a_forward = th * ENGINE_ACC
         a_lateral = -v_lateral * LATERAL_GRIP * (1-self.drift_ratio/2) * (1-br)

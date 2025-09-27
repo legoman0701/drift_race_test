@@ -9,6 +9,7 @@ class Button:
         self.text = text
         self.action = action
         self.font = pygame.font.SysFont(None, 36)
+        self.old_state = False
 
     def draw(self, screen):
         mouse_pos = pygame.mouse.get_pos()
@@ -16,9 +17,12 @@ class Button:
 
         if self.rect.collidepoint(mouse_pos):
             pygame.draw.rect(screen, self.hover_color, self.rect)
-            if clicked and self.action:
+            if clicked and self.action and not self.old_state:
                 # Call action and return its result (if any) so callers can react to state changes
+                self.old_state = True
                 return self.action()
+            if not clicked:
+                self.old_state = False
         else:
             pygame.draw.rect(screen, self.color, self.rect)
 

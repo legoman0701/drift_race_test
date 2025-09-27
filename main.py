@@ -82,6 +82,8 @@ PROFANITY_SET = {"NIGGER", "NIGGA", "NIGA"}
 
 VIEW_ANGLE = 70 * math.pi / 180.0  # radians
 
+STEERING_MODE = 0 # 0 for keyboard/controller 1 for mouse
+
 flags = pygame.HWSURFACE | pygame.DOUBLEBUF
 
 # =============================
@@ -299,7 +301,7 @@ def send_ping(sock, code):
     except Exception:
         pass
 
-def read_inputs(joysticks):
+def read_inputs(joysticks, car, cam):
     keys = pygame.key.get_pressed()
     th = (1 if any(keys[key] for key in UP_KEY) else 0) - (1 if any(keys[key] for key in DOWN_KEY) else 0)
     st = (1 if any(keys[key] for key in RIGHT_KEY) else 0) - (1 if any(keys[key] for key in LEFT_KEY) else 0)
@@ -308,6 +310,16 @@ def read_inputs(joysticks):
         th = 1.0 if th > 0 else -1.0
     if st != 0:
         st = 1.0 if st > 0 else -1.0
+        
+    if STEERING_MODE == 1:
+        mouse_pos = pygame.mouse.get_pos()
+        mous_vec = (mouse_pos[0] - car.x+cam.x - WINDOW_WIDTH/2, 
+                    mouse_pos[1] - car.y+cam.y - WINDOW_HEIGHT/2)
+        mous_vec = (mous_vec[0]/math.sqrt(mous_vec[0]**2+mous_vec[1]**2),
+                    mous_vec[1]/math.sqrt(mous_vec[0]**2+mous_vec[1]**2))
+        
+        error = (math.atan2(mous_vec[0], mous_vec[1])-math.pi/2 + car.angle + math.pi)%(2*math.pi) - math.pi
+        st = -error*2
 
     if joysticks and joysticks[0] != []:
         js = joysticks[0]
@@ -500,10 +512,15 @@ def main():
 
     def show_key_binds(): # to do
         print("Showing key binds...")
+        
+    def switch_steering_mode():
+        global STEERING_MODE
+        STEERING_MODE = 0 if STEERING_MODE == 1 else 1
 
     buttons = [
-        btn.Button("Leave Room", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.4, BTN_WIDTH, BTN_HEIGHT, (200, 0, 0), (255, 50, 50), lambda: leave_room(sock, code, my_id, remotes)),
-        btn.Button("Key Binds", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.6, BTN_WIDTH, BTN_HEIGHT, (50, 50, 200), (100, 100, 255), show_key_binds),
+        btn.Button("Leave Room", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.1, BTN_WIDTH, BTN_HEIGHT, (200, 0, 0), (255, 50, 50), lambda: leave_room(sock, code, my_id, remotes)),
+        btn.Button("Key Binds", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.4, BTN_WIDTH, BTN_HEIGHT, (50, 50, 200), (100, 100, 255), show_key_binds),
+        btn.Button("Change Steering Mode", WINDOW_WIDTH//2-BTN_WIDTH, WINDOW_HEIGHT*0.7, BTN_WIDTH*2, BTN_HEIGHT, (50, 50, 200), (100, 100, 255), switch_steering_mode),
     ]
 
     while True:
@@ -550,7 +567,7 @@ def main():
                 last_ping = now
                 send_ping(sock, code)
 
-        my_car.step(read_inputs(joysticks), dt, remotes, (WINDOW_WIDTH, WINDOW_HEIGHT) if stage != "playing" else (track_image.get_width(), track_image.get_height()))
+        my_car.step(read_inputs(joysticks, my_car, cam), dt, remotes, (WINDOW_WIDTH, WINDOW_HEIGHT) if stage != "playing" else (track_image.get_width(), track_image.get_height()))
         cam.update(my_car, (WINDOW_WIDTH, WINDOW_HEIGHT) if stage != "playing" else (track_image.get_width(), track_image.get_height()))
 
         # Draw game world onto an off-screen surface.
@@ -590,7 +607,7 @@ def main():
         
         drift_points = draw_car(world_surf, my_car.x, my_car.y, my_car.angle, my_car.name,
                                   color_body=COLOR_MY_CAR, car_sprites_list=[shadow_sprite, ae86_sprite, light_spray_sprite], lights_on=lights_on)
-        if my_car.drift_ratio > 0.8 and drift_points_old:
+        if my_car.drift_ratio > 0.5 and drift_points_old:
             pygame.draw.line(tire_mark, TIRE_MARK_SMOKE, drift_points[0], drift_points_old[0], 3)
             pygame.draw.line(tire_mark, TIRE_MARK_SMOKE, drift_points[1], drift_points_old[1], 3)
         drift_points_old = drift_points
