@@ -14,8 +14,8 @@ class Camera:
 
     def update(self, target, world_size):
         # Follow the target with any offset
-        self.x = clamp(target.x + self.offset[0], self.width / 2 / self.zoom, (world_size[0] - self.width / 2) / self.zoom)
-        self.y = clamp(target.y + self.offset[1], self.height / 2 / self.zoom, (world_size[1] - self.height / 2) / self.zoom)
+        self.x = clamp(target.x + self.offset[0], self.width / 2 / self.zoom, world_size[0] - self.width / 2 / self.zoom)
+        self.y = clamp(target.y + self.offset[1], self.height / 2 / self.zoom, world_size[1] - self.height / 2 / self.zoom)
 
     def apply(self, world_surf):
         view_w = int(self.width / self.zoom)

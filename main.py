@@ -413,7 +413,7 @@ def main():
         img = pygame.image.load(f"assets/AE86/Light_Spray/{i:04}.png").convert_alpha()
         light_spray_sprite.append(img)
         
-    track_image = pygame.image.load(f"assets/Map/Map1.png")
+    track_image = pygame.image.load(f"assets/Map/Map1.png").convert()
 
     stage = "menu"  # menu | playing | settings | keys | error
     error_msg = ""
@@ -465,9 +465,10 @@ def main():
         except Exception as ex:
             stage = "error"
             error_msg = f"Net error: {ex}"
-
+    
     tire_mark = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
     tire_mark.fill((255, 255, 255, 0))
+    
     drift_points_old = []
     drift_points_old_remotes = {}
 
@@ -542,7 +543,7 @@ def main():
                 last_ping = now
                 send_ping(sock, code)
 
-        my_car.step(read_inputs(joysticks), dt, remotes)
+        my_car.step(read_inputs(joysticks), dt, remotes, (WINDOW_WIDTH, WINDOW_HEIGHT) if stage != "playing" else (track_image.get_width(), track_image.get_height()))
         cam.update(my_car, (track_image.get_width(), track_image.get_height()))
 
         # Draw game world onto an off-screen surface.
@@ -562,12 +563,24 @@ def main():
             #pygame.draw.rect(world_surf, TRACK_COLOR, camera_rect)
             world_surf.blit(visible_track, top_right_pos)
             
+        if tire_mark.get_width() != world_surf.get_width() or tire_mark.get_height() != world_surf.get_width():
+            tire_mark = pygame.Surface((world_surf.get_width(), world_surf.get_width()), pygame.SRCALPHA)
+            tire_mark.fill((255, 255, 255, 0))
+            print('aa')
+            
         ui_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
         ui_surf.fill((0,0,0,0))
         
         draw_track_ui(ui_surf)
         # world_surf.blit(bg_map, (0, 0))
-        world_surf.blit(tire_mark, (0,0))
+        top_right_pos = cam.x-(WINDOW_WIDTH/2)/cam.zoom, cam.y-(WINDOW_HEIGHT/2)/cam.zoom
+        camera_rect = pygame.Rect(top_right_pos[0],
+                                    top_right_pos[1],
+                                    WINDOW_WIDTH/cam.zoom,
+                                    WINDOW_HEIGHT/cam.zoom)
+        visible_tire_mark = tire_mark.subsurface(camera_rect)
+        world_surf.blit(visible_tire_mark, top_right_pos)
+        
         drift_points = draw_car(world_surf, my_car.x, my_car.y, my_car.angle, my_car.name,
                                   color_body=COLOR_MY_CAR, car_sprites_list=[shadow_sprite, ae86_sprite, light_spray_sprite], lights_on=lights_on)
         if my_car.drift_ratio > 0.8 and drift_points_old:
