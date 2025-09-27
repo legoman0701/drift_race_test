@@ -1,3 +1,7 @@
+# Pygame Drift Car Racing with AI & Multiplayer Modes 
+
+## Updates History
+
 sep 27 2025
 
 - pygame-ec (add : import with try and exception)
@@ -49,3 +53,38 @@ sep 25 2025
 - drift (add)
 - physics (add)
 - pygame init
+
+---
+
+## Controls
+
+### In Menu
+- **H** : host a new game
+- **J** : join a game
+
+### In Game
+- **Up, Z** : move forward
+- **Down, S** : move back
+- **Left, Q** : turn left
+- **Right, D** : turn right
+- **Space** : handbrake
+- **Esc** : open settings
+
+---
+
+## Demo assets
+
+### v3
+- `.assets/demo/v3-1.png`
+- `.assets/demo/v3-2.png`
+- `.assets/demo/v3-3.png`
+
+### v2
+- `.assets/demo/v2-1.png`
+- `.assets/demo/v2-2.png`
+- `.assets/demo/v2-3.png`
+
+### v1
+- `.assets/demo/v1-1.png`
+- `.assets/demo/v1-2.png`
+- `.assets/demo/v1-3.png`
