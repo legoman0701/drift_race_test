@@ -36,6 +36,8 @@ COLOR_BODY_REMOTE  = (255,200,120)
 COLOR_MY_CAR       = (200,230,255)
 HEADLIGHT_COLOR = (200, 200, 200)
 
+flags = pygame.HWSURFACE | pygame.DOUBLEBUF
+
 # key binds
 UP_KEY = [pygame.K_UP, pygame.K_z]
 DOWN_KEY = [pygame.K_DOWN, pygame.K_s]
@@ -470,9 +472,10 @@ def main():
         except Exception as ex:
             stage = "error"
             error_msg = f"Net error: {ex}"
-
+    
     tire_mark = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
     tire_mark.fill((255, 255, 255, 0))
+    
     drift_points_old = []
     drift_points_old_remotes = {}
 
@@ -571,6 +574,10 @@ def main():
             tire_mark = pygame.Surface((world_surf.get_width(), world_surf.get_width()), pygame.SRCALPHA)
             tire_mark.fill((255, 255, 255, 0))
             
+        if tire_mark.get_width() != world_surf.get_width() or tire_mark.get_height() != world_surf.get_width():
+            tire_mark = pygame.Surface((world_surf.get_width(), world_surf.get_width()), pygame.SRCALPHA)
+            tire_mark.fill((255, 255, 255, 0))
+            
         ui_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
         ui_surf.fill((0,0,0,0)) # transparent surface
         
@@ -581,9 +588,10 @@ def main():
                                     top_right_pos[1],
                                     WINDOW_WIDTH/cam.zoom,
                                     WINDOW_HEIGHT/cam.zoom)
+
         visible_tire_mark = tire_mark.subsurface(camera_rect)
         world_surf.blit(visible_tire_mark, top_right_pos)
-
+        
         drift_points = draw_car(world_surf, my_car.x, my_car.y, my_car.angle, my_car.name,
                                   color_body=COLOR_MY_CAR, car_sprites_list=[shadow_sprite, ae86_sprite, light_spray_sprite], lights_on=lights_on)
         if my_car.drift_ratio > 0.8 and drift_points_old:
