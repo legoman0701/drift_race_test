@@ -75,16 +75,16 @@ sep 25 2025
 ## Demo assets
 
 ### v3
-- `.assets/demo/v3-1.png`
-- `.assets/demo/v3-2.png`
-- `.assets/demo/v3-3.png`
+- ![v3-1](.assets/demo/v3-1.png)
+- ![v3-2](.assets/demo/v3-2.png)
+- ![v3-3](.assets/demo/v3-3.png)
 
 ### v2
-- `.assets/demo/v2-1.png`
-- `.assets/demo/v2-2.png`
-- `.assets/demo/v2-3.png`
+- ![v2-1](.assets/demo/v2-1.png)
+- ![v2-2](.assets/demo/v2-2.png)
+- ![v2-3](.assets/demo/v2-3.png)
 
 ### v1
-- `.assets/demo/v1-1.png`
-- `.assets/demo/v1-2.png`
-- `.assets/demo/v1-3.png`
+- ![v1-1](.assets/demo/v1-1.png)
+- ![v1-2](.assets/demo/v1-2.png)
+- ![v1-3](.assets/demo/v1-3.png)
