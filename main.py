@@ -171,6 +171,8 @@ def get_text_input(surface, title_text, tip_text, font_big, font_small, allowed_
     while True:
         surface.fill((20,20,25))
         draw_track_ui(surface)
+        title = font_big.render("Joining", True, WHITE_240)
+        surface.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, TITLE_Y))
         title = font_big.render(title_text, True, (230,230,240))
         surface.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, WINDOW_HEIGHT//2 - 70))
         disp_text = text if text else "(empty)"
@@ -201,13 +203,16 @@ def get_code_input(surface, font_big, font_small):
                           "Enter : validate  -  Esc : cancel",
                           font_big, font_small, allowed_set=ROOM_ALPHABET)
 
-def get_name_input(surface, font_big, font_small):
+def get_name_input(surface, font_big, font_small, tag):
     pygame.key.set_repeat(KEY_REPEAT_DELAY, KEY_REPEAT_INTERVAL)
     text = ""
     error_msg = ""
     while True:
         surface.fill((20,20,25))
         draw_track_ui(surface)
+        if tag == "host": title = font_big.render("Hosting", True, WHITE_240)
+        else: title = font_big.render("Joining", True, WHITE_240)
+        surface.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, TITLE_Y))
         title = font_big.render("Enter your name", True, (230,230,240))
         surface.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, WINDOW_HEIGHT//2 - 70))
         disp_text = text if text else "(empty)"
@@ -329,7 +334,7 @@ def draw_menu(screen, font_big, font_medium):
 
 def handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, code, sock, error_msg):
     if ev.key == HOST_KEY:  # Host room
-        my_name = get_name_input(screen, font_big, font_small)
+        my_name = get_name_input(screen, font_big, font_small, "host")
         code = rand_code()
         try:
             sock = connect_to_relay()
@@ -340,7 +345,7 @@ def handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, 
             stage = "error"
             error_msg = f"Net error: {ex}"
     elif ev.key == JOIN_KEY:  # Join room
-        my_name = get_name_input(screen, font_big, font_small)
+        my_name = get_name_input(screen, font_big, font_small, "join")
         jcode = get_code_input(screen, font_big, font_small)
         try:
             sock = connect_to_relay()
