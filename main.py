@@ -574,10 +574,6 @@ def main():
             tire_mark = pygame.Surface((world_surf.get_width(), world_surf.get_width()), pygame.SRCALPHA)
             tire_mark.fill((255, 255, 255, 0))
             
-        if tire_mark.get_width() != world_surf.get_width() or tire_mark.get_height() != world_surf.get_width():
-            tire_mark = pygame.Surface((world_surf.get_width(), world_surf.get_width()), pygame.SRCALPHA)
-            tire_mark.fill((255, 255, 255, 0))
-            
         ui_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
         ui_surf.fill((0,0,0,0)) # transparent surface
         
