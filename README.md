@@ -18,6 +18,7 @@ sep 27 2025
 - cleaning x3
 - settings menu (update) x2
 - settings menu (add)
+- track (add)
 
 sep 26 2025
 

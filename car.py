@@ -58,7 +58,7 @@ class Car:
         self.vx += acc_fx * dt
         self.vy += acc_fy * dt
         self.x  += self.vx * dt
-        self.y  += self.vy * dt
+        self.y  += (self.vy * dt)*math.sqrt(2) # compensate for isometric view at 45deg
 
         drift_moment = (STEER_SENS * st * math.copysign(v_forward, th) + (OVERSTEER * -self.v_angle))
         drift_moment +=  math.copysign(self.v_angle/100, st)
