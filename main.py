@@ -50,8 +50,8 @@ HOST_KEY = pygame.K_h
 JOIN_KEY = pygame.K_j
 
 # car
-CAR_LEN = 58.0
-CAR_WID  = 30.0
+CAR_LEN = 38.0
+CAR_WID  = 20.0
 TIRE_MARK_SMOKE = (255,255,255,100) # tire mark color at first step (smoke)
 TIRE_MARK_GROUND = (220, 220, 220, 220) # tire mark color at second step on the ground
 HEADLIGHT_LEN = 150
@@ -570,10 +570,6 @@ def main():
             #pygame.draw.rect(world_surf, TRACK_COLOR, camera_rect)
             world_surf.blit(visible_track, top_right_pos)
 
-        if tire_mark.get_width() != world_surf.get_width() or tire_mark.get_height() != world_surf.get_width():
-            tire_mark = pygame.Surface((world_surf.get_width(), world_surf.get_width()), pygame.SRCALPHA)
-            tire_mark.fill((255, 255, 255, 0))
-            
         if tire_mark.get_width() != world_surf.get_width() or tire_mark.get_height() != world_surf.get_width():
             tire_mark = pygame.Surface((world_surf.get_width(), world_surf.get_width()), pygame.SRCALPHA)
             tire_mark.fill((255, 255, 255, 0))
