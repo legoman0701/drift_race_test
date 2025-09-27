@@ -1,4 +1,5 @@
-import pygame
+try: import pygame_ce as pygame
+except Exception: import pygame
 
 class Button:
     def __init__(self, text, x, y, width, height, color, hover_color, action=None):
@@ -16,11 +17,13 @@ class Button:
         if self.rect.collidepoint(mouse_pos):
             pygame.draw.rect(screen, self.hover_color, self.rect)
             if clicked and self.action:
-                self.action()
+                # Call action and return its result (if any) so callers can react to state changes
+                return self.action()
         else:
             pygame.draw.rect(screen, self.color, self.rect)
 
         text_surf = self.font.render(self.text, True, (255, 255, 255))
         text_rect = text_surf.get_rect(center=self.rect.center)
         screen.blit(text_surf, text_rect)
+        return None
 

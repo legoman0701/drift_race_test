@@ -33,7 +33,7 @@ class Car:
         self.name = name
         self.drift_ratio = 0 
 
-    def step(self, inputs, dt, players):
+    def step(self, inputs, dt, players, bounds):
         th = clamp(inputs.get("th", 0.0), -1.0, 1.0)
         st = clamp(inputs.get("st", 0.0), -1.0, 1.0)
         br = inputs.get("br", 0.0)
@@ -66,7 +66,7 @@ class Car:
         
         self.angle += ((STEER_SENS * st * v_forward)*(1-self.drift_ratio) + self.v_angle*self.drift_ratio * dt) * dt
 
-        self._handle_track_bounds(dt)
+        self._handle_track_bounds(dt, bounds)
 
         for pid, d in players.items():
             if d["name"] == self.name:
@@ -77,9 +77,9 @@ class Car:
             if dist2 < (CAR_LEN * CAR_LEN):
                 self._handle_collision(dx, dy, dist2)
     
-    def _handle_track_bounds(self, dt):
-        minx, maxx = TRACK_MARGIN, WINDOW_WIDTH - TRACK_MARGIN
-        miny, maxy = TRACK_MARGIN, WINDOW_HEIGHT - TRACK_MARGIN
+    def _handle_track_bounds(self, dt, bounds):
+        minx, maxx = TRACK_MARGIN, bounds[0] - TRACK_MARGIN
+        miny, maxy = TRACK_MARGIN, bounds[1] - TRACK_MARGIN
         hit = False
         if self.x < minx:
             self.x = minx

@@ -1,4 +1,5 @@
-import pygame
+try: import pygame_ce as pygame
+except Exception: import pygame
 import sys
 
 # Initialize pygame and joystick
