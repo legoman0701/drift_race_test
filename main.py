@@ -34,6 +34,8 @@ COLOR_BODY_REMOTE  = (255,200,120)
 COLOR_MY_CAR       = (200,230,255)
 HEADLIGHT_COLOR = (200, 200, 200)
 
+flags = pygame.HWSURFACE | pygame.DOUBLEBUF
+
 # key binds
 UP_KEY = [pygame.K_UP, pygame.K_z]
 DOWN_KEY = [pygame.K_DOWN, pygame.K_s]
@@ -117,8 +119,8 @@ def draw_car(surface, x, y, angle, name,
             continue
         show_angle = (-angle + math.pi/2) % (2*math.pi) / (2*math.pi)
         sprite_index = int(show_angle * 32) % 32
-        sprite_size = car_sprite[sprite_index].get_width()
-        surface.blit(car_sprite[sprite_index], (int(x-sprite_size/2), int(y-sprite_size/2))) 
+        sprite_size = (car_sprite[sprite_index].get_width(), car_sprite[sprite_index].get_height())
+        surface.blit(car_sprite[sprite_index], (int(x-sprite_size[0]/2), int(y-sprite_size[1]/2))) 
 
     if name:
         font = pygame.font.SysFont(None, 22)
@@ -544,14 +546,14 @@ def main():
                 send_ping(sock, code)
 
         my_car.step(read_inputs(joysticks), dt, remotes, (WINDOW_WIDTH, WINDOW_HEIGHT) if stage != "playing" else (track_image.get_width(), track_image.get_height()))
-        cam.update(my_car, (track_image.get_width(), track_image.get_height()))
+        cam.update(my_car, (WINDOW_WIDTH, WINDOW_HEIGHT) if stage != "playing" else (track_image.get_width(), track_image.get_height()))
 
         # Draw game world onto an off-screen surface.
         if stage != "playing":
-            world_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+            world_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), flags)
             world_surf.fill(GREY_20)
         else:
-            world_surf = pygame.Surface((track_image.get_width(), track_image.get_height()), pygame.HWSURFACE)
+            world_surf = pygame.Surface((track_image.get_width(), track_image.get_height()), flags)
             # Calculate the camera viewport in the track image coordinates.
             
             top_right_pos = cam.x-(WINDOW_WIDTH/2)/cam.zoom, cam.y-(WINDOW_HEIGHT/2)/cam.zoom
@@ -566,7 +568,6 @@ def main():
         if tire_mark.get_width() != world_surf.get_width() or tire_mark.get_height() != world_surf.get_width():
             tire_mark = pygame.Surface((world_surf.get_width(), world_surf.get_width()), pygame.SRCALPHA)
             tire_mark.fill((255, 255, 255, 0))
-            print('aa')
             
         ui_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
         ui_surf.fill((0,0,0,0))
@@ -578,6 +579,7 @@ def main():
                                     top_right_pos[1],
                                     WINDOW_WIDTH/cam.zoom,
                                     WINDOW_HEIGHT/cam.zoom)
+        
         visible_tire_mark = tire_mark.subsurface(camera_rect)
         world_surf.blit(visible_tire_mark, top_right_pos)
         
