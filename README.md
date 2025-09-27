@@ -1,5 +1,17 @@
 sep 27 2025
 
+- pygame-ec (add : import with try and exception)
+- issue : leave room btn : fixed
+- issue : players' username fixed
+- zoom (update : add of flag and update of render view)
+- camera (update)
+- collisions (update)
+- tire marks (update)
+- collisions (update)
+- track (add)
+- camera (update : clamp)
+- assets (update) x2
+- ui (update)
 - README.md (update : fix text format)
 - README.md (add)
 - headlights (add)
