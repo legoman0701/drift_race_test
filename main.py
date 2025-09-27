@@ -356,6 +356,7 @@ def main():
     pygame.init()
     pygame.joystick.init()
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+    btn_screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
     pygame.display.set_caption("Top-Down Drift — Client Trust (Pi relay)")
     clock = pygame.time.Clock()
     font_small = pygame.font.SysFont(None, 20)
@@ -429,6 +430,32 @@ def main():
     # Create a camera object; mouse wheel will adjust zoom and middle mouse drag will pan.
     cam = camera.Camera(WINDOW_WIDTH, WINDOW_HEIGHT, zoom=1.0)
     dragging = False
+
+    def leave_room(sock, code, my_id, remotes):
+        if sock and code:
+            try:
+                sock.send(json.dumps({"t": "bye", "code": code, "id": my_id}).encode("utf-8"))
+                sock.close()
+            except Exception:
+                pass
+        remotes.clear()
+        # stage, sock, code, remotes
+        return "menu", None, None, remotes
+
+    def show_key_binds():
+        print("Showing key binds...")
+        # to do
+
+    def resume_game():
+        global stage
+        stage = "playing"
+        # make so we dont see the btns anymore
+
+    buttons = [
+        btn.Button("Leave Room", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.4, BTN_WIDTH, BTN_HEIGHT, (200, 0, 0), (255, 50, 50), leave_room(stage, sock, code, remotes)),
+        btn.Button("Key Binds", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.5, BTN_WIDTH, BTN_HEIGHT, (50, 50, 200), (100, 100, 255), show_key_binds),
+        btn.Button("Resume", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.6, BTN_WIDTH, BTN_HEIGHT, (0, 150, 0), (0, 200, 0), resume_game),
+    ]
 
     while True:
         dt = clock.tick(FPS) / 1000.0
@@ -511,30 +538,11 @@ def main():
             world_surf.blit(tip2, (int(WINDOW_WIDTH*.7 - tip2.get_width()//2), 13))
             world_surf.blit(relay, (WINDOW_WIDTH//2 - relay.get_width()//2, WINDOW_HEIGHT-30))
 
-        def leave_room():
-            global stage
-            stage = "menu"
-            # socket bye
-
-        def show_key_binds():
-            print("Showing key binds...")
-            # to do
-
-        def resume_game():
-            global stage
-            stage = "playing"
-            # make so we dont see the btns anymore
-
-        buttons = [
-            btn.Button("Leave Room", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.4, BTN_WIDTH, BTN_HEIGHT, (200, 0, 0), (255, 50, 50), leave_room),
-            btn.Button("Key Binds", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.5, BTN_WIDTH, BTN_HEIGHT, (50, 50, 200), (100, 100, 255), show_key_binds),
-            btn.Button("Resume", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.6, BTN_WIDTH, BTN_HEIGHT, (0, 150, 0), (0, 200, 0), resume_game),
-        ]
-
         if stage == "settings":
             title = font_big.render("Settings", True, WHITE_240)
             world_surf.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, 7))
             for button in buttons: button.draw(world_surf)
+            # world_surf.blit(btn_screen, (0, 0))
 
         if stage == "error":
             errh = font_big.render("ERROR", True, (255,120,120))
