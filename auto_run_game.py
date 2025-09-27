@@ -1,9 +1,4 @@
-import subprocess
-import sys
-import time
-import random
-import string
-import os
+import subprocess, sys, time, random, string, os
 
 PYTHON = sys.executable
 GAME_PATH = os.path.abspath("main.py")

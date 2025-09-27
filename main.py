@@ -4,8 +4,10 @@ Top-down drift game client with camera (zoom & pan)
 Refactored to remove magic numbers and reduce spaghetti code.
 """
 
-import pygame, socket, json, time, random, string, sys, math, uuid, argparse # global imports
-import camera, car, button as btn, lightspray # local imports
+try: import pygame_ce as pygame
+except Exception: import pygame ; print("error")
+import socket, json, time, random, string, sys, math, uuid, argparse # global imports
+import camera, car, button as btn # local imports
 
 # ======= CONFIGURATION =======
 RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
@@ -80,6 +82,8 @@ PROFANITY_SET = {"NIGGER", "NIGGA", "NIGA"}
 
 VIEW_ANGLE = 70 * math.pi / 180.0  # radians
 
+flags = pygame.HWSURFACE | pygame.DOUBLEBUF
+
 # =============================
 
 def clamp(x, lo, hi):
@@ -134,13 +138,6 @@ def draw_track_ui(screen):
     pygame.draw.rect(screen, TRACK_BORDER_COLOR, (0, BOTTOM_LINE_Y, WINDOW_WIDTH, WINDOW_HEIGHT-BOTTOM_LINE_Y))
     pygame.draw.line(screen, WHITE, (0, TOP_LINE_Y), (WINDOW_WIDTH, TOP_LINE_Y))
     pygame.draw.line(screen, WHITE, (0, BOTTOM_LINE_Y), (WINDOW_WIDTH, BOTTOM_LINE_Y))
-
-    # pygame.draw.rect(screen, TRACK_COLOR, (0,0,WINDOW_WIDTH,WINDOW_HEIGHT))
-    # pygame.draw.rect(screen, TRACK_BORDER_COLOR,
-    #                  (TRACK_MARGIN, TRACK_MARGIN,
-    #                   WINDOW_WIDTH - 2 * TRACK_MARGIN,
-    #                   WINDOW_HEIGHT - 2 * TRACK_MARGIN),
-    #                  width=TRACK_BORDER_WIDTH)
 
 def recv_jsons(sock):
     msgs = []
@@ -201,7 +198,7 @@ def get_text_input(surface, title_text, tip_text, font_big, font_small, allowed_
 def get_code_input(surface, font_big, font_small):
     return get_text_input(surface,
                           "Enter ROOM CODE (A-Z/0-9)",
-                          "Enter = OK   Esc = cancel",
+                          "Enter : validate  -  Esc : cancel",
                           font_big, font_small, allowed_set=ROOM_ALPHABET)
 
 def get_name_input(surface, font_big, font_small):
@@ -361,6 +358,14 @@ def handle_game_events(screen, ev, stage, remotes, sock, code, my_name, my_id, m
     if ev.type == pygame.KEYDOWN:
         if stage == "menu":
             stage, my_name, code, sock, error_msg = handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, code, sock, error_msg)
+            # If we just entered the playing stage, ensure the player's car name is updated
+            # to the name they entered in the menu.
+            try:
+                if stage == "playing" and my_car is not None:
+                    my_car.name = my_name
+            except NameError:
+                # my_car may not be in scope here; ignore if it's not available.
+                pass
         elif stage == "playing" and ev.key == ESCAPE_KEY: # open settings menu
                 stage = "settings"          
         elif stage == "settings" and ev.key == ESCAPE_KEY: # leave settings menu
@@ -564,13 +569,17 @@ def main():
             visible_track = track_image.subsurface(camera_rect)
             #pygame.draw.rect(world_surf, TRACK_COLOR, camera_rect)
             world_surf.blit(visible_track, top_right_pos)
+
+        if tire_mark.get_width() != world_surf.get_width() or tire_mark.get_height() != world_surf.get_width():
+            tire_mark = pygame.Surface((world_surf.get_width(), world_surf.get_width()), pygame.SRCALPHA)
+            tire_mark.fill((255, 255, 255, 0))
             
         if tire_mark.get_width() != world_surf.get_width() or tire_mark.get_height() != world_surf.get_width():
             tire_mark = pygame.Surface((world_surf.get_width(), world_surf.get_width()), pygame.SRCALPHA)
             tire_mark.fill((255, 255, 255, 0))
             
         ui_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
-        ui_surf.fill((0,0,0,0))
+        ui_surf.fill((0,0,0,0)) # transparent surface
         
         draw_track_ui(ui_surf)
         # world_surf.blit(bg_map, (0, 0))
@@ -579,7 +588,7 @@ def main():
                                     top_right_pos[1],
                                     WINDOW_WIDTH/cam.zoom,
                                     WINDOW_HEIGHT/cam.zoom)
-        
+
         visible_tire_mark = tire_mark.subsurface(camera_rect)
         world_surf.blit(visible_tire_mark, top_right_pos)
         
@@ -619,7 +628,17 @@ def main():
         if stage == "settings":
             title = font_big.render("Settings", True, WHITE_240)
             ui_surf.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, TITLE_Y))
-            for button in buttons: button.draw(ui_surf)
+            # Draw buttons and capture any action results. If an action returns a tuple
+            # with new state (stage, sock, code, remotes), apply it.
+            for button in buttons:
+                res = button.draw(ui_surf)
+                if isinstance(res, tuple) and len(res) == 4:
+                    # expected return: (new_stage, new_sock, new_code, new_remotes)
+                    new_stage, new_sock, new_code, new_remotes = res
+                    stage = new_stage
+                    sock = new_sock
+                    code = new_code
+                    remotes = new_remotes
             # world_surf.blit(btn_screen, (0, 0))
 
         if stage == "error":

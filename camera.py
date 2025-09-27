@@ -1,12 +1,13 @@
-import pygame
+try: import pygame_ce as pygame
+except Exception: import pygame
 
 def clamp(x, lo, hi):
     return lo if x < lo else hi if x > hi else x
 
 class Camera:
     def __init__(self, width, height, zoom=1.0):
-        self.width = width
-        self.height = height
+        self.width = width # bottom right corner's x value of zoomed camera 
+        self.height = height # bottom right corner's y value of zoomed camera
         self.zoom = zoom
         self.x = width // 2
         self.y = height // 2
