@@ -126,8 +126,10 @@ def draw_car(surface, x, y, angle, name,
         surface.blit(text, (int(x-text.get_width()/2), int(y-40)))
     return (wpts[2], wpts[3])  # rear left and right
 
-def draw_track(screen):
-    pygame.draw.rect(screen, DARK_NAVY_BLUE, (0, TOP_LINE_Y, WINDOW_WIDTH, BOTTOM_LINE_Y-TOP_LINE_Y))
+def draw_track_ui(screen):
+    # Fill the background between TOP_LINE_Y and BOTTOM_LINE_Y with horizontal lines
+    pygame.draw.rect(screen, TRACK_BORDER_COLOR, (0, 0, WINDOW_WIDTH, TOP_LINE_Y))
+    pygame.draw.rect(screen, TRACK_BORDER_COLOR, (0, BOTTOM_LINE_Y, WINDOW_WIDTH, WINDOW_HEIGHT-BOTTOM_LINE_Y))
     pygame.draw.line(screen, WHITE, (0, TOP_LINE_Y), (WINDOW_WIDTH, TOP_LINE_Y))
     pygame.draw.line(screen, WHITE, (0, BOTTOM_LINE_Y), (WINDOW_WIDTH, BOTTOM_LINE_Y))
 
@@ -169,7 +171,7 @@ def get_text_input(surface, title_text, tip_text, font_big, font_small, allowed_
     text = ""
     while True:
         surface.fill((20,20,25))
-        draw_track(surface)
+        draw_track_ui(surface)
         title = font_big.render(title_text, True, (230,230,240))
         surface.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, WINDOW_HEIGHT//2 - 70))
         disp_text = text if text else "(empty)"
@@ -206,7 +208,7 @@ def get_name_input(surface, font_big, font_small):
     error_msg = ""
     while True:
         surface.fill((20,20,25))
-        draw_track(surface)
+        draw_track_ui(surface)
         title = font_big.render("Enter your name", True, (230,230,240))
         surface.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, WINDOW_HEIGHT//2 - 70))
         disp_text = text if text else "(empty)"
@@ -546,7 +548,10 @@ def main():
         # Draw game world onto an off-screen surface.
         world_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
         world_surf.fill(GREY_20)
-        draw_track(world_surf)
+        ui_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        ui_surf.fill((0,0,0,0))
+        
+        draw_track_ui(ui_surf)
         # world_surf.blit(bg_map, (0, 0))
         world_surf.blit(tire_mark, (0,0))
         drift_points = draw_car(world_surf, my_car.x, my_car.y, my_car.angle, my_car.name,
@@ -558,20 +563,21 @@ def main():
         tire_mark.fill(TIRE_MARK_GROUND, special_flags=pygame.BLEND_RGBA_MULT)
 
         if stage == "menu":
+            cam.zoom = 1
             title = font_big.render("Menu", True, WHITE_240)
-            world_surf.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, TITLE_Y))
+            ui_surf.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, TITLE_Y))
             tip1 = font_medium.render("H : Host room", True, GREY_200)
             tip2 = font_medium.render("J : Join room", True, GREY_200)
             relay = font_small.render(f"Relay: {RELAY_PUBLIC_ENDPOINT}", True, GREY_180)
-            world_surf.blit(tip1, (int(WINDOW_WIDTH*.3 - tip1.get_width()//2), TIP1_Y))
-            world_surf.blit(tip2, (int(WINDOW_WIDTH*.7 - tip2.get_width()//2), TIP2_Y))
-            world_surf.blit(relay, (WINDOW_WIDTH//2 - relay.get_width()//2, RELAY_Y))
+            ui_surf.blit(tip1, (int(WINDOW_WIDTH*.3 - tip1.get_width()//2), TIP1_Y))
+            ui_surf.blit(tip2, (int(WINDOW_WIDTH*.7 - tip2.get_width()//2), TIP2_Y))
+            ui_surf.blit(relay, (WINDOW_WIDTH//2 - relay.get_width()//2, RELAY_Y))
 
         if stage == "playing":
             title = font_big.render("Waiting for players", True, WHITE_240)
-            world_surf.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, TITLE_Y))
+            ui_surf.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, TITLE_Y))
             hud = font_small.render(f"Room: {code}", True, GREY_180)
-            world_surf.blit(hud, (10, RELAY_Y))
+            ui_surf.blit(hud, (10, RELAY_Y))
             for pid, d in remotes.items():
                 drift_points_remote = draw_car(world_surf, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
                                                color_body=COLOR_BODY_REMOTE, car_sprites_list=[ae86_sprite, shadow_sprite, light_spray_sprite], lights_on=lights_on)
@@ -583,21 +589,22 @@ def main():
 
         if stage == "settings":
             title = font_big.render("Settings", True, WHITE_240)
-            world_surf.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, TITLE_Y))
-            for button in buttons: button.draw(world_surf)
+            ui_surf.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, TITLE_Y))
+            for button in buttons: button.draw(ui_surf)
             # world_surf.blit(btn_screen, (0, 0))
 
         if stage == "error":
             errh = font_big.render("ERROR", True, (255,120,120))
-            world_surf.blit(errh, (WINDOW_WIDTH//2 - errh.get_width()//2, WINDOW_HEIGHT//2 - 40))
+            ui_surf.blit(errh, (WINDOW_WIDTH//2 - errh.get_width()//2, WINDOW_HEIGHT//2 - 40))
             msg = font_small.render(error_msg, True, (255,200,200))
-            world_surf.blit(msg, (WINDOW_WIDTH//2 - msg.get_width()//2, WINDOW_HEIGHT//2))
+            ui_surf.blit(msg, (WINDOW_WIDTH//2 - msg.get_width()//2, WINDOW_HEIGHT//2))
             tip = font_small.render("Press R to restart", True, GREY_200)
-            world_surf.blit(tip, (WINDOW_WIDTH//2 - tip.get_width()//2, WINDOW_HEIGHT//2 + 40))
+            ui_surf.blit(tip, (WINDOW_WIDTH//2 - tip.get_width()//2, WINDOW_HEIGHT//2 + 40))
 
         # Apply camera transform (zoom & pan) and blit to screen.
         final_surf = cam.apply(world_surf)
         screen.blit(final_surf, (0,0))
+        screen.blit(ui_surf, (0,0))
         pygame.display.flip()
 
 if __name__ == "__main__":
