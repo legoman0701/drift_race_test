@@ -1,18 +1,21 @@
-# --- Python bytecode / caches ---
+# pycache
 __pycache__/
 *.py[cod]
 *$py.class
 
-# --- Virtual environments ---
+# venv
 .venv/
 venv/
 env/
 ENV/
 .conda/
 .python-version
-requirements.txt
 
-# --- Packaging / build artifacts ---
+# env
+.env
+.env.*
+
+# packages
 build/
 dist/
 pip-wheel-metadata/
@@ -21,7 +24,8 @@ pip-wheel-metadata/
 *.egg
 *.spec  # PyInstaller
 
-# --- Tests / coverage ---
+# tests
+test.py
 .pytest_cache/
 .tox/
 .nox/
@@ -29,7 +33,13 @@ pip-wheel-metadata/
 .coverage
 .coverage.*
 htmlcov/
-test.py
+
+# ide
+.vscode/
+.idea/
+*.code-workspace
+*.swp
+*.swo
 
 # --- Type checkers / linters ---
 .mypy_cache/
@@ -45,21 +55,10 @@ temp/
 # --- Notebooks ---
 .ipynb_checkpoints/
 
-# --- Environment files (optional) ---
-.env
-.env.*
-
 # --- OS-specific junk ---
 .DS_Store
 Thumbs.db
 desktop.ini
-
-# --- IDE/editor settings ---
-.vscode/
-.idea/
-*.code-workspace
-*.swp
-*.swo
 
 # --- Pygame/game assets (keep actual assets tracked) ---
 # Uncomment any of these if you generate temporary outputs:

@@ -8,13 +8,13 @@ RELAY_HOST = "0.0.0.0"
 RELAY_PORT = 40123
 MAX_PACKET = 1400
 CLIENT_TIMEOUT = 15.0   # seconds since last packet before drop
-WORLD_HZ = 20.0         # broadcast world snapshots at most this often
+WORLD_HZ = 60.0         # broadcast world snapshots at most this often
 TICK = 0.01             # main loop tick
 
 # Rooms:
 #   code -> {
 #       "clients": { addr: {"id","name","last"} },
-#       "states":  { id: {"x","y","a","vx","vy","name"} },
+#       "states":  { id: {"x","y","a","vx","vy","name", "drift_ratio"} },
 #       "last_broadcast": float,
 #       "dirty": bool
 #   }
@@ -29,7 +29,7 @@ def sendto_json(sock, addr, obj):
     except Exception:
         pass
 
-def broadcast_world(sock, code, room):
+def broadcast_world(sock, code, room): # update world screen
     now = time.time()
     room["last_broadcast"] = now
     world = {"t":"world", "code":code, "players": room["states"]}
@@ -61,6 +61,7 @@ def loop():
 
         # Broadcast worlds for rooms marked dirty (throttled)
         for code, room in list(rooms.items()):
+            # dirty -> flag : broadcasting needed
             if room["dirty"] and (now - room["last_broadcast"] >= (1.0 / WORLD_HZ)):
                 broadcast_world(sock, code, room)
 
@@ -81,7 +82,23 @@ def loop():
 
         mtype = msg.get("t")
 
-        if mtype == "join":
+        if mtype == "create": # player wants to create a new room
+            code = (msg.get("code") or "").upper().strip()
+            pid  = (msg.get("id") or "")[:16]
+            name = (msg.get("name") or f"Player{pid}")[:24]
+            if not code or not pid:
+                sendto_json(sock, addr, {"t":"error","msg":"missing_code_or_id"}); continue
+            if code in rooms:
+                sendto_json(sock, addr, {"t":"error","msg":"room_already_exists"}); continue
+            room = {"clients": {}, "states": {}, "last_broadcast": 0.0, "dirty": True}
+            rooms[code] = room
+            room["clients"][addr] = {"id": pid, "name": name, "last": now}
+            room["states"].setdefault(pid, {"x": 500, "y": 350, "a": 0.0, "vx": 0.0, "vy": 0.0, "name": name, "drift_ratio": 0.0})
+            room["dirty"] = True
+            sendto_json(sock, addr, {"t":"join_ok", "code": code})
+            broadcast_world(sock, code, room)
+
+        elif mtype == "join": # player wants to join an existing room
             code = (msg.get("code") or "").upper().strip()
             pid  = (msg.get("id") or "")[:16]
             name = (msg.get("name") or f"Player{pid}")[:24]
@@ -89,17 +106,14 @@ def loop():
                 sendto_json(sock, addr, {"t":"error","msg":"missing_code_or_id"}); continue
             room = rooms.get(code)
             if not room:
-                room = {"clients": {}, "states": {}, "last_broadcast": 0.0, "dirty": True}
-                rooms[code] = room
+                sendto_json(sock, addr, {"t":"error","msg":"room_not_found"}); continue
             room["clients"][addr] = {"id": pid, "name": name, "last": now}
-            # seed a minimal state if not present
-            room["states"].setdefault(pid, {"x": 500, "y": 350, "a": 0.0, "vx": 0.0, "vy": 0.0, "name": name})
+            room["states"].setdefault(pid, {"x": 500, "y": 350, "a": 0.0, "vx": 0.0, "vy": 0.0, "name": name, "drift_ratio": 0.0})
             room["dirty"] = True
             sendto_json(sock, addr, {"t":"join_ok", "code": code})
-            # optionally push an immediate world
             broadcast_world(sock, code, room)
 
-        elif mtype == "state":
+        elif mtype == "state": # get player's physic car status (trigger broadcoast)
             # TRUST client: accept their state into room store
             code = (msg.get("code") or "").upper().strip()
             pid  = (msg.get("id") or "")[:16]
@@ -114,26 +128,27 @@ def loop():
                 "vx": float(msg.get("vx", 0.0)),
                 "vy": float(msg.get("vy", 0.0)),
                 "name": room["clients"][addr]["name"],
+                "drift_ratio": float(msg.get("drift_ratio", 0.0)),
             }
             room["states"][pid] = st
             room["dirty"] = True
 
-        elif mtype == "ping":
+        elif mtype == "ping": # get user connection information (no broadcast)
             code = (msg.get("code") or "").upper().strip()
             room = rooms.get(code)
             if room and addr in room["clients"]:
                 room["clients"][addr]["last"] = now
 
-        elif mtype == "bye":
+        elif mtype == "bye": # player leaves
             code = (msg.get("code") or "").upper().strip()
             pid  = (msg.get("id") or "")[:16]
             room = rooms.get(code)
             if not room: 
                 continue
             room["clients"].pop(addr, None)
-            if pid: room["states"].pop(pid, None)
-            room["dirty"] = True
-            if not room["clients"]:
+            if pid: room["states"].pop(pid, None) # remove player
+            room["dirty"] = True # trigger broadcast
+            if not room["clients"]: # delete room if empty
                 rooms.pop(code, None)
 
         else:

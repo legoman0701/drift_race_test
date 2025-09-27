@@ -1,1 +1,38 @@
-# drift_race_test
+sep 27 2025
+
+- README.md (update : fix text format)
+- README.md (add)
+- headlights (add)
+- cleaning x3
+- settings menu (update) x2
+- settings menu (add)
+
+sep 26 2025
+
+- zoom (update : clamp to avoid crash)
+- camera object (add : zoom/dezoom with pan feature)
+- physics (update)
+- controller support (add)
+- ae86 assets (add)
+- drift (update : drift ratio communication) x3
+- tiremarks (add : fade over the time)
+- issue : latency : higher server tick test
+- collisions (update)
+- autorun.py (add : debug)
+- issue : online network : change of server
+- issue : online network : fix failed
+- physics (update)
+- keys bind (update : esc)
+- cleaning
+
+sep 25 2025
+
+- drift (update : drift detection)
+- .gitignore (add)
+- collisions (update) x3
+- collisions (add)
+- drift (update)
+- physics (update)
+- drift (add)
+- physics (add)
+- pygame init
