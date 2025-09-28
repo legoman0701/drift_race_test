@@ -109,8 +109,9 @@ def car_local_to_world(cx, cy, angle, lx, ly):
     return (cx + lx * ca - ly * sa,
             cy + lx * sa + ly * ca)
 
-def ai_algorithme(path_poly, my_car, surface, font_small):
-    if ai_path_mode:
+def ai_algorithme(path_poly, my_car, surface=None, font_small=None):
+    # Optional debug drawing when a surface is provided
+    if ai_path_mode and surface is not None:
         surface.fill((0,0,0,0))
         pygame.draw.polygon(surface, (255, 0, 0), path_poly, 3)
     # find closest point on path_poly to the car position and draw it
@@ -146,17 +147,22 @@ def ai_algorithme(path_poly, my_car, surface, font_small):
             cx, cy = best_pt
 
             # NUDGE: move the projection point "forward" along the path by NUDGE_UNITS
-            # Change this value to nudge by a different amount (pixels).
+            # Treat the path as a loop so nudging never stalls at the ends.
             NUDGE_UNITS = 250.0
 
             # subtract the distance from the car to the projected point on the path
             dist_to_path = math.sqrt(best_d2)
             remaining = max(0.0, NUDGE_UNITS - dist_to_path*1.2)
             seg_idx = best_idx
-            t_on_seg = best_t
+            # avoid exact 1.0 which would cause a zero-distance step on the same segment
+            t_on_seg = min(max(best_t, 0.0), 0.999999)
 
-            # move along current segment first
-            while remaining > 0 and seg_idx < len(path_poly) - 1:
+            # move along path, wrapping around when reaching the end
+            while remaining > 0:
+                if seg_idx >= len(path_poly) - 1:
+                    # wrap to first segment (closed loop)
+                    seg_idx = 0
+                    t_on_seg = 0.0
                 a = path_poly[seg_idx]
                 b = path_poly[seg_idx + 1]
                 vx, vy = b[0] - a[0], b[1] - a[1]
@@ -167,7 +173,7 @@ def ai_algorithme(path_poly, my_car, surface, font_small):
                     continue
                 # distance from current point to end of this segment
                 dist_to_end = (1.0 - t_on_seg) * seg_len
-                if remaining <= dist_to_end:
+                if remaining <= dist_to_end + 1e-6:
                     # stay on this segment
                     frac = (t_on_seg * seg_len + remaining) / seg_len
                     cx = a[0] + vx * frac
@@ -181,18 +187,13 @@ def ai_algorithme(path_poly, my_car, surface, font_small):
                     # set current point to segment end
                     cx, cy = b[0], b[1]
 
-            # If we've passed the end of the path, clamp to last point
-            if seg_idx >= len(path_poly) - 1:
-                cx, cy = path_poly[-1]
-
             vx, vy = cx - px, cy - py
             angle_to_point = math.atan2(vy, vx)
             car_angle = my_car.angle
             angle_diff = ((angle_to_point - car_angle + math.pi) % (2 * math.pi)) - math.pi  # signed in [-pi, pi]
             angle_deg = math.degrees(angle_diff)
 
-            
-            if ai_path_mode:
+            if ai_path_mode and surface is not None:
                 # draw nudged point and a line to the car
                 pygame.draw.circle(surface, (0, 255, 0), (int(cx), int(cy)), 6)
                 pygame.draw.line(surface, (0, 255, 0), (int(px), int(py)), (int(cx), int(cy)), 2)
@@ -201,17 +202,17 @@ def ai_algorithme(path_poly, my_car, surface, font_small):
                 hx, hy = px + math.cos(car_angle) * 40, py + math.sin(car_angle) * 40
                 pygame.draw.line(surface, (0, 0, 255), (int(px), int(py)), (int(hx), int(hy)), 2)  # heading
                 pygame.draw.line(surface, (0, 255, 0), (int(px), int(py)), (int(cx), int(cy)), 2)   # to nudged point
-                lbl = font_small.render(f"{angle_deg:+.1f}°", True, (255, 255, 255))
-                surface.blit(lbl, (int(px + 8), int(py - 22)))
-                ## optional: mark the segment start for reference
-                sa, sb = path_poly[best_idx], path_poly[best_idx + 1]
+                if font_small is not None:
+                    lbl = font_small.render(f"{angle_deg:+.1f}°", True, (255, 255, 255))
+                    surface.blit(lbl, (int(px + 8), int(py - 22)))
+                # optional: mark the segment start for reference
+                sa = path_poly[best_idx]
                 pygame.draw.circle(surface, (255, 255, 0), (int(sa[0]), int(sa[1])), 4)
             
             st = angle_diff*2
-            
             th = 1-clamp(abs(angle_diff)*0.5, 0, 1) + 0.1
             br = clamp(abs(angle_diff)*0.25, 0, 1)
-            if ai_path_mode:
+            if ai_path_mode and surface is not None:
                 return {"th": th, "st": st, "br": br}, surface
             return {"th": th, "st": st, "br": br}
 
