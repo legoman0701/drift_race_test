@@ -7,10 +7,12 @@ Refactored to remove magic numbers and reduce spaghetti code.
 try: import pygame_ce as pygame
 except Exception: import pygame ; print("error")
 import socket, json, time, random, string, sys, math, uuid, argparse # global imports
-import camera, car, button as btn # local imports
+import camera, car, button as btn, path_finder # local imports
 
 # ======= CONFIGURATION =======
 RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
+
+AUTO_STEERING = 0
 
 # World dimensions
 WINDOW_WIDTH, WINDOW_HEIGHT = 1000, 700
@@ -325,6 +327,11 @@ def read_inputs(joysticks, car, cam):
         
         error = (math.atan2(mous_vec[0], mous_vec[1])-math.pi/2 + car.angle + math.pi)%(2*math.pi) - math.pi
         st = -error*2
+        
+    st = AUTO_STEERING*2
+    
+    th -= clamp(abs(AUTO_STEERING), 0, th-0.1)
+    br = clamp(br + abs(AUTO_STEERING)*8, 0, 1)
 
     if joysticks and joysticks[0] != []:
         js = joysticks[0]
@@ -442,6 +449,7 @@ def main():
     stage = "menu"  # menu | playing | settings | keys | error
     error_msg = ""
     remotes = {}
+    path_poly = []
 
     my_name = rand_name()
     my_id = str(uuid.uuid4())[:8]
@@ -596,6 +604,9 @@ def main():
             tire_mark = pygame.Surface((world_surf.get_width(), world_surf.get_width()), pygame.SRCALPHA)
             tire_mark.fill((255, 255, 255, 0))
             
+            
+            path_poly = path_finder.discover_track("assets/Map/Map1.png")
+            
         ui_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
         ui_surf.fill((0,0,0,0)) # transparent surface
         
@@ -630,10 +641,174 @@ def main():
             ui_surf.blit(relay, (WINDOW_WIDTH//2 - relay.get_width()//2, RELAY_Y))
 
         if stage == "playing":
+
+            pygame.draw.polygon(world_surf, (255, 0, 0), path_poly, 3)
+            # find closest point on path_poly to the car position and draw it
+            if path_poly:
+                def _proj_point_on_segment(px, py, ax, ay, bx, by):
+                    vx, vy = bx - ax, by - ay
+                    wx, wy = px - ax, py - ay
+                    denom = vx * vx + vy * vy
+                    if denom == 0:
+                        return (ax, ay), 0.0
+                    t = (wx * vx + wy * vy) / denom
+                    t_clamped = max(0.0, min(1.0, t))
+                    return (ax + vx * t_clamped, ay + vy * t_clamped), t_clamped
+
+                px, py = my_car.x, my_car.y
+                best_pt = None
+                best_d2 = float("inf")
+                best_idx = 0
+                best_t = 0.0
+
+                for i in range(len(path_poly) - 1):
+                    (ax, ay), (bx, by) = path_poly[i], path_poly[i + 1]
+                    (cx, cy), t = _proj_point_on_segment(px, py, ax, ay, bx, by)
+                    dx, dy = px - cx, py - cy
+                    d2 = dx * dx + dy * dy
+                    if d2 < best_d2:
+                        best_d2 = d2
+                        best_pt = (cx, cy)
+                        best_idx = i
+                        best_t = t
+
+                if best_pt is not None:
+                    cx, cy = best_pt
+
+                    # NUDGE: move the projection point "forward" along the path by NUDGE_UNITS
+                    # Change this value to nudge by a different amount (pixels).
+                    NUDGE_UNITS = 200.0
+
+                    # subtract the distance from the car to the projected point on the path
+                    dist_to_path = math.sqrt(best_d2)
+                    remaining = max(0.0, NUDGE_UNITS - dist_to_path)
+                    seg_idx = best_idx
+                    t_on_seg = best_t
+
+                    # move along current segment first
+                    while remaining > 0 and seg_idx < len(path_poly) - 1:
+                        a = path_poly[seg_idx]
+                        b = path_poly[seg_idx + 1]
+                        vx, vy = b[0] - a[0], b[1] - a[1]
+                        seg_len = math.hypot(vx, vy)
+                        if seg_len == 0:
+                            seg_idx += 1
+                            t_on_seg = 0.0
+                            continue
+                        # distance from current point to end of this segment
+                        dist_to_end = (1.0 - t_on_seg) * seg_len
+                        if remaining <= dist_to_end:
+                            # stay on this segment
+                            frac = (t_on_seg * seg_len + remaining) / seg_len
+                            cx = a[0] + vx * frac
+                            cy = a[1] + vy * frac
+                            remaining = 0.0
+                        else:
+                            # jump to next segment start
+                            remaining -= dist_to_end
+                            seg_idx += 1
+                            t_on_seg = 0.0
+                            # set current point to segment end
+                            cx, cy = b[0], b[1]
+
+                    # If we've passed the end of the path, clamp to last point
+                    if seg_idx >= len(path_poly) - 1:
+                        cx, cy = path_poly[-1]
+
+                    # draw nudged point and a line to the car
+                    pygame.draw.circle(world_surf, (0, 255, 0), (int(cx), int(cy)), 6)
+                    pygame.draw.line(world_surf, (0, 255, 0), (int(px), int(py)), (int(cx), int(cy)), 2)
+                    # compute signed angle between car heading and vector to nudged point (in radians)
+                    vx, vy = cx - px, cy - py
+                    angle_to_point = math.atan2(vy, vx)
+                    car_angle = my_car.angle
+                    angle_diff = ((angle_to_point - car_angle + math.pi) % (2 * math.pi)) - math.pi  # signed in [-pi, pi]
+                    angle_deg = math.degrees(angle_diff)
+
+                    # draw car heading and annotate the angle difference
+                    hx, hy = px + math.cos(car_angle) * 40, py + math.sin(car_angle) * 40
+                    pygame.draw.line(world_surf, (0, 0, 255), (int(px), int(py)), (int(hx), int(hy)), 2)  # heading
+                    pygame.draw.line(world_surf, (0, 255, 0), (int(px), int(py)), (int(cx), int(cy)), 2)   # to nudged point
+                    lbl = font_small.render(f"{angle_deg:+.1f}°", True, (255, 255, 255))
+                    world_surf.blit(lbl, (int(px + 8), int(py - 22)))
+                    # optional: mark the segment start for reference
+                    sa, sb = path_poly[best_idx], path_poly[best_idx + 1]
+                    pygame.draw.circle(world_surf, (255, 255, 0), (int(sa[0]), int(sa[1])), 4)
+                    global AUTO_STEERING
+                    AUTO_STEERING = angle_diff
+            
             title = font_big.render("Waiting for players", True, WHITE_240)
             ui_surf.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, TITLE_Y))
             hud = font_small.render(f"Room: {code}", True, GREY_180)
             ui_surf.blit(hud, (10, RELAY_Y))
+            # HUD: steering wheel + throttle/brake % bars (bottom-right)
+            inp = read_inputs(joysticks, my_car, cam)
+            th = clamp(inp.get("th", 0.0), -1.0, 1.0)
+            br = clamp(inp.get("br", 0.0), 0.0, 1.0)
+            st = clamp(inp.get("st", 0.0), -1.0, 1.0)
+
+            # HUD layout
+            hud_w = 200
+            hud_h = 96
+            pad = 12
+            x = WINDOW_WIDTH - hud_w - pad
+            y = WINDOW_HEIGHT - hud_h - pad
+
+            # semi-transparent background
+            bg = pygame.Surface((hud_w, hud_h), pygame.SRCALPHA)
+            bg.fill((10, 10, 14, 200))
+            ui_surf.blit(bg, (x, y))
+
+            # steering wheel (left side)
+            wheel_size = 76
+            wcx = x + wheel_size // 2 + 10
+            wcy = y + hud_h // 2
+            wheel_r = wheel_size // 2 - 6
+            pygame.draw.circle(ui_surf, (40, 40, 48), (wcx, wcy), wheel_r + 6)  # rim shadow
+            pygame.draw.circle(ui_surf, (20, 20, 26), (wcx, wcy), wheel_r + 4)
+            pygame.draw.circle(ui_surf, (60, 60, 70), (wcx, wcy), wheel_r, 6)   # rim
+
+            # steering indicator (spoke)
+            MAX_WHEEL_ANGLE = math.radians(270)  # visual rotation range
+            angle = st * MAX_WHEEL_ANGLE - (math.pi / 2)  # negative so positive steering rotates clockwise visually
+            sx = int(wcx + math.cos(angle) * (wheel_r - 10))
+            sy = int(wcy + math.sin(angle) * (wheel_r - 10))
+            pygame.draw.line(ui_surf, (200, 200, 220), (wcx, wcy), (sx, sy), 6)
+            # small center hub
+            pygame.draw.circle(ui_surf, (30, 30, 36), (wcx, wcy), 8)
+
+            # Labels
+            lbl = font_small.render("STEER", True, WHITE_240)
+            ui_surf.blit(lbl, (wcx - lbl.get_width()//2, y + hud_h - 18))
+
+            # throttle and brake bars (right side)
+            bar_x = x + wheel_size + 20
+            bar_w = hud_w - (wheel_size + 32)
+            bar_h = 16
+            # Throttle bar (top)
+            th_y = y + 18
+            pygame.draw.rect(ui_surf, (40, 40, 48), (bar_x, th_y, bar_w, bar_h), border_radius=4)
+            if th > 0:
+                fg_w = int(bar_w * clamp(th, 0.0, 1.0))
+                pygame.draw.rect(ui_surf, (80, 220, 100), (bar_x, th_y, fg_w, bar_h), border_radius=4)
+            else:
+                # reverse/backwards shown as orange to the left of bar
+                fg_w = int(bar_w * clamp(-th, 0.0, 1.0))
+                pygame.draw.rect(ui_surf, (255, 160, 60), (bar_x + bar_w - fg_w, th_y, fg_w, bar_h), border_radius=4)
+            th_pct = int(th * 100) if th >= 0 else int(th * 100)
+            lbl_th = font_small.render(f"THR {th_pct:+d}%", True, WHITE_240)
+            ui_surf.blit(lbl_th, (bar_x, th_y - 18))
+
+            # Brake bar (bottom)
+            br_y = th_y + bar_h + 18
+            pygame.draw.rect(ui_surf, (40, 40, 48), (bar_x, br_y, bar_w, bar_h), border_radius=4)
+            fg_wb = int(bar_w * clamp(br, 0.0, 1.0))
+            pygame.draw.rect(ui_surf, (220, 80, 80), (bar_x, br_y, fg_wb, bar_h), border_radius=4)
+            lbl_br = font_small.render(f"BRK {int(br*100):d}%", True, WHITE_240)
+            ui_surf.blit(lbl_br, (bar_x, br_y - 18))
+
+            # Optional thin border around HUD
+            pygame.draw.rect(ui_surf, (80, 88, 100), (x, y, hud_w, hud_h), 1)
             for pid, d in remotes.items():
                 drift_points_remote = draw_car(world_surf, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
                                                color_body=COLOR_BODY_REMOTE, car_sprites_list=[shadow_sprite, ae86_sprite, light_spray_sprite], lights_on=lights_on)
