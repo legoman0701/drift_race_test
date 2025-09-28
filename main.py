@@ -88,7 +88,8 @@ PROFANITY_SET = {"NIGGER", "NIGGA", "NIGA"}
 
 VIEW_ANGLE = 70 * math.pi / 180.0  # radians
 
-mouse_follow = False # 0 for keyboard/controller 1 for mouse
+ai_path_mode = False
+mouse_follow_mode = False
 flags = pygame.HWSURFACE | pygame.DOUBLEBUF
 
 # =============================
@@ -321,7 +322,7 @@ def read_inputs(joysticks, car, cam):
     if st != 0:
         st = 1.0 if st > 0 else -1.0
         
-    if mouse_follow:
+    if mouse_follow_mode:
         mouse_pos = pygame.mouse.get_pos()
         mous_vec = (mouse_pos[0] - car.x+cam.x - WINDOW_WIDTH/2, 
                     mouse_pos[1] - car.y+cam.y - WINDOW_HEIGHT/2)
@@ -331,19 +332,22 @@ def read_inputs(joysticks, car, cam):
         error = (math.atan2(mous_vec[0], mous_vec[1])-math.pi/2 + car.angle + math.pi)%(2*math.pi) - math.pi
         st = -error*2
         
-    st = AUTO_STEERING*2
-    
-    th -= clamp(abs(AUTO_STEERING), 0, th-0.1)
-    br = clamp(br + abs(AUTO_STEERING)*8, 0, 1)
+    # Apply AI steering only when AI mode is active. Otherwise keep player/mouse/keyboard steering
+    if ai_path_mode:
+        st = AUTO_STEERING*2
+        # AI reduces throttle/reacts with brake proportional to steering error
+        th -= clamp(abs(AUTO_STEERING), 0, th-0.1)
+        br = clamp(br + abs(AUTO_STEERING)*8, 0, 1)
 
     if joysticks and joysticks[0] != []:
         js = joysticks[0]
         steering = js.get_axis(0)
         throttle = (js.get_axis(5)+1)/2
         breaks = (js.get_axis(4)+1)/2
-        st = steering if steering != 0 else st
-        th = throttle if throttle != 0 else th
-        br = breaks if breaks != 0 else br
+        if not ai_path_mode:
+            st = steering if steering != 0 else st
+            th = throttle if throttle != 0 else th
+            br = breaks if breaks != 0 else br
     return {"th": th, "st": st, "br": br}
 
 def draw_menu(screen, font_big, font_medium):
@@ -516,6 +520,7 @@ def main():
     dragging = False
 
     def leave_room(sock, code, my_id, remotes):
+        global ai_path_mode, mouse_follow_mode
         if sock and code:
             try:
                 sock.send(json.dumps({"t": "bye", "code": code, "id": my_id}).encode("utf-8"))
@@ -523,6 +528,8 @@ def main():
             except Exception:
                 pass
         remotes.clear()
+        ai_path_mode = False
+        mouse_follow_mode = False
         # stage, sock, code, remotes
         return "menu", None, None, remotes
 
@@ -530,9 +537,29 @@ def main():
         print("Showing key binds...")
         
     def switch_steering_mode():
-        global mouse_follow
-        mouse_follow = not mouse_follow
+        global mouse_follow_mode, ai_path_mode
+        # toggle mouse follow; when enabling mouse follow, ensure AI path mode is disabled
+        mouse_follow_mode = not mouse_follow_mode
+        try:
+            if mouse_follow_mode:
+                ai_path_mode = False
+        except Exception:
+            pass
         # Close settings panel by returning the state tuple (new_stage, sock, code, remotes)
+        try:
+            return "playing", sock, code, remotes
+        except Exception:
+            return "playing", None, None, {}
+
+    def switch_ai_path_mode():
+        global ai_path_mode, mouse_follow_mode
+        # toggle AI path mode; when enabling AI, ensure mouse follow is disabled
+        ai_path_mode = not ai_path_mode
+        try:
+            if ai_path_mode:
+                mouse_follow_mode = False
+        except Exception:
+            pass
         try:
             return "playing", sock, code, remotes
         except Exception:
@@ -540,8 +567,8 @@ def main():
 
     buttons = [
         btn.Button("Leave Room", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.3, BTN_WIDTH, BTN_HEIGHT, RED, lambda: leave_room(sock, code, my_id, remotes)),
-        # btn.Button("Key Binds", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.4, BTN_WIDTH, BTN_HEIGHT, BLUE, show_key_binds),
-        btn.Button("Toggle Steering Mode", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.6, BTN_WIDTH, BTN_HEIGHT, RED, switch_steering_mode),
+        btn.Button("Cursor Follow Mode", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.6, BTN_WIDTH, BTN_HEIGHT, RED, switch_steering_mode),
+        btn.Button("AI Path Mode", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.72, BTN_WIDTH, BTN_HEIGHT, RED, switch_ai_path_mode),
     ]
 
     while True:
@@ -650,7 +677,8 @@ def main():
 
         if stage == "playing":
 
-            pygame.draw.polygon(world_surf, (255, 0, 0), path_poly, 3)
+            if ai_path_mode:
+                pygame.draw.polygon(world_surf, (255, 0, 0), path_poly, 3)
             # find closest point on path_poly to the car position and draw it
             if path_poly:
                 def _proj_point_on_segment(px, py, ax, ay, bx, by):
@@ -724,8 +752,9 @@ def main():
                         cx, cy = path_poly[-1]
 
                     # draw nudged point and a line to the car
-                    pygame.draw.circle(world_surf, (0, 255, 0), (int(cx), int(cy)), 6)
-                    pygame.draw.line(world_surf, (0, 255, 0), (int(px), int(py)), (int(cx), int(cy)), 2)
+                    if ai_path_mode:
+                        pygame.draw.circle(world_surf, (0, 255, 0), (int(cx), int(cy)), 6)
+                        pygame.draw.line(world_surf, (0, 255, 0), (int(px), int(py)), (int(cx), int(cy)), 2)
                     # compute signed angle between car heading and vector to nudged point (in radians)
                     vx, vy = cx - px, cy - py
                     angle_to_point = math.atan2(vy, vx)
@@ -735,15 +764,20 @@ def main():
 
                     # draw car heading and annotate the angle difference
                     hx, hy = px + math.cos(car_angle) * 40, py + math.sin(car_angle) * 40
-                    pygame.draw.line(world_surf, (0, 0, 255), (int(px), int(py)), (int(hx), int(hy)), 2)  # heading
-                    pygame.draw.line(world_surf, (0, 255, 0), (int(px), int(py)), (int(cx), int(cy)), 2)   # to nudged point
+                    if ai_path_mode:
+                        pygame.draw.line(world_surf, (0, 0, 255), (int(px), int(py)), (int(hx), int(hy)), 2)  # heading
+                        pygame.draw.line(world_surf, (0, 255, 0), (int(px), int(py)), (int(cx), int(cy)), 2)   # to nudged point
                     lbl = font_small.render(f"{angle_deg:+.1f}°", True, (255, 255, 255))
                     world_surf.blit(lbl, (int(px + 8), int(py - 22)))
                     # optional: mark the segment start for reference
                     sa, sb = path_poly[best_idx], path_poly[best_idx + 1]
                     pygame.draw.circle(world_surf, (255, 255, 0), (int(sa[0]), int(sa[1])), 4)
                     global AUTO_STEERING
-                    AUTO_STEERING = angle_diff
+                    # Only set AUTO_STEERING when AI path mode is enabled; otherwise clear it
+                    if ai_path_mode:
+                        AUTO_STEERING = angle_diff
+                    else:
+                        AUTO_STEERING = 0
             
             title = font_big.render("Waiting for players", True, WHITE_240)
             ui_surf.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, TITLE_Y))
@@ -832,15 +866,21 @@ def main():
             # Draw buttons and capture any action results. If an action returns a tuple
             # with new state (stage, sock, code, remotes), apply it.
             for button in buttons:
-                # If this is the steering-mode toggle button, update its label and color
-                # according to the current STEERING_MODE so the UI reflects the state.
+                # Update button labels/colors for stateful buttons
                 try:
                     if button.action == switch_steering_mode:
-                        if mouse_follow:
+                        if mouse_follow_mode:
                             button.text = "Mouse Following : On"
                             button.color = GREEN
                         else:
                             button.text = "Mouse Following : Off"
+                            button.color = RED
+                    if button.action == switch_ai_path_mode:
+                        if ai_path_mode:
+                            button.text = "AI Path Mode : On"
+                            button.color = GREEN
+                        else:
+                            button.text = "AI Path Mode : Off"
                             button.color = RED
                 except Exception:
                     pass
