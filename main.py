@@ -11,8 +11,8 @@ import camera, car, button as btn, path_finder # local imports
 
 # ======= CONFIGURATION =======
 RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
-
-AUTO_STEERING = 0
+# Host/Join role flag: set True when this client creates a room, False when joining
+I_AM_HOST = False
 
 # World dimensions
 WINDOW_WIDTH, WINDOW_HEIGHT = 1000, 700
@@ -109,22 +109,111 @@ def car_local_to_world(cx, cy, angle, lx, ly):
     return (cx + lx * ca - ly * sa,
             cy + lx * sa + ly * ca)
 
+def ai_algorithme(path_poly, my_car):
+    #pygame.draw.polygon(surface, (255, 0, 0), path_poly, 3)
+    # find closest point on path_poly to the car position and draw it
+    if path_poly:
+        def _proj_point_on_segment(px, py, ax, ay, bx, by):
+            vx, vy = bx - ax, by - ay
+            wx, wy = px - ax, py - ay
+            denom = vx * vx + vy * vy
+            if denom == 0:
+                return (ax, ay), 0.0
+            t = (wx * vx + wy * vy) / denom
+            t_clamped = max(0.0, min(1.0, t))
+            return (ax + vx * t_clamped, ay + vy * t_clamped), t_clamped
+
+        px, py = my_car.x, my_car.y
+        best_pt = None
+        best_d2 = float("inf")
+        best_idx = 0
+        best_t = 0.0
+
+        for i in range(len(path_poly) - 1):
+            (ax, ay), (bx, by) = path_poly[i], path_poly[i + 1]
+            (cx, cy), t = _proj_point_on_segment(px, py, ax, ay, bx, by)
+            dx, dy = px - cx, py - cy
+            d2 = dx * dx + dy * dy
+            if d2 < best_d2:
+                best_d2 = d2
+                best_pt = (cx, cy)
+                best_idx = i
+                best_t = t
+
+        if best_pt is not None:
+            cx, cy = best_pt
+
+            # NUDGE: move the projection point "forward" along the path by NUDGE_UNITS
+            # Change this value to nudge by a different amount (pixels).
+            NUDGE_UNITS = 250.0
+
+            # subtract the distance from the car to the projected point on the path
+            dist_to_path = math.sqrt(best_d2)
+            remaining = max(0.0, NUDGE_UNITS - dist_to_path*1.2)
+            seg_idx = best_idx
+            t_on_seg = best_t
+
+            # move along current segment first
+            while remaining > 0 and seg_idx < len(path_poly) - 1:
+                a = path_poly[seg_idx]
+                b = path_poly[seg_idx + 1]
+                vx, vy = b[0] - a[0], b[1] - a[1]
+                seg_len = math.hypot(vx, vy)
+                if seg_len == 0:
+                    seg_idx += 1
+                    t_on_seg = 0.0
+                    continue
+                # distance from current point to end of this segment
+                dist_to_end = (1.0 - t_on_seg) * seg_len
+                if remaining <= dist_to_end:
+                    # stay on this segment
+                    frac = (t_on_seg * seg_len + remaining) / seg_len
+                    cx = a[0] + vx * frac
+                    cy = a[1] + vy * frac
+                    remaining = 0.0
+                else:
+                    # jump to next segment start
+                    remaining -= dist_to_end
+                    seg_idx += 1
+                    t_on_seg = 0.0
+                    # set current point to segment end
+                    cx, cy = b[0], b[1]
+
+            # If we've passed the end of the path, clamp to last point
+            if seg_idx >= len(path_poly) - 1:
+                cx, cy = path_poly[-1]
+
+            # draw nudged point and a line to the car
+            #pygame.draw.circle(surface, (0, 255, 0), (int(cx), int(cy)), 6)
+            #pygame.draw.line(surface, (0, 255, 0), (int(px), int(py)), (int(cx), int(cy)), 2)
+            # compute signed angle between car heading and vector to nudged point (in radians)
+            vx, vy = cx - px, cy - py
+            angle_to_point = math.atan2(vy, vx)
+            car_angle = my_car.angle
+            angle_diff = ((angle_to_point - car_angle + math.pi) % (2 * math.pi)) - math.pi  # signed in [-pi, pi]
+            angle_deg = math.degrees(angle_diff)
+
+            ## draw car heading and annotate the angle difference
+            #hx, hy = px + math.cos(car_angle) * 40, py + math.sin(car_angle) * 40
+            #pygame.draw.line(surface, (0, 0, 255), (int(px), int(py)), (int(hx), int(hy)), 2)  # heading
+            ##pygame.draw.line(surface, (0, 255, 0), (int(px), int(py)), (int(cx), int(cy)), 2)   # to nudged point
+            #lbl = font_small.render(f"{angle_deg:+.1f}°", True, (255, 255, 255))
+            #surface.blit(lbl, (int(px + 8), int(py - 22)))
+            ## optional: mark the segment start for reference
+            #sa, sb = path_poly[best_idx], path_poly[best_idx + 1]
+            #pygame.draw.circle(surface, (255, 255, 0), (int(sa[0]), int(sa[1])), 4)
+            
+            st = angle_diff*2
+            
+            th = 1-clamp(abs(angle_diff)*0.5, 0, 1) + 0.1
+            br = clamp(abs(angle_diff)*0.25, 0, 1)
+            return {"th": th, "st": st, "br": br}
+
 def draw_car(surface, x, y, angle, name,
              color_body=COLOR_BODY_DEFAULT,
              color_nose=COLOR_NOSE_DEFAULT, car_sprites_list=[], lights_on=False):
     
     #car_sprite, shadow_sprite, light_spray_sprite = car_sprites_list
-    ca, sa = math.cos(angle), math.sin(angle)
-    halfL, halfW = CAR_LEN * 0.5, CAR_WID * 0.5
-    pts = [(+halfL, +halfW),
-           (+halfL, -halfW),
-           (-halfL, -halfW),
-           (-halfL, +halfW)]
-    wpts = []
-    for px, py in pts:
-        rx = px * ca - py * sa
-        ry = px * sa + py * ca
-        wpts.append((int(x + rx), int(y + ry)))
 
     for i, car_sprite in enumerate(car_sprites_list):
         if i == 2 and not lights_on: # light spray
@@ -138,7 +227,6 @@ def draw_car(surface, x, y, angle, name,
         font = pygame.font.SysFont(None, 22)
         text = font.render(name, True, (230,230,255))
         surface.blit(text, (int(x-text.get_width()/2), int(y-40)))
-    return (wpts[2], wpts[3])  # rear left and right
 
 def draw_track_ui(screen):
     # Fill the background between TOP_LINE_Y and BOTTOM_LINE_Y with horizontal lines
@@ -270,6 +358,9 @@ def handle_network_messages(sock, remotes, dt, my_id):
             for pid, d in players.items():
                 if pid == my_id:
                     continue
+                if I_AM_HOST and isinstance(pid, str) and pid.startswith("AI-"):
+                    # host owns AI locally; skip echoed server AI
+                    continue
                 tx, ty, ta, tdr = float(d["x"]), float(d["y"]), float(d["a"]), float(d["drift_ratio"])
                 name = d.get("name", f"Player{pid}")
                 if pid not in remotes:
@@ -299,12 +390,32 @@ def send_network_state(sock, code, my_id, car):
         "a": round(car.angle, 4),
         "vx": round(car.vx, 2),
         "vy": round(car.vy, 2),
-        "drift_ratio": round(car.drift_ratio, 2)
+        "drift_ratio": round(car.drift_ratio, 2),
+        "name": car.name,
     }
     try:
         sock.send(json.dumps(pkt).encode("utf-8"))
     except Exception:
         pass
+
+def send_ai_states(sock, code, ai_cars):
+    for i, ai in enumerate(ai_cars, start=1):
+        pkt = {
+            "t": "state",
+            "code": code,
+            "id": f"AI-{i}",
+            "x": round(ai.x, 2),
+            "y": round(ai.y, 2),
+            "a": round(ai.angle, 4),
+            "vx": round(ai.vx, 2),
+            "vy": round(ai.vy, 2),
+            "drift_ratio": round(ai.drift_ratio, 2),
+            "name": ai.name,
+        }
+        try:
+            sock.send(json.dumps(pkt).encode("utf-8"))
+        except Exception:
+            pass
 
 def send_ping(sock, code):
     try:
@@ -331,13 +442,6 @@ def read_inputs(joysticks, car, cam):
         
         error = (math.atan2(mous_vec[0], mous_vec[1])-math.pi/2 + car.angle + math.pi)%(2*math.pi) - math.pi
         st = -error*2
-        
-    # Apply AI steering only when AI mode is active. Otherwise keep player/mouse/keyboard steering
-    if ai_path_mode:
-        st = AUTO_STEERING*2
-        # AI reduces throttle/reacts with brake proportional to steering error
-        th -= clamp(abs(AUTO_STEERING), 0, th-0.1)
-        br = clamp(br + abs(AUTO_STEERING)*8, 0, 1)
 
     if joysticks and joysticks[0] != []:
         js = joysticks[0]
@@ -359,6 +463,7 @@ def draw_menu(screen, font_big, font_medium):
     screen.blit(tip2, (int(WINDOW_WIDTH * 0.7 - tip2.get_width() // 2), 13))
 
 def handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, code, sock, error_msg):
+    global I_AM_HOST
     if ev.key == HOST_KEY:  # Host room
         my_name = get_name_input(screen, font_big, font_small, "host")
         code = rand_code()
@@ -367,6 +472,9 @@ def handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, 
             join_pkt = {"t": "create", "code": code, "name": my_name, "id": my_id}
             sock.send(json.dumps(join_pkt).encode("utf-8"))
             stage = "playing"
+            # mark as host
+            global I_AM_HOST
+            I_AM_HOST = True
         except Exception as ex:
             stage = "error"
             error_msg = f"Net error: {ex}"
@@ -379,6 +487,8 @@ def handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, 
             join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id}
             sock.send(json.dumps(join_pkt).encode("utf-8"))
             stage = "playing"
+            # mark as non-host
+            I_AM_HOST = False
         except Exception as ex:
             stage = "error"
             error_msg = f"Net error: {ex}"
@@ -415,11 +525,12 @@ def handle_game_events(screen, ev, stage, remotes, sock, code, my_name, my_id, m
                 code = None
                 spawnx = random.randint(TRACK_MARGIN + 200, WINDOW_WIDTH - TRACK_MARGIN - 200)
                 spawny = random.randint(TRACK_MARGIN + 120, WINDOW_HEIGHT - TRACK_MARGIN - 120)
-                my_car = car.Car(spawnx, spawny, my_name)
+                my_car = car.Car(spawnx, spawny, my_name, is_ai=False)
 
     return ev, stage, remotes, sock, code, my_car, error_msg
 
 def main():
+    global I_AM_HOST  # ensure all references/assignments in this function use the module global
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["host", "join"])
     parser.add_argument("--code")
@@ -456,6 +567,7 @@ def main():
     stage = "menu"  # menu | playing | settings | keys | error
     error_msg = ""
     remotes = {}
+    ai_cars = []
     path_poly = []
 
     my_name = rand_name()
@@ -469,7 +581,7 @@ def main():
 
     spawnx = random.randint(TRACK_MARGIN + 200, WINDOW_WIDTH - TRACK_MARGIN - 200)
     spawny = random.randint(TRACK_MARGIN + 120, WINDOW_HEIGHT - TRACK_MARGIN - 120)
-    my_car = car.Car(spawnx, spawny, my_name)
+    my_car = car.Car(spawnx, spawny, my_name, is_ai=False)
 
     if args.mode == "host" and args.code and args.name:
         my_name = args.name
@@ -480,6 +592,7 @@ def main():
             join_pkt = {"t": "create", "code": code, "name": my_name, "id": my_id}
             sock.send(json.dumps(join_pkt).encode("utf-8"))
             stage = "playing"
+            I_AM_HOST = True  # set host flag for CLI host mode
         except Exception as ex:
             stage = "error"
             error_msg = f"Net error: {ex}"
@@ -489,18 +602,11 @@ def main():
         code = args.code
         try:
             sock = connect_to_relay()
+            code = code.upper()
             join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id}
             sock.send(json.dumps(join_pkt).encode("utf-8"))
-            join_ok_received = False
-            timeout = time.time() + 1.0
-            while not join_ok_received and time.time() < timeout:
-                for msg in recv_jsons(sock):
-                    if msg.get("t") == "join_ok":
-                        join_ok_received = True
-                        break
-            if not join_ok_received:
-                raise Exception("Failed to connect: no join confirmation received")
             stage = "playing"
+            I_AM_HOST = False  # set host flag for CLI join mode
         except Exception as ex:
             stage = "error"
             error_msg = f"Net error: {ex}"
@@ -508,7 +614,6 @@ def main():
     tire_mark = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
     tire_mark.fill((255, 255, 255, 0))
     
-    drift_points_old = []
     drift_points_old_remotes = {}
 
     joysticks = [pygame.joystick.Joystick(i) for i in range(pygame.joystick.get_count())]
@@ -528,6 +633,7 @@ def main():
             except Exception:
                 pass
         remotes.clear()
+        ai_cars.clear()
         ai_path_mode = False
         mouse_follow_mode = False
         # stage, sock, code, remotes
@@ -583,6 +689,17 @@ def main():
 
             if ev.type == pygame.KEYDOWN and ev.key == pygame.K_l:
                 lights_on = not lights_on
+            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_n:
+                if I_AM_HOST and stage == "playing":
+                    ai_cars.append(
+                        car.Car(
+                            random.randint(TRACK_MARGIN + 200, WINDOW_WIDTH - TRACK_MARGIN - 200),
+                            random.randint(TRACK_MARGIN + 120, WINDOW_HEIGHT - TRACK_MARGIN - 120),
+                            name=f"AI-{len(ai_cars)+1}",
+                            is_ai=True,
+                        )
+                    )
+                
             if ev.type == pygame.MOUSEWHEEL:
                 # Adjust zoom (clamp between 0.5 and 3.0)
                 cam.zoom *= 1.1 if ev.y > 0 else 0.9
@@ -611,11 +728,40 @@ def main():
             if now - last_state_send >= 1.0 / SEND_HZ:
                 last_state_send = now
                 send_network_state(sock, code, my_id, my_car)
+                if I_AM_HOST and ai_cars:
+                    send_ai_states(sock, code, ai_cars)
             if now - last_ping >= 1.0 / PING_HZ:
                 last_ping = now
                 send_ping(sock, code)
+                
+        
+                
+        # Build world size tuple used by step()
+        world_size = (WINDOW_WIDTH, WINDOW_HEIGHT) if stage != "playing" else (track_image.get_width(), track_image.get_height())
 
-        my_car.step(read_inputs(joysticks, my_car, cam), dt, remotes, (WINDOW_WIDTH, WINDOW_HEIGHT) if stage != "playing" else (track_image.get_width(), track_image.get_height()))
+        # Prepare remotes view for the player: include network remotes + AI cars (so player can collide with AIs)
+        remotes_with_ai_for_player = dict(remotes)
+        if I_AM_HOST:
+            for i, ai in enumerate(ai_cars, start=1):
+                key = f"AI-{i}"
+                remotes_with_ai_for_player[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "drift_ratio": ai.drift_ratio, "name": ai.name}
+
+        # Update player car using remotes that include AIs
+        my_car.step(read_inputs(joysticks, my_car, cam), dt, remotes_with_ai_for_player, world_size)
+
+        # Prepare remotes view for AIs: include network remotes + all AIs + the local player (so AIs can detect collisions with player)
+        remotes_with_ai_for_ais = dict(remotes)
+        if I_AM_HOST:
+            # add local player under a distinct key so AIs see it
+            remotes_with_ai_for_ais[f"PLAYER-{my_id}"] = {"x": my_car.x, "y": my_car.y, "a": my_car.angle, "drift_ratio": my_car.drift_ratio, "name": my_car.name}
+            for i, ai in enumerate(ai_cars, start=1):
+                key = f"AI-{i}"
+                remotes_with_ai_for_ais[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "drift_ratio": ai.drift_ratio, "name": ai.name}
+
+        # Step AIs (each AI sees other AIs + network remotes + the player)
+        if I_AM_HOST:
+            for ai in ai_cars:
+                ai.step(ai_algorithme(path_poly, ai), dt, remotes_with_ai_for_ais, world_size)
         cam.update(my_car, (WINDOW_WIDTH, WINDOW_HEIGHT) if stage != "playing" else (track_image.get_width(), track_image.get_height()))
 
         # Draw game world onto an off-screen surface.
@@ -635,11 +781,9 @@ def main():
             #pygame.draw.rect(world_surf, TRACK_COLOR, camera_rect)
             world_surf.blit(visible_track, top_right_pos)
 
-        if tire_mark.get_width() != world_surf.get_width() or tire_mark.get_height() != world_surf.get_width():
-            tire_mark = pygame.Surface((world_surf.get_width(), world_surf.get_width()), pygame.SRCALPHA)
+        if tire_mark.get_width() != world_surf.get_width() or tire_mark.get_height() != world_surf.get_height():
+            tire_mark = pygame.Surface((world_surf.get_width(), world_surf.get_height()), pygame.SRCALPHA)
             tire_mark.fill((255, 255, 255, 0))
-            
-            
             path_poly = path_finder.discover_track("assets/Map/Map1.png")
             
         ui_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
@@ -647,6 +791,22 @@ def main():
         
         draw_track_ui(ui_surf)
         # world_surf.blit(bg_map, (0, 0))
+        
+        if my_car.drift_ratio > 0.5 and my_car.drift_points_old:
+            pygame.draw.line(tire_mark, TIRE_MARK_SMOKE, my_car.drift_points[0], my_car.drift_points_old[0], 3)
+            pygame.draw.line(tire_mark, TIRE_MARK_SMOKE, my_car.drift_points[1], my_car.drift_points_old[1], 3)
+        
+        for ai_car in ai_cars:
+            draw_car(world_surf, ai_car.x, ai_car.y, ai_car.angle, ai_car.name,
+                                  color_body=COLOR_BODY_DEFAULT, car_sprites_list=[shadow_sprite, ae86_sprite, light_spray_sprite], lights_on=lights_on)
+
+            if ai_car.drift_ratio > 0.5 and ai_car.drift_points_old:
+                pygame.draw.line(tire_mark, TIRE_MARK_SMOKE, ai_car.drift_points[0], ai_car.drift_points_old[0], 3)
+                pygame.draw.line(tire_mark, TIRE_MARK_SMOKE, ai_car.drift_points[1], ai_car.drift_points_old[1], 3)
+
+
+        tire_mark.fill(TIRE_MARK_GROUND, special_flags=pygame.BLEND_RGBA_MULT)
+        
         top_right_pos = cam.x-(WINDOW_WIDTH/2)/cam.zoom, cam.y-(WINDOW_HEIGHT/2)/cam.zoom
         camera_rect = pygame.Rect(top_right_pos[0],
                                     top_right_pos[1],
@@ -656,13 +816,9 @@ def main():
         visible_tire_mark = tire_mark.subsurface(camera_rect)
         world_surf.blit(visible_tire_mark, top_right_pos)
         
-        drift_points = draw_car(world_surf, my_car.x, my_car.y, my_car.angle, my_car.name,
+        draw_car(world_surf, my_car.x, my_car.y, my_car.angle, my_car.name,
                                   color_body=COLOR_MY_CAR, car_sprites_list=[shadow_sprite, ae86_sprite, light_spray_sprite], lights_on=lights_on)
-        if my_car.drift_ratio > 0.5 and drift_points_old:
-            pygame.draw.line(tire_mark, TIRE_MARK_SMOKE, drift_points[0], drift_points_old[0], 3)
-            pygame.draw.line(tire_mark, TIRE_MARK_SMOKE, drift_points[1], drift_points_old[1], 3)
-        drift_points_old = drift_points
-        tire_mark.fill(TIRE_MARK_GROUND, special_flags=pygame.BLEND_RGBA_MULT)
+        
 
         if stage == "menu":
             cam.zoom = 1
@@ -676,109 +832,6 @@ def main():
             ui_surf.blit(relay, (WINDOW_WIDTH//2 - relay.get_width()//2, RELAY_Y))
 
         if stage == "playing":
-
-            if ai_path_mode:
-                pygame.draw.polygon(world_surf, (255, 0, 0), path_poly, 3)
-            # find closest point on path_poly to the car position and draw it
-            if path_poly:
-                def _proj_point_on_segment(px, py, ax, ay, bx, by):
-                    vx, vy = bx - ax, by - ay
-                    wx, wy = px - ax, py - ay
-                    denom = vx * vx + vy * vy
-                    if denom == 0:
-                        return (ax, ay), 0.0
-                    t = (wx * vx + wy * vy) / denom
-                    t_clamped = max(0.0, min(1.0, t))
-                    return (ax + vx * t_clamped, ay + vy * t_clamped), t_clamped
-
-                px, py = my_car.x, my_car.y
-                best_pt = None
-                best_d2 = float("inf")
-                best_idx = 0
-                best_t = 0.0
-
-                for i in range(len(path_poly) - 1):
-                    (ax, ay), (bx, by) = path_poly[i], path_poly[i + 1]
-                    (cx, cy), t = _proj_point_on_segment(px, py, ax, ay, bx, by)
-                    dx, dy = px - cx, py - cy
-                    d2 = dx * dx + dy * dy
-                    if d2 < best_d2:
-                        best_d2 = d2
-                        best_pt = (cx, cy)
-                        best_idx = i
-                        best_t = t
-
-                if best_pt is not None:
-                    cx, cy = best_pt
-
-                    # NUDGE: move the projection point "forward" along the path by NUDGE_UNITS
-                    # Change this value to nudge by a different amount (pixels).
-                    NUDGE_UNITS = 200.0
-
-                    # subtract the distance from the car to the projected point on the path
-                    dist_to_path = math.sqrt(best_d2)
-                    remaining = max(0.0, NUDGE_UNITS - dist_to_path)
-                    seg_idx = best_idx
-                    t_on_seg = best_t
-
-                    # move along current segment first
-                    while remaining > 0 and seg_idx < len(path_poly) - 1:
-                        a = path_poly[seg_idx]
-                        b = path_poly[seg_idx + 1]
-                        vx, vy = b[0] - a[0], b[1] - a[1]
-                        seg_len = math.hypot(vx, vy)
-                        if seg_len == 0:
-                            seg_idx += 1
-                            t_on_seg = 0.0
-                            continue
-                        # distance from current point to end of this segment
-                        dist_to_end = (1.0 - t_on_seg) * seg_len
-                        if remaining <= dist_to_end:
-                            # stay on this segment
-                            frac = (t_on_seg * seg_len + remaining) / seg_len
-                            cx = a[0] + vx * frac
-                            cy = a[1] + vy * frac
-                            remaining = 0.0
-                        else:
-                            # jump to next segment start
-                            remaining -= dist_to_end
-                            seg_idx += 1
-                            t_on_seg = 0.0
-                            # set current point to segment end
-                            cx, cy = b[0], b[1]
-
-                    # If we've passed the end of the path, clamp to last point
-                    if seg_idx >= len(path_poly) - 1:
-                        cx, cy = path_poly[-1]
-
-                    # draw nudged point and a line to the car
-                    if ai_path_mode:
-                        pygame.draw.circle(world_surf, (0, 255, 0), (int(cx), int(cy)), 6)
-                        pygame.draw.line(world_surf, (0, 255, 0), (int(px), int(py)), (int(cx), int(cy)), 2)
-                    # compute signed angle between car heading and vector to nudged point (in radians)
-                    vx, vy = cx - px, cy - py
-                    angle_to_point = math.atan2(vy, vx)
-                    car_angle = my_car.angle
-                    angle_diff = ((angle_to_point - car_angle + math.pi) % (2 * math.pi)) - math.pi  # signed in [-pi, pi]
-                    angle_deg = math.degrees(angle_diff)
-
-                    # draw car heading and annotate the angle difference
-                    hx, hy = px + math.cos(car_angle) * 40, py + math.sin(car_angle) * 40
-                    if ai_path_mode:
-                        pygame.draw.line(world_surf, (0, 0, 255), (int(px), int(py)), (int(hx), int(hy)), 2)  # heading
-                        pygame.draw.line(world_surf, (0, 255, 0), (int(px), int(py)), (int(cx), int(cy)), 2)   # to nudged point
-                    lbl = font_small.render(f"{angle_deg:+.1f}°", True, (255, 255, 255))
-                    world_surf.blit(lbl, (int(px + 8), int(py - 22)))
-                    # optional: mark the segment start for reference
-                    sa, sb = path_poly[best_idx], path_poly[best_idx + 1]
-                    pygame.draw.circle(world_surf, (255, 255, 0), (int(sa[0]), int(sa[1])), 4)
-                    global AUTO_STEERING
-                    # Only set AUTO_STEERING when AI path mode is enabled; otherwise clear it
-                    if ai_path_mode:
-                        AUTO_STEERING = angle_diff
-                    else:
-                        AUTO_STEERING = 0
-            
             title = font_big.render("Waiting for players", True, WHITE_240)
             ui_surf.blit(title, (WINDOW_WIDTH//2 - title.get_width()//2, TITLE_Y))
             hud = font_small.render(f"Room: {code}", True, GREY_180)
@@ -856,8 +909,9 @@ def main():
                                                color_body=COLOR_BODY_REMOTE, car_sprites_list=[shadow_sprite, ae86_sprite, light_spray_sprite], lights_on=lights_on)
                 if d["drift_ratio"] > 0.8 and pid in drift_points_old_remotes:
                     old_pts = drift_points_old_remotes[pid]
-                    pygame.draw.line(tire_mark, TIRE_MARK_SMOKE, drift_points_remote[0], old_pts[0], 3)
-                    pygame.draw.line(tire_mark, TIRE_MARK_SMOKE, drift_points_remote[1], old_pts[1], 3)
+                    if drift_points_remote != None:
+                        pygame.draw.line(tire_mark, TIRE_MARK_SMOKE, drift_points_remote[0], old_pts[0], 3)
+                        pygame.draw.line(tire_mark, TIRE_MARK_SMOKE, drift_points_remote[1], old_pts[1], 3)
                 drift_points_old_remotes[pid] = drift_points_remote
 
         if stage == "settings":
