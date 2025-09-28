@@ -88,7 +88,8 @@ PROFANITY_SET = {"NIGGER", "NIGGA", "NIGA"}
 
 VIEW_ANGLE = 70 * math.pi / 180.0  # radians
 
-mouse_follow = False # 0 for keyboard/controller 1 for mouse
+ai_path_mode = False
+mouse_follow_mode = False
 flags = pygame.HWSURFACE | pygame.DOUBLEBUF
 
 # =============================
@@ -432,7 +433,7 @@ def read_inputs(joysticks, car, cam):
     if st != 0:
         st = 1.0 if st > 0 else -1.0
         
-    if mouse_follow:
+    if mouse_follow_mode:
         mouse_pos = pygame.mouse.get_pos()
         mous_vec = (mouse_pos[0] - car.x+cam.x - WINDOW_WIDTH/2, 
                     mouse_pos[1] - car.y+cam.y - WINDOW_HEIGHT/2)
@@ -447,9 +448,10 @@ def read_inputs(joysticks, car, cam):
         steering = js.get_axis(0)
         throttle = (js.get_axis(5)+1)/2
         breaks = (js.get_axis(4)+1)/2
-        st = steering if steering != 0 else st
-        th = throttle if throttle != 0 else th
-        br = breaks if breaks != 0 else br
+        if not ai_path_mode:
+            st = steering if steering != 0 else st
+            th = throttle if throttle != 0 else th
+            br = breaks if breaks != 0 else br
     return {"th": th, "st": st, "br": br}
 
 def draw_menu(screen, font_big, font_medium):
@@ -469,9 +471,22 @@ def handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, 
             sock = connect_to_relay()
             join_pkt = {"t": "create", "code": code, "name": my_name, "id": my_id}
             sock.send(json.dumps(join_pkt).encode("utf-8"))
+            # wait briefly for server confirmation (join_ok); avoid racing into playing state
+            join_ok_received = False
+            timeout = time.time() + 1.0
+            while time.time() < timeout:
+                for msg in recv_jsons(sock):
+                    if msg.get("t") == "join_ok":
+                        join_ok_received = True
+                        break
+                    if msg.get("t") == "error":
+                        raise Exception(msg.get("msg", "relay error"))
+                if join_ok_received:
+                    break
+                time.sleep(0.02)
+            if not join_ok_received:
+                raise Exception("Failed to create room: no confirmation from relay")
             stage = "playing"
-            # mark as host
-            global I_AM_HOST
             I_AM_HOST = True
         except Exception as ex:
             stage = "error"
@@ -484,8 +499,22 @@ def handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, 
             code = jcode.upper()
             join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id}
             sock.send(json.dumps(join_pkt).encode("utf-8"))
+            # wait for join confirmation
+            join_ok_received = False
+            timeout = time.time() + 1.0
+            while time.time() < timeout:
+                for msg in recv_jsons(sock):
+                    if msg.get("t") == "join_ok":
+                        join_ok_received = True
+                        break
+                    if msg.get("t") == "error":
+                        raise Exception(msg.get("msg", "relay error"))
+                if join_ok_received:
+                    break
+                time.sleep(0.02)
+            if not join_ok_received:
+                raise Exception("Failed to join room: join confirmation not received")
             stage = "playing"
-            # mark as non-host
             I_AM_HOST = False
         except Exception as ex:
             stage = "error"
@@ -623,6 +652,7 @@ def main():
     dragging = False
 
     def leave_room(sock, code, my_id, remotes):
+        global ai_path_mode, mouse_follow_mode
         if sock and code:
             try:
                 sock.send(json.dumps({"t": "bye", "code": code, "id": my_id}).encode("utf-8"))
@@ -631,6 +661,8 @@ def main():
                 pass
         remotes.clear()
         ai_cars.clear()
+        ai_path_mode = False
+        mouse_follow_mode = False
         # stage, sock, code, remotes
         return "menu", None, None, remotes
 
@@ -638,9 +670,29 @@ def main():
         print("Showing key binds...")
         
     def switch_steering_mode():
-        global mouse_follow
-        mouse_follow = not mouse_follow
+        global mouse_follow_mode, ai_path_mode
+        # toggle mouse follow; when enabling mouse follow, ensure AI path mode is disabled
+        mouse_follow_mode = not mouse_follow_mode
+        try:
+            if mouse_follow_mode:
+                ai_path_mode = False
+        except Exception:
+            pass
         # Close settings panel by returning the state tuple (new_stage, sock, code, remotes)
+        try:
+            return "playing", sock, code, remotes
+        except Exception:
+            return "playing", None, None, {}
+
+    def switch_ai_path_mode():
+        global ai_path_mode, mouse_follow_mode
+        # toggle AI path mode; when enabling AI, ensure mouse follow is disabled
+        ai_path_mode = not ai_path_mode
+        try:
+            if ai_path_mode:
+                mouse_follow_mode = False
+        except Exception:
+            pass
         try:
             return "playing", sock, code, remotes
         except Exception:
@@ -648,8 +700,8 @@ def main():
 
     buttons = [
         btn.Button("Leave Room", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.3, BTN_WIDTH, BTN_HEIGHT, RED, lambda: leave_room(sock, code, my_id, remotes)),
-        # btn.Button("Key Binds", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.4, BTN_WIDTH, BTN_HEIGHT, BLUE, show_key_binds),
-        btn.Button("Toggle Steering Mode", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.6, BTN_WIDTH, BTN_HEIGHT, RED, switch_steering_mode),
+        btn.Button("Cursor Follow Mode", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.6, BTN_WIDTH, BTN_HEIGHT, RED, switch_steering_mode),
+        btn.Button("AI Path Mode", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.72, BTN_WIDTH, BTN_HEIGHT, RED, switch_ai_path_mode),
     ]
 
     while True:
@@ -722,7 +774,16 @@ def main():
                 remotes_with_ai_for_player[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "drift_ratio": ai.drift_ratio, "name": ai.name}
 
         # Update player car using remotes that include AIs
-        my_car.step(read_inputs(joysticks, my_car, cam), dt, remotes_with_ai_for_player, world_size)
+        # If AI path mode is enabled and a path is available, let the AI drive the player
+        controls = None
+        if ai_path_mode and path_poly:
+            try:
+                controls = ai_algorithme(path_poly, my_car)
+            except Exception:
+                controls = None
+        if controls is None:
+            controls = read_inputs(joysticks, my_car, cam)
+        my_car.step(controls, dt, remotes_with_ai_for_player, world_size)
 
         # Prepare remotes view for AIs: include network remotes + all AIs + the local player (so AIs can detect collisions with player)
         remotes_with_ai_for_ais = dict(remotes)
@@ -895,15 +956,21 @@ def main():
             # Draw buttons and capture any action results. If an action returns a tuple
             # with new state (stage, sock, code, remotes), apply it.
             for button in buttons:
-                # If this is the steering-mode toggle button, update its label and color
-                # according to the current STEERING_MODE so the UI reflects the state.
+                # Update button labels/colors for stateful buttons
                 try:
                     if button.action == switch_steering_mode:
-                        if mouse_follow:
+                        if mouse_follow_mode:
                             button.text = "Mouse Following : On"
                             button.color = GREEN
                         else:
                             button.text = "Mouse Following : Off"
+                            button.color = RED
+                    if button.action == switch_ai_path_mode:
+                        if ai_path_mode:
+                            button.text = "AI Path Mode : On"
+                            button.color = GREEN
+                        else:
+                            button.text = "AI Path Mode : Off"
                             button.color = RED
                 except Exception:
                     pass

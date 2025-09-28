@@ -1,6 +1,4 @@
-import pygame
-import sys
-import math
+import pygame, math
 from PIL import Image
 
 
