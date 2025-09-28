@@ -471,9 +471,22 @@ def handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, 
             sock = connect_to_relay()
             join_pkt = {"t": "create", "code": code, "name": my_name, "id": my_id}
             sock.send(json.dumps(join_pkt).encode("utf-8"))
+            # wait briefly for server confirmation (join_ok); avoid racing into playing state
+            join_ok_received = False
+            timeout = time.time() + 1.0
+            while time.time() < timeout:
+                for msg in recv_jsons(sock):
+                    if msg.get("t") == "join_ok":
+                        join_ok_received = True
+                        break
+                    if msg.get("t") == "error":
+                        raise Exception(msg.get("msg", "relay error"))
+                if join_ok_received:
+                    break
+                time.sleep(0.02)
+            if not join_ok_received:
+                raise Exception("Failed to create room: no confirmation from relay")
             stage = "playing"
-            # mark as host
-            global I_AM_HOST
             I_AM_HOST = True
         except Exception as ex:
             stage = "error"
@@ -486,8 +499,22 @@ def handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, 
             code = jcode.upper()
             join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id}
             sock.send(json.dumps(join_pkt).encode("utf-8"))
+            # wait for join confirmation
+            join_ok_received = False
+            timeout = time.time() + 1.0
+            while time.time() < timeout:
+                for msg in recv_jsons(sock):
+                    if msg.get("t") == "join_ok":
+                        join_ok_received = True
+                        break
+                    if msg.get("t") == "error":
+                        raise Exception(msg.get("msg", "relay error"))
+                if join_ok_received:
+                    break
+                time.sleep(0.02)
+            if not join_ok_received:
+                raise Exception("Failed to join room: join confirmation not received")
             stage = "playing"
-            # mark as non-host
             I_AM_HOST = False
         except Exception as ex:
             stage = "error"
@@ -747,7 +774,16 @@ def main():
                 remotes_with_ai_for_player[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "drift_ratio": ai.drift_ratio, "name": ai.name}
 
         # Update player car using remotes that include AIs
-        my_car.step(read_inputs(joysticks, my_car, cam), dt, remotes_with_ai_for_player, world_size)
+        # If AI path mode is enabled and a path is available, let the AI drive the player
+        controls = None
+        if ai_path_mode and path_poly:
+            try:
+                controls = ai_algorithme(path_poly, my_car)
+            except Exception:
+                controls = None
+        if controls is None:
+            controls = read_inputs(joysticks, my_car, cam)
+        my_car.step(controls, dt, remotes_with_ai_for_player, world_size)
 
         # Prepare remotes view for AIs: include network remotes + all AIs + the local player (so AIs can detect collisions with player)
         remotes_with_ai_for_ais = dict(remotes)
