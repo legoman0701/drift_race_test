@@ -5,14 +5,14 @@ WINDOW_WIDTH, WINDOW_HEIGHT = 1000, 700
 TRACK_MARGIN = 40
 
 # car
-CAR_LEN = 58.0
-CAR_WID  = 30.0
+CAR_LEN = 38.0
+CAR_WID  = 20.0
 ENGINE_ACC      = 450.0
 #REVERSE_ACC     = 700.0
 #BRAKE_DECEL     = 1400.0
 #DRAG            = 0.35
 #ROLLING         = 1.6
-LATERAL_GRIP    = 2
+LATERAL_GRIP    = 4
 STEER_SENS      = 1/50
 #DRIFT_SENS      = 1/8000
 OVERSTEER       = 1.5/100
@@ -24,14 +24,17 @@ def clamp(x, lo, hi):
     return lo if x < lo else hi if x > hi else x
 
 class Car:
-    __slots__ = ("x", "y", "vx", "vy", "angle", "v_angle", "name", "drift_ratio")
-    def __init__(self, x, y, name):
+    __slots__ = ("x", "y", "vx", "vy", "angle", "v_angle", "name", "drift_ratio", "is_ai", "drift_points", "drift_points_old")
+    def __init__(self, x, y, name, is_ai=False):
         self.x, self.y = float(x), float(y)
         self.vx, self.vy = 0.0, 0.0
         self.angle = 0.0
         self.v_angle = 0.0
         self.name = name
         self.drift_ratio = 0 
+        self.is_ai = is_ai
+        self.drift_points = [(0,0),(0,0)]
+        self.drift_points_old = [(0,0),(0,0)]
 
     def step(self, inputs, dt, players, bounds):
         th = clamp(inputs.get("th", 0.0), -1.0, 1.0)
@@ -81,6 +84,22 @@ class Car:
             dist2 = dx * dx + dy * dy
             if dist2 < (CAR_LEN * CAR_LEN):
                 self._handle_collision(dx, dy, dist2)
+                
+        ca, sa = math.cos(self.angle), math.sin(self.angle)
+        halfL, halfW = CAR_LEN * 0.5, CAR_WID * 0.5
+        pts = [(+halfL, +halfW),
+            (+halfL, -halfW),
+            (-halfL, -halfW),
+            (-halfL, +halfW)]
+        wpts = []
+        for px, py in pts:
+            rx = px * ca - py * sa
+            ry = px * sa + py * ca
+            wpts.append((int(self.x + rx), int(self.y + ry)))
+            
+        self.drift_points_old = self.drift_points
+        self.drift_points = (wpts[2], wpts[3])
+            
     
     def _handle_track_bounds(self, dt, bounds):
         minx, maxx = TRACK_MARGIN, bounds[0] - TRACK_MARGIN
