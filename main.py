@@ -5,7 +5,7 @@ Refactored to remove magic numbers and reduce spaghetti code.
 """
 
 try: import pygame_ce as pygame
-except Exception: import pygame ; print("error")
+except Exception: import pygame ; print("failed to load pygame-ce")
 import socket, json, time, random, string, sys, math, uuid, argparse # global imports
 import camera, car, button as btn # local imports
 
@@ -24,12 +24,16 @@ PING_HZ = 1/5        # keepalive (~5 s)
 
 # Colors
 BLACK = (0, 0, 0)
-DARK_NAVY_BLUE = (5, 15, 28)
-GREY_20 = (20,20,28)
+GREY_20 = (20,20,20)
 GREY_180 = (180, 180, 180)
 GREY_200 = (200, 200, 200)
 WHITE_240 = (240,240,240)
 WHITE = (255, 255, 255)
+RED = (200, 0, 0)
+GREEN = (0, 200, 0)
+BLUE = (0, 0, 200)
+NAVY_BLUE = (5, 15, 28)
+
 COLOR_BODY_DEFAULT = (250,210,120)
 COLOR_NOSE_DEFAULT = (255,120,120)
 COLOR_BODY_REMOTE  = (255,200,120)
@@ -61,7 +65,7 @@ GLOW_RADIUS = 10 # soft round glow around the car
 # visual const
 TOP_LINE_Y = 30
 BOTTOM_LINE_Y = WINDOW_HEIGHT-20
-BTN_WIDTH, BTN_HEIGHT = 200, 100
+BTN_WIDTH, BTN_HEIGHT = 300, 75
 FONT_SMALL_SIZE = 18
 FONT_MEDIUM_SIZE = 26
 FONT_BIG_SIZE = 40
@@ -82,8 +86,7 @@ PROFANITY_SET = {"NIGGER", "NIGGA", "NIGA"}
 
 VIEW_ANGLE = 70 * math.pi / 180.0  # radians
 
-STEERING_MODE = 0 # 0 for keyboard/controller 1 for mouse
-
+mouse_follow = False # 0 for keyboard/controller 1 for mouse
 flags = pygame.HWSURFACE | pygame.DOUBLEBUF
 
 # =============================
@@ -316,7 +319,7 @@ def read_inputs(joysticks, car, cam):
     if st != 0:
         st = 1.0 if st > 0 else -1.0
         
-    if STEERING_MODE == 1:
+    if mouse_follow:
         mouse_pos = pygame.mouse.get_pos()
         mous_vec = (mouse_pos[0] - car.x+cam.x - WINDOW_WIDTH/2, 
                     mouse_pos[1] - car.y+cam.y - WINDOW_HEIGHT/2)
@@ -415,7 +418,7 @@ def main():
     pygame.init()
     pygame.joystick.init()
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-    pygame.display.set_caption("Top-Down Drift — Client Trust (Pi relay)")
+    pygame.display.set_caption("Drift Race Test")
     clock = pygame.time.Clock()
     font_small = pygame.font.SysFont(None, FONT_SMALL_SIZE)
     font_medium = pygame.font.SysFont(None, FONT_MEDIUM_SIZE)
@@ -519,13 +522,18 @@ def main():
         print("Showing key binds...")
         
     def switch_steering_mode():
-        global STEERING_MODE
-        STEERING_MODE = 0 if STEERING_MODE == 1 else 1
+        global mouse_follow
+        mouse_follow = not mouse_follow
+        # Close settings panel by returning the state tuple (new_stage, sock, code, remotes)
+        try:
+            return "playing", sock, code, remotes
+        except Exception:
+            return "playing", None, None, {}
 
     buttons = [
-        btn.Button("Leave Room", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.1, BTN_WIDTH, BTN_HEIGHT, (200, 0, 0), (255, 50, 50), lambda: leave_room(sock, code, my_id, remotes)),
-        btn.Button("Key Binds", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.4, BTN_WIDTH, BTN_HEIGHT, (50, 50, 200), (100, 100, 255), show_key_binds),
-        btn.Button("Change Steering Mode", WINDOW_WIDTH//2-BTN_WIDTH, WINDOW_HEIGHT*0.7, BTN_WIDTH*2, BTN_HEIGHT, (50, 50, 200), (100, 100, 255), switch_steering_mode),
+        btn.Button("Leave Room", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.3, BTN_WIDTH, BTN_HEIGHT, RED, lambda: leave_room(sock, code, my_id, remotes)),
+        # btn.Button("Key Binds", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.4, BTN_WIDTH, BTN_HEIGHT, BLUE, show_key_binds),
+        btn.Button("Toggle Steering Mode", WINDOW_WIDTH//2-BTN_WIDTH//2, WINDOW_HEIGHT*0.6, BTN_WIDTH, BTN_HEIGHT, RED, switch_steering_mode),
     ]
 
     while True:
@@ -649,6 +657,18 @@ def main():
             # Draw buttons and capture any action results. If an action returns a tuple
             # with new state (stage, sock, code, remotes), apply it.
             for button in buttons:
+                # If this is the steering-mode toggle button, update its label and color
+                # according to the current STEERING_MODE so the UI reflects the state.
+                try:
+                    if button.action == switch_steering_mode:
+                        if mouse_follow:
+                            button.text = "Mouse Following : On"
+                            button.color = GREEN
+                        else:
+                            button.text = "Mouse Following : Off"
+                            button.color = RED
+                except Exception:
+                    pass
                 res = button.draw(ui_surf)
                 if isinstance(res, tuple) and len(res) == 4:
                     # expected return: (new_stage, new_sock, new_code, new_remotes)

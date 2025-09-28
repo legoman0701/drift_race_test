@@ -2,11 +2,17 @@
 
 ## Updates History
 
-sep 27 2025
+sep 28 2025
 
+- ui (update : settings, menu)
+- mouse follow (add : allow players to control their car using the mouse cursor)
+- drift (update : better detection)
 - pygame-ec (add : import with try and exception)
 - issue : leave room btn : fixed
 - issue : players' username fixed
+
+sep 27 2025
+
 - zoom (update : add of flag and update of render view)
 - camera (update)
 - collisions (update)
@@ -14,12 +20,9 @@ sep 27 2025
 - collisions (update)
 - track (add)
 - camera (update : clamp)
-- assets (update) x2
-- ui (update) **(v3)**
-- README.md (update : fix text format)
-- README.md (add)
+- assets (update : ae86) x2
+- **(v0.3)** : ui (update)
 - headlights (add)
-- cleaning x3
 - settings menu (update) x2
 - settings menu (add)
 
@@ -39,11 +42,10 @@ sep 26 2025
 - issue : online network : fix failed
 - physics (update)
 - keys bind (update : esc)
-- cleaning **(v2)**
 
 sep 25 2025
 
-- drift (update : drift detection)
+- **(v0.2)** : drift (update : drift detection)
 - .gitignore (add)
 - collisions (update) x3
 - collisions (add)
@@ -51,7 +53,7 @@ sep 25 2025
 - physics (update)
 - drift (add)
 - physics (add)
-- pygame init **(v1)**
+- **(v0.1)** : pygame init
 
 ---
 
