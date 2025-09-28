@@ -10,6 +10,14 @@ sep 28 2025
 - pygame-ec (add : import with try and exception)
 - issue : leave room btn : fixed
 - issue : players' username fixed
+- computer ai (add)
+- debug path view (add)
+- spawn ai (add)
+- settings (update) x2
+- tire pos (update)
+- change of pygame version (pygame-ce)
+- file for pyinstaller (add)
+- **(v0.4)** : split files
 
 sep 27 2025
 
