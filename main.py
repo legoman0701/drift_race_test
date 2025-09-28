@@ -11,6 +11,8 @@ import camera, car, button as btn, path_finder # local imports
 
 # ======= CONFIGURATION =======
 RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
+# Host/Join role flag: set True when this client creates a room, False when joining
+I_AM_HOST = False
 
 # World dimensions
 WINDOW_WIDTH, WINDOW_HEIGHT = 1000, 700
@@ -352,6 +354,9 @@ def handle_network_messages(sock, remotes, dt, my_id):
             for pid, d in players.items():
                 if pid == my_id:
                     continue
+                if I_AM_HOST and isinstance(pid, str) and pid.startswith("AI-"):
+                    # host owns AI locally; skip echoed server AI
+                    continue
                 tx, ty, ta, tdr = float(d["x"]), float(d["y"]), float(d["a"]), float(d["drift_ratio"])
                 name = d.get("name", f"Player{pid}")
                 if pid not in remotes:
@@ -381,12 +386,32 @@ def send_network_state(sock, code, my_id, car):
         "a": round(car.angle, 4),
         "vx": round(car.vx, 2),
         "vy": round(car.vy, 2),
-        "drift_ratio": round(car.drift_ratio, 2)
+        "drift_ratio": round(car.drift_ratio, 2),
+        "name": car.name,
     }
     try:
         sock.send(json.dumps(pkt).encode("utf-8"))
     except Exception:
         pass
+
+def send_ai_states(sock, code, ai_cars):
+    for i, ai in enumerate(ai_cars, start=1):
+        pkt = {
+            "t": "state",
+            "code": code,
+            "id": f"AI-{i}",
+            "x": round(ai.x, 2),
+            "y": round(ai.y, 2),
+            "a": round(ai.angle, 4),
+            "vx": round(ai.vx, 2),
+            "vy": round(ai.vy, 2),
+            "drift_ratio": round(ai.drift_ratio, 2),
+            "name": ai.name,
+        }
+        try:
+            sock.send(json.dumps(pkt).encode("utf-8"))
+        except Exception:
+            pass
 
 def send_ping(sock, code):
     try:
@@ -433,6 +458,7 @@ def draw_menu(screen, font_big, font_medium):
     screen.blit(tip2, (int(WINDOW_WIDTH * 0.7 - tip2.get_width() // 2), 13))
 
 def handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, code, sock, error_msg):
+    global I_AM_HOST
     if ev.key == HOST_KEY:  # Host room
         my_name = get_name_input(screen, font_big, font_small, "host")
         code = rand_code()
@@ -441,6 +467,9 @@ def handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, 
             join_pkt = {"t": "create", "code": code, "name": my_name, "id": my_id}
             sock.send(json.dumps(join_pkt).encode("utf-8"))
             stage = "playing"
+            # mark as host
+            global I_AM_HOST
+            I_AM_HOST = True
         except Exception as ex:
             stage = "error"
             error_msg = f"Net error: {ex}"
@@ -453,6 +482,8 @@ def handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, 
             join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id}
             sock.send(json.dumps(join_pkt).encode("utf-8"))
             stage = "playing"
+            # mark as non-host
+            I_AM_HOST = False
         except Exception as ex:
             stage = "error"
             error_msg = f"Net error: {ex}"
@@ -494,6 +525,7 @@ def handle_game_events(screen, ev, stage, remotes, sock, code, my_name, my_id, m
     return ev, stage, remotes, sock, code, my_car, error_msg
 
 def main():
+    global I_AM_HOST  # ensure all references/assignments in this function use the module global
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["host", "join"])
     parser.add_argument("--code")
@@ -555,6 +587,7 @@ def main():
             join_pkt = {"t": "create", "code": code, "name": my_name, "id": my_id}
             sock.send(json.dumps(join_pkt).encode("utf-8"))
             stage = "playing"
+            I_AM_HOST = True  # set host flag for CLI host mode
         except Exception as ex:
             stage = "error"
             error_msg = f"Net error: {ex}"
@@ -564,18 +597,11 @@ def main():
         code = args.code
         try:
             sock = connect_to_relay()
+            code = code.upper()
             join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id}
             sock.send(json.dumps(join_pkt).encode("utf-8"))
-            join_ok_received = False
-            timeout = time.time() + 1.0
-            while not join_ok_received and time.time() < timeout:
-                for msg in recv_jsons(sock):
-                    if msg.get("t") == "join_ok":
-                        join_ok_received = True
-                        break
-            if not join_ok_received:
-                raise Exception("Failed to connect: no join confirmation received")
             stage = "playing"
+            I_AM_HOST = False  # set host flag for CLI join mode
         except Exception as ex:
             stage = "error"
             error_msg = f"Net error: {ex}"
@@ -601,6 +627,7 @@ def main():
             except Exception:
                 pass
         remotes.clear()
+        ai_cars.clear()
         # stage, sock, code, remotes
         return "menu", None, None, remotes
 
@@ -630,9 +657,15 @@ def main():
             if ev.type == pygame.KEYDOWN and ev.key == pygame.K_l:
                 lights_on = not lights_on
             if ev.type == pygame.KEYDOWN and ev.key == pygame.K_n:
-                ai_cars.append(car.Car(random.randint(TRACK_MARGIN + 200, WINDOW_WIDTH - TRACK_MARGIN - 200),
-                                       random.randint(TRACK_MARGIN + 120, WINDOW_HEIGHT - TRACK_MARGIN - 120),
-                                       name=f"AI-{len(ai_cars)+1}", is_ai=True))
+                if I_AM_HOST and stage == "playing":
+                    ai_cars.append(
+                        car.Car(
+                            random.randint(TRACK_MARGIN + 200, WINDOW_WIDTH - TRACK_MARGIN - 200),
+                            random.randint(TRACK_MARGIN + 120, WINDOW_HEIGHT - TRACK_MARGIN - 120),
+                            name=f"AI-{len(ai_cars)+1}",
+                            is_ai=True,
+                        )
+                    )
                 
             if ev.type == pygame.MOUSEWHEEL:
                 # Adjust zoom (clamp between 0.5 and 3.0)
@@ -662,6 +695,8 @@ def main():
             if now - last_state_send >= 1.0 / SEND_HZ:
                 last_state_send = now
                 send_network_state(sock, code, my_id, my_car)
+                if I_AM_HOST and ai_cars:
+                    send_ai_states(sock, code, ai_cars)
             if now - last_ping >= 1.0 / PING_HZ:
                 last_ping = now
                 send_ping(sock, code)
@@ -673,24 +708,27 @@ def main():
 
         # Prepare remotes view for the player: include network remotes + AI cars (so player can collide with AIs)
         remotes_with_ai_for_player = dict(remotes)
-        for i, ai in enumerate(ai_cars, start=1):
-            key = f"AI-{i}"
-            remotes_with_ai_for_player[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "drift_ratio": ai.drift_ratio, "name": ai.name}
+        if I_AM_HOST:
+            for i, ai in enumerate(ai_cars, start=1):
+                key = f"AI-{i}"
+                remotes_with_ai_for_player[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "drift_ratio": ai.drift_ratio, "name": ai.name}
 
         # Update player car using remotes that include AIs
         my_car.step(read_inputs(joysticks, my_car, cam), dt, remotes_with_ai_for_player, world_size)
 
         # Prepare remotes view for AIs: include network remotes + all AIs + the local player (so AIs can detect collisions with player)
         remotes_with_ai_for_ais = dict(remotes)
-        # add local player under a distinct key so AIs see it
-        remotes_with_ai_for_ais[f"PLAYER-{my_id}"] = {"x": my_car.x, "y": my_car.y, "a": my_car.angle, "drift_ratio": my_car.drift_ratio, "name": my_car.name}
-        for i, ai in enumerate(ai_cars, start=1):
-            key = f"AI-{i}"
-            remotes_with_ai_for_ais[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "drift_ratio": ai.drift_ratio, "name": ai.name}
+        if I_AM_HOST:
+            # add local player under a distinct key so AIs see it
+            remotes_with_ai_for_ais[f"PLAYER-{my_id}"] = {"x": my_car.x, "y": my_car.y, "a": my_car.angle, "drift_ratio": my_car.drift_ratio, "name": my_car.name}
+            for i, ai in enumerate(ai_cars, start=1):
+                key = f"AI-{i}"
+                remotes_with_ai_for_ais[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "drift_ratio": ai.drift_ratio, "name": ai.name}
 
         # Step AIs (each AI sees other AIs + network remotes + the player)
-        for ai in ai_cars:
-            ai.step(ai_algorithme(path_poly, ai), dt, remotes_with_ai_for_ais, world_size)
+        if I_AM_HOST:
+            for ai in ai_cars:
+                ai.step(ai_algorithme(path_poly, ai), dt, remotes_with_ai_for_ais, world_size)
         cam.update(my_car, (WINDOW_WIDTH, WINDOW_HEIGHT) if stage != "playing" else (track_image.get_width(), track_image.get_height()))
 
         # Draw game world onto an off-screen surface.
@@ -710,11 +748,9 @@ def main():
             #pygame.draw.rect(world_surf, TRACK_COLOR, camera_rect)
             world_surf.blit(visible_track, top_right_pos)
 
-        if tire_mark.get_width() != world_surf.get_width() or tire_mark.get_height() != world_surf.get_width():
-            tire_mark = pygame.Surface((world_surf.get_width(), world_surf.get_width()), pygame.SRCALPHA)
+        if tire_mark.get_width() != world_surf.get_width() or tire_mark.get_height() != world_surf.get_height():
+            tire_mark = pygame.Surface((world_surf.get_width(), world_surf.get_height()), pygame.SRCALPHA)
             tire_mark.fill((255, 255, 255, 0))
-            
-            
             path_poly = path_finder.discover_track("assets/Map/Map1.png")
             
         ui_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)

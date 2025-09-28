@@ -15,6 +15,8 @@ TICK = 0.01             # main loop tick
 #   code -> {
 #       "clients": { addr: {"id","name","last"} },
 #       "states":  { id: {"x","y","a","vx","vy","name", "drift_ratio"} },
+#       "host_addr": tuple|None,   # address of the creator
+#       "host_id": str,            # id of the creator
 #       "last_broadcast": float,
 #       "dirty": bool
 #   }
@@ -54,6 +56,13 @@ def loop():
                     pid = info["id"]
                     room["clients"].pop(caddr, None)
                     room["states"].pop(pid, None)
+                    # if the timed out client was host, purge AI states
+                    if caddr == room.get("host_addr") or pid == room.get("host_id"):
+                        for sid in list(room["states"].keys()):
+                            if isinstance(sid, str) and sid.startswith("AI-"):
+                                room["states"].pop(sid, None)
+                        room["host_addr"] = None
+                        room["host_id"] = ""
                     room["dirty"] = True
             # remove room if empty
             if not room["clients"]:
@@ -90,7 +99,7 @@ def loop():
                 sendto_json(sock, addr, {"t":"error","msg":"missing_code_or_id"}); continue
             if code in rooms:
                 sendto_json(sock, addr, {"t":"error","msg":"room_already_exists"}); continue
-            room = {"clients": {}, "states": {}, "last_broadcast": 0.0, "dirty": True}
+            room = {"clients": {}, "states": {}, "host_addr": addr, "host_id": pid, "last_broadcast": 0.0, "dirty": True}
             rooms[code] = room
             room["clients"][addr] = {"id": pid, "name": name, "last": now}
             room["states"].setdefault(pid, {"x": 500, "y": 350, "a": 0.0, "vx": 0.0, "vy": 0.0, "name": name, "drift_ratio": 0.0})
@@ -121,13 +130,19 @@ def loop():
             if not room or addr not in room["clients"]:
                 sendto_json(sock, addr, {"t":"error","msg":"room_not_found_or_not_joined"}); continue
             room["clients"][addr]["last"] = now
+            # Only the host can publish AI states (ids starting with 'AI-')
+            is_ai = isinstance(pid, str) and pid.startswith("AI-")
+            if is_ai and room.get("host_addr") != addr:
+                # ignore non-host AI updates
+                continue
             st = {
                 "x": float(msg.get("x", 0.0)),
                 "y": float(msg.get("y", 0.0)),
                 "a": float(msg.get("a", 0.0)),
                 "vx": float(msg.get("vx", 0.0)),
                 "vy": float(msg.get("vy", 0.0)),
-                "name": room["clients"][addr]["name"],
+                # for AI, trust provided name; for players, use registered name
+                "name": (str(msg.get("name")) if is_ai else room["clients"][addr]["name"]),
                 "drift_ratio": float(msg.get("drift_ratio", 0.0)),
             }
             room["states"][pid] = st
@@ -147,6 +162,13 @@ def loop():
                 continue
             room["clients"].pop(addr, None)
             if pid: room["states"].pop(pid, None) # remove player
+            # If the host leaves, purge AI states and clear host markers
+            if addr == room.get("host_addr") or pid == room.get("host_id"):
+                for sid in list(room["states"].keys()):
+                    if isinstance(sid, str) and sid.startswith("AI-"):
+                        room["states"].pop(sid, None)
+                room["host_addr"] = None
+                room["host_id"] = ""
             room["dirty"] = True # trigger broadcast
             if not room["clients"]: # delete room if empty
                 rooms.pop(code, None)
