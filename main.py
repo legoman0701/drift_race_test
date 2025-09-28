@@ -109,8 +109,10 @@ def car_local_to_world(cx, cy, angle, lx, ly):
     return (cx + lx * ca - ly * sa,
             cy + lx * sa + ly * ca)
 
-def ai_algorithme(path_poly, my_car):
-    #pygame.draw.polygon(surface, (255, 0, 0), path_poly, 3)
+def ai_algorithme(path_poly, my_car, surface, font_small):
+    if ai_path_mode:
+        surface.fill((0,0,0,0))
+        pygame.draw.polygon(surface, (255, 0, 0), path_poly, 3)
     # find closest point on path_poly to the car position and draw it
     if path_poly:
         def _proj_point_on_segment(px, py, ax, ay, bx, by):
@@ -183,30 +185,34 @@ def ai_algorithme(path_poly, my_car):
             if seg_idx >= len(path_poly) - 1:
                 cx, cy = path_poly[-1]
 
-            # draw nudged point and a line to the car
-            #pygame.draw.circle(surface, (0, 255, 0), (int(cx), int(cy)), 6)
-            #pygame.draw.line(surface, (0, 255, 0), (int(px), int(py)), (int(cx), int(cy)), 2)
-            # compute signed angle between car heading and vector to nudged point (in radians)
             vx, vy = cx - px, cy - py
             angle_to_point = math.atan2(vy, vx)
             car_angle = my_car.angle
             angle_diff = ((angle_to_point - car_angle + math.pi) % (2 * math.pi)) - math.pi  # signed in [-pi, pi]
             angle_deg = math.degrees(angle_diff)
 
-            ## draw car heading and annotate the angle difference
-            #hx, hy = px + math.cos(car_angle) * 40, py + math.sin(car_angle) * 40
-            #pygame.draw.line(surface, (0, 0, 255), (int(px), int(py)), (int(hx), int(hy)), 2)  # heading
-            ##pygame.draw.line(surface, (0, 255, 0), (int(px), int(py)), (int(cx), int(cy)), 2)   # to nudged point
-            #lbl = font_small.render(f"{angle_deg:+.1f}°", True, (255, 255, 255))
-            #surface.blit(lbl, (int(px + 8), int(py - 22)))
-            ## optional: mark the segment start for reference
-            #sa, sb = path_poly[best_idx], path_poly[best_idx + 1]
-            #pygame.draw.circle(surface, (255, 255, 0), (int(sa[0]), int(sa[1])), 4)
+            
+            if ai_path_mode:
+                # draw nudged point and a line to the car
+                pygame.draw.circle(surface, (0, 255, 0), (int(cx), int(cy)), 6)
+                pygame.draw.line(surface, (0, 255, 0), (int(px), int(py)), (int(cx), int(cy)), 2)
+                # compute signed angle between car heading and vector to nudged point (in radians)
+                # draw car heading and annotate the angle difference
+                hx, hy = px + math.cos(car_angle) * 40, py + math.sin(car_angle) * 40
+                pygame.draw.line(surface, (0, 0, 255), (int(px), int(py)), (int(hx), int(hy)), 2)  # heading
+                pygame.draw.line(surface, (0, 255, 0), (int(px), int(py)), (int(cx), int(cy)), 2)   # to nudged point
+                lbl = font_small.render(f"{angle_deg:+.1f}°", True, (255, 255, 255))
+                surface.blit(lbl, (int(px + 8), int(py - 22)))
+                ## optional: mark the segment start for reference
+                sa, sb = path_poly[best_idx], path_poly[best_idx + 1]
+                pygame.draw.circle(surface, (255, 255, 0), (int(sa[0]), int(sa[1])), 4)
             
             st = angle_diff*2
             
             th = 1-clamp(abs(angle_diff)*0.5, 0, 1) + 0.1
             br = clamp(abs(angle_diff)*0.25, 0, 1)
+            if ai_path_mode:
+                return {"th": th, "st": st, "br": br}, surface
             return {"th": th, "st": st, "br": br}
 
 def draw_car(surface, x, y, angle, name,
@@ -778,7 +784,7 @@ def main():
         controls = None
         if ai_path_mode and path_poly:
             try:
-                controls = ai_algorithme(path_poly, my_car)
+                controls, ai_debug_surface = ai_algorithme(path_poly, my_car, pygame.Surface((track_image.get_width(), track_image.get_height()), pygame.SRCALPHA), font_small)
             except Exception:
                 controls = None
         if controls is None:
@@ -996,6 +1002,18 @@ def main():
         final_surf = cam.apply(world_surf)
         screen.blit(final_surf, (0,0))
         screen.blit(ui_surf, (0,0))
+        if ai_path_mode and stage == "playing":
+            try:
+                top_right_pos = cam.x-(WINDOW_WIDTH/2)/cam.zoom, cam.y-(WINDOW_HEIGHT/2)/cam.zoom
+                camera_rect = pygame.Rect(top_right_pos[0],
+                                        top_right_pos[1],
+                                        WINDOW_WIDTH/cam.zoom,
+                                        WINDOW_HEIGHT/cam.zoom)
+                visible_ai_debug_surface = ai_debug_surface.subsurface(camera_rect)
+                #pygame.draw.rect(world_surf, TRACK_COLOR, camera_rect)
+                screen.blit(visible_ai_debug_surface, (0, 0))
+            except Exception:
+                pass
         pygame.display.flip()
 
 if __name__ == "__main__":
