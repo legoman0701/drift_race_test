@@ -6,7 +6,7 @@ Refactored to remove magic numbers and reduce spaghetti code.
 
 try: import pygame_ce as pygame
 except Exception: import pygame ; print("failed to load pygame-ce")
-import socket, json, time, random, string, sys, math, uuid, argparse # global imports
+import socket, json, time, random, string, sys, math, uuid, argparse, os # global imports
 import camera, car, button as btn, path_finder # local imports
 import const
 from helpers import clamp, rand_code, rand_name, car_local_to_world
@@ -15,6 +15,7 @@ from inputs import get_text_input, get_code_input, get_name_input, read_inputs
 from communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, recv_jsons
 from ui import draw_car, draw_track_ui, draw_menu, handle_menu_events, handle_game_events, draw_controls_hud
 from rpm import calc_engine_rpm, RpmParams
+from engine_sound_blend import EngineSoundBlend
 
 # ======= CONFIGURATION =======
 RELAY_PUBLIC_ENDPOINT = const.RELAY_PUBLIC_ENDPOINT
@@ -39,6 +40,15 @@ def main():
 
     pygame.init()
     pygame.joystick.init()
+    # Audio init
+    try:
+        pygame.mixer.pre_init(44100, size=-16, channels=2, buffer=512)
+    except Exception:
+        pass
+    try:
+        pygame.mixer.init()
+    except Exception:
+        print("Audio mixer init failed")
     screen = pygame.display.set_mode((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
     pygame.display.set_caption("Drift Race Test")
     clock = pygame.time.Clock()
@@ -84,6 +94,16 @@ def main():
     my_car = car.Car(spawnx, spawny, my_name, is_ai=False)
     # Local player's engine state (avoid mutating Car which may use __slots__)
     engine_state = {"gear": 0, "last_rpm": None}
+    # Engine sound setup (BeamNG blend JSON)
+    engine_sound = None
+    try:
+        blend_json = "assets/AE86/sound/blends/4AGE_TODA.sfxBlend2D.json"
+        if os.path.isfile(blend_json):
+            engine_sound = EngineSoundBlend(blend_json)
+        else:
+            print("Engine blend JSON not found:", blend_json)
+    except Exception as e:
+        print("Engine sound init failed:", e)
 
     if args.mode == "host" and args.code and args.name:
         my_name = args.name
@@ -225,6 +245,11 @@ def main():
                 if sock and code:
                     try: sock.send(json.dumps({"t": "bye", "code": code, "id": my_id}).encode("utf-8"))
                     except Exception: pass
+                try:
+                    if 'engine_sound' in locals() and engine_sound:
+                        engine_sound.stop()
+                except Exception:
+                    pass
                 pygame.quit()
                 sys.exit(0)
 
@@ -305,6 +330,25 @@ def main():
         if controls is None:
             controls = read_inputs(joysticks, my_car, cam, mouse_follow_mode, ai_path_mode)
         my_car.step(controls, dt, remotes_with_ai_for_player, world_size)
+        # Update engine audio based on RPM and throttle
+        try:
+            if 'engine_sound' in locals() and engine_sound is not None:
+                speed_units = math.hypot(my_car.vx, my_car.vy)
+                th = clamp(controls.get("th", 0.0), -1.0, 1.0)
+                prev_rpm = engine_state.get("last_rpm")
+                rpm = calc_engine_rpm(
+                    speed_units=speed_units,
+                    drift_ratio=my_car.drift_ratio,
+                    throttle=th,
+                    prev_rpm=prev_rpm,
+                    dt=dt,
+                    params=None,
+                    _state=engine_state,
+                )
+                engine_state["last_rpm"] = rpm
+                engine_sound.update(rpm=rpm, throttle=max(0.0, th), dt=dt)
+        except Exception:
+            pass
 
         # Prepare remotes view for AIs: include network remotes + all AIs + the local player (so AIs can detect collisions with player)
         remotes_with_ai_for_ais = dict(remotes)

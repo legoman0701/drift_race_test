@@ -34,7 +34,7 @@ class RpmParams:
     units_per_meter: float = 10.0  # 50 px == 1 m; adjust to your map scaling
 
     # Dynamics/smoothing
-    upshift_rpm: float = 7200.0
+    upshift_rpm: float = 4500.0
     downshift_rpm: float = 2500.0
     max_rpm_change_per_s: float = 9000.0  # engine spinup limit for smoothing
     engine_brake_strength: float = 0.25   # how fast rpm decays toward wheel rpm on low throttle

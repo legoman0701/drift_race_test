@@ -1,0 +1,25 @@
+{
+    "header" : {
+        "version" : 1
+    },
+    "eventName" : "event:>Engine>default",
+    "samples" : 
+    [
+        [
+            ["art/sound/engine/4AGE_TODA/2950.wav", 2950],
+            ["art/sound/engine/4AGE_TODA/4250.wav", 4250],
+            ["art/sound/engine/4AGE_TODA/4780.wav", 4780],
+            ["art/sound/engine/4AGE_TODA/5130.wav", 5130],
+            ["art/sound/engine/4AGE_TODA/6160.wav", 6160],
+            ["art/sound/engine/4AGE_TODA/6550.wav", 6550],
+            ["art/sound/engine/4AGE_TODA/7150.wav", 7150],
+            ["art/sound/engine/4AGE_TODA/8000.wav", 8000]
+        ],
+        [
+            ["art/sound/engine/4AGE_TODA/idle.flac", 900],
+            ["art/sound/engine/4AGE_TODA/on1.flac", 3391],
+            ["art/sound/engine/4AGE_TODA/on2.flac", 5046],
+            ["art/sound/engine/4AGE_TODA/on3.flac", 7025]
+        ]
+    ]
+}
