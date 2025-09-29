@@ -12,7 +12,7 @@ import const
 from helpers import clamp, rand_code, rand_name, car_local_to_world
 from ai import ai_algorithme
 from inputs import get_text_input, get_code_input, get_name_input, read_inputs
-from communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping
+from communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, recv_jsons
 from ui import draw_car, draw_track_ui, draw_menu, handle_menu_events, handle_game_events
 
 # ======= CONFIGURATION =======
@@ -90,11 +90,30 @@ def main():
             sock = connect_to_relay()
             join_pkt = {"t": "create", "code": code, "name": my_name, "id": my_id}
             sock.send(json.dumps(join_pkt).encode("utf-8"))
+            # Wait briefly for confirmation; otherwise offline fallback
+            join_ok_received = False
+            timeout = time.time() + 1.0
+            while time.time() < timeout:
+                for msg in recv_jsons(sock):
+                    if msg.get("t") == "join_ok":
+                        join_ok_received = True
+                        break
+                    if msg.get("t") == "error":
+                        raise Exception(msg.get("msg", "relay error"))
+                if join_ok_received:
+                    break
+                time.sleep(0.02)
+            if join_ok_received:
+                stage = "playing"
+                I_AM_HOST = True  # set host flag for CLI host mode
+            else:
+                raise Exception("no join_ok")
+        except Exception:
+            # Offline fallback
+            sock = None
+            code = "Offline"
             stage = "playing"
-            I_AM_HOST = True  # set host flag for CLI host mode
-        except Exception as ex:
-            stage = "error"
-            error_msg = f"Net error: {ex}"
+            I_AM_HOST = True
     elif args.mode == "join" and args.code and args.name:
         my_name = args.name
         my_car.name = my_name
@@ -104,11 +123,30 @@ def main():
             code = code.upper()
             join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id}
             sock.send(json.dumps(join_pkt).encode("utf-8"))
+            # Wait briefly for confirmation; otherwise offline fallback
+            join_ok_received = False
+            timeout = time.time() + 1.0
+            while time.time() < timeout:
+                for msg in recv_jsons(sock):
+                    if msg.get("t") == "join_ok":
+                        join_ok_received = True
+                        break
+                    if msg.get("t") == "error":
+                        raise Exception(msg.get("msg", "relay error"))
+                if join_ok_received:
+                    break
+                time.sleep(0.02)
+            if join_ok_received:
+                stage = "playing"
+                I_AM_HOST = False  # set host flag for CLI join mode
+            else:
+                raise Exception("no join_ok")
+        except Exception:
+            # Offline fallback
+            sock = None
+            code = "Offline"
             stage = "playing"
-            I_AM_HOST = False  # set host flag for CLI join mode
-        except Exception as ex:
-            stage = "error"
-            error_msg = f"Net error: {ex}"
+            I_AM_HOST = False
     
     tire_mark = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), pygame.SRCALPHA)
     tire_mark.fill((255, 255, 255, 0))
@@ -221,10 +259,16 @@ def main():
         if sock:
             err = handle_network_messages(sock, remotes, dt, my_id, I_AM_HOST)
             if err:
-                stage = "error"
-                error_msg = err
+                # Switch to offline on relay errors
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+                sock = None
+                code = "Offline"
+                remotes.clear()
 
-        if sock and code:
+        if sock and code and code != "Offline":
             now = time.time()
             if now - last_state_send >= 1.0 / const.SEND_HZ:
                 last_state_send = now
@@ -343,7 +387,8 @@ def main():
         if stage == "playing":
             title = font_big.render("Waiting for players", True, const.WHITE_240)
             ui_surf.blit(title, (const.WINDOW_WIDTH//2 - title.get_width()//2, const.TITLE_Y))
-            hud = font_small.render(f"Room: {code}", True, const.GREY_180)
+            room_label = code if code else "Offline"
+            hud = font_small.render(f"Room: {room_label}", True, const.GREY_180)
             ui_surf.blit(hud, (10, const.RELAY_Y))
             # HUD: steering wheel + throttle/brake % bars (bottom-right)
             inp = read_inputs(joysticks, my_car, cam, mouse_follow_mode, ai_path_mode)

@@ -67,12 +67,29 @@ def handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, 
                     break
                 time.sleep(0.02)
             if not join_ok_received:
-                raise Exception("Failed to create room: no confirmation from relay")
+                # Relay didn't confirm; fall back to offline mode
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+                sock = None
+                code = "Offline"
+                stage = "playing"
+                is_host_flag_ref[0] = True  # offline single-player acts as host
+            else:
+                stage = "playing"
+                is_host_flag_ref[0] = True
+        except Exception:
+            # Relay unreachable; fall back to offline mode
+            try:
+                if sock:
+                    sock.close()
+            except Exception:
+                pass
+            sock = None
+            code = "Offline"
             stage = "playing"
             is_host_flag_ref[0] = True
-        except Exception as ex:
-            stage = "error"
-            error_msg = f"Net error: {ex}"
     elif ev.key == const.JOIN_KEY:  # Join room
         my_name = get_name_input(screen, font_big, font_small, "join")
         jcode = get_code_input(screen, font_big, font_small)
@@ -94,12 +111,30 @@ def handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, 
                     break
                 time.sleep(0.02)
             if not join_ok_received:
-                raise Exception("Failed to join room: join confirmation not received")
+                # Relay didn't confirm; fall back to offline
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+                sock = None
+                code = "Offline"
+                stage = "playing"
+                # Join offline: treat as single-player (not host for net features)
+                is_host_flag_ref[0] = False
+            else:
+                stage = "playing"
+                is_host_flag_ref[0] = False
+        except Exception:
+            # Relay unreachable; fall back to offline
+            try:
+                if sock:
+                    sock.close()
+            except Exception:
+                pass
+            sock = None
+            code = "Offline"
             stage = "playing"
             is_host_flag_ref[0] = False
-        except Exception as ex:
-            stage = "error"
-            error_msg = f"Net error: {ex}"
 
     return stage, my_name, code, sock, error_msg
 
