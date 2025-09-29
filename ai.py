@@ -8,10 +8,10 @@ from helpers import clamp
 def ai_algorithme(
     path_poly: List[Tuple[float, float]],
     my_car,
-    ai_path_mode= False,
-    surface = None,
-    font_small = None,
-):
+    ai_path_mode: bool = False,
+    surface: Optional[pygame.Surface] = None,
+    font_small: Optional[pygame.font.Font] = None,
+) -> Dict[str, float] | tuple[Dict[str, float], pygame.Surface]:
     """
     Compute basic steering/throttle/brake to follow a polyline path.
     If ai_path_mode and surface are provided, also draw debug visuals and
