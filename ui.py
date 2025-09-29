@@ -24,9 +24,10 @@ def draw_car(surface, x, y, angle, name,
         surface.blit(car_sprite[sprite_index], (int(x - sprite_size[0] / 2), int(y - sprite_size[1] / 2)))
 
     if name:
-        font = pygame.font.SysFont(None, 22)
+        scale = getattr(const, "UI_SCALE", 1.0)
+        font = pygame.font.SysFont(None, max(1, int(22 * scale)))
         text = font.render(name, True, (230, 230, 255))
-        surface.blit(text, (int(x - text.get_width() / 2), int(y - 40)))
+        surface.blit(text, (int(x - text.get_width() / 2), int(y - int(40 * scale))))
 
 
 def draw_track_ui(screen):
@@ -171,3 +172,155 @@ def handle_game_events(screen, ev, stage, remotes, sock, code, my_name, my_id, m
             my_car = car.Car(spawnx, spawny, my_name, is_ai=False)
 
     return ev, stage, remotes, sock, code, my_car, error_msg
+
+
+def draw_controls_hud(ui_surf: pygame.Surface,
+                      font_small: pygame.font.Font,
+                      st: float,
+                      th: float,
+                      br: float,
+                      rpm: Optional[float] = None,
+                      rpm_redline: float = 8000.0) -> None:
+    """Draw bottom-right HUD with RPM gauge, steering wheel, throttle and brake bars.
+
+    Parameters
+    - st: steering input in [-1, 1]
+    - th: throttle input in [-1, 1] (negative means reverse)
+    - br: brake input in [0, 1]
+    - rpm: optional engine RPM; if None, a simple estimate is derived from throttle
+    - rpm_redline: maximum RPM for gauge scaling
+    """
+    # Apply UI scaling
+    s = getattr(const, "UI_SCALE", 1.0)
+    def sc(v: float) -> int:
+        return int(round(v * s))
+
+    # Compute a simple RPM if not supplied (idle -> redline by throttle)
+    if rpm is None:
+        rpm = abs(clamp(th, -1.0, 1.0)) * rpm_redline
+    rpm = clamp(rpm, 0.0, rpm_redline)
+
+    # HUD layout
+    pad = sc(12)
+    hud_h = sc(120)
+    wheel_size = sc(76)
+    gauge_size = sc(76)  # analog RPM gauge, same size as steering wheel
+
+    # Compute dynamic width: gauge + wheel + bars area
+    bars_min_width = sc(110)
+    hud_w = gauge_size + wheel_size + bars_min_width + sc(32)  # extra padding/margins
+
+    x = const.WINDOW_WIDTH - hud_w - pad
+    y = const.WINDOW_HEIGHT - hud_h - pad
+
+    # semi-transparent background
+    bg = pygame.Surface((hud_w, hud_h), pygame.SRCALPHA)
+    bg.fill((10, 10, 14, 200))
+    ui_surf.blit(bg, (x, y))
+
+    # --- RPM Gauge (left) ---
+    gcx = x + gauge_size // 2 + sc(10)
+    gcy = y + hud_h // 2
+    g_r_outer = gauge_size // 2
+    g_r = g_r_outer - sc(8)
+    # outer ring
+    
+    pygame.draw.circle(ui_surf, (40, 40, 48), (gcx, gcy), g_r_outer)
+    pygame.draw.circle(ui_surf, (20, 20, 26), (gcx, gcy), g_r_outer - sc(2))
+    pygame.draw.circle(ui_surf, (60, 60, 70), (gcx, gcy), g_r, max(1, sc(4)))
+
+    # Gauge angles and mapping (sweep from ~210° to ~330°)
+    a0 = math.radians(100.0)
+    a1 = math.radians(330.0)
+    def angle_for_rpm(val: float) -> float:
+        f = 0.0 if rpm_redline <= 0 else clamp(val / rpm_redline, 0.0, 1.0)
+        return a0 + (a1 - a0) * f
+
+    # ticks (0..8 x1000)
+    max_k = int(rpm_redline // 1000)
+    for k in range(0, max_k + 1):
+        frac = k / max(1, max_k)
+        ang = a0 + (a1 - a0) * frac
+        ca, sa = math.cos(ang), math.sin(ang)
+        r0 = g_r - sc(8)
+        r1 = g_r + sc(2)
+        color = (220, 80, 80) if k >= max_k - 1 else (180, 180, 190)
+        x0, y0 = int(gcx + ca * r0), int(gcy + sa * r0)
+        x1, y1 = int(gcx + ca * r1), int(gcy + sa * r1)
+        pygame.draw.line(ui_surf, color, (x0, y0), (x1, y1), max(1, sc(2 if k % 2 == 0 else 1)))
+
+        # numeric labels: 1000->"1", 2000->"2", ... skip 0
+        if k >= 1:
+            r_label = g_r + sc(10)
+            lx = int(gcx + ca * r_label)
+            ly = int(gcy + sa * r_label)
+            fs = pygame.font.SysFont(None, max(1, int(font_small.get_height() * s)))
+            ts = fs.render(str(k), True, const.GREY_200)
+            ui_surf.blit(ts, (lx - ts.get_width() // 2, ly - ts.get_height() // 2))
+
+    # needle
+    ang = angle_for_rpm(rpm)
+    nx = int(gcx + math.cos(ang) * (g_r - sc(12)))
+    ny = int(gcy + math.sin(ang) * (g_r - sc(12)))
+    needle_color = (240, 80, 80) if rpm > rpm_redline * 0.9 else (240, 220, 220)
+    pygame.draw.line(ui_surf, needle_color, (gcx, gcy), (nx, ny), max(1, sc(3)))
+    pygame.draw.circle(ui_surf, (30, 30, 36), (gcx, gcy), sc(6))
+
+    # gauge label
+    fs = pygame.font.SysFont(None, max(1, int(font_small.get_height() * s)))
+    lbl_rpm = fs.render("RPM", True, const.WHITE_240)
+    ui_surf.blit(lbl_rpm, (gcx - lbl_rpm.get_width()//2, y + sc(6)))
+    small = fs.render("x1000", True, const.GREY_180)
+    ui_surf.blit(small, (gcx - small.get_width()//2, y + hud_h - sc(18)))
+
+    # --- Steering wheel (middle) ---
+    wcx = x + gauge_size + sc(20) + wheel_size // 2
+    wcy = y + hud_h // 2
+    wheel_r = wheel_size // 2 - sc(6)
+    pygame.draw.circle(ui_surf, (40, 40, 48), (wcx, wcy), wheel_r + sc(6))  # rim shadow
+    pygame.draw.circle(ui_surf, (20, 20, 26), (wcx, wcy), wheel_r + sc(4))
+    pygame.draw.circle(ui_surf, (60, 60, 70), (wcx, wcy), wheel_r, max(1, sc(6)))   # rim
+
+    # steering indicator (spoke)
+    MAX_WHEEL_ANGLE = math.radians(270)  # visual rotation range
+    angle = st * MAX_WHEEL_ANGLE - (math.pi / 2)  # negative so positive steering rotates clockwise visually
+    sx = int(wcx + math.cos(angle) * (wheel_r - sc(10)))
+    sy = int(wcy + math.sin(angle) * (wheel_r - sc(10)))
+    pygame.draw.line(ui_surf, (200, 200, 220), (wcx, wcy), (sx, sy), max(1, sc(6)))
+    # small center hub
+    pygame.draw.circle(ui_surf, (30, 30, 36), (wcx, wcy), sc(8))
+
+    # Labels
+    fs = pygame.font.SysFont(None, max(1, int(font_small.get_height() * s)))
+    lbl = fs.render("STEER", True, const.WHITE_240)
+    ui_surf.blit(lbl, (wcx - lbl.get_width()//2, y + hud_h - sc(18)))
+
+    # --- throttle and brake bars (right side) ---
+    bar_x = x + gauge_size + wheel_size + sc(30)
+    bar_w = hud_w - (gauge_size + wheel_size + sc(32))
+    bar_h = sc(16)
+    # Throttle bar (top)
+    th_y = y + sc(25)
+    pygame.draw.rect(ui_surf, (40, 40, 48), (bar_x, th_y, bar_w, bar_h), border_radius=sc(4))
+    if th > 0:
+        fg_w = int(bar_w * clamp(th, 0.0, 1.0))
+        pygame.draw.rect(ui_surf, (80, 220, 100), (bar_x, th_y, fg_w, bar_h), border_radius=sc(4))
+    else:
+        # reverse/backwards shown as orange to the left of bar
+        fg_w = int(bar_w * clamp(-th, 0.0, 1.0))
+        pygame.draw.rect(ui_surf, (255, 160, 60), (bar_x + bar_w - fg_w, th_y, fg_w, bar_h), border_radius=sc(4))
+    th_pct = int(th * 100) if th >= 0 else int(th * 100)
+    fs = pygame.font.SysFont(None, max(1, int(font_small.get_height() * s)))
+    lbl_th = fs.render(f"THR {th_pct:+d}%", True, const.WHITE_240)
+    ui_surf.blit(lbl_th, (bar_x, th_y - sc(18)))
+
+    # Brake bar (bottom)
+    br_y = th_y + bar_h + sc(25)
+    pygame.draw.rect(ui_surf, (40, 40, 48), (bar_x, br_y, bar_w, bar_h), border_radius=sc(4))
+    fg_wb = int(bar_w * clamp(br, 0.0, 1.0))
+    pygame.draw.rect(ui_surf, (220, 80, 80), (bar_x, br_y, fg_wb, bar_h), border_radius=sc(4))
+    lbl_br = fs.render(f"BRK {int(br*100):d}%", True, const.WHITE_240)
+    ui_surf.blit(lbl_br, (bar_x, br_y - sc(18)))
+
+    # Optional thin border around HUD
+    pygame.draw.rect(ui_surf, (80, 88, 100), (x, y, hud_w, hud_h), max(1, sc(1)))

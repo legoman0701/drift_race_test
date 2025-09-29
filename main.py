@@ -13,7 +13,8 @@ from helpers import clamp, rand_code, rand_name, car_local_to_world
 from ai import ai_algorithme
 from inputs import get_text_input, get_code_input, get_name_input, read_inputs
 from communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, recv_jsons
-from ui import draw_car, draw_track_ui, draw_menu, handle_menu_events, handle_game_events
+from ui import draw_car, draw_track_ui, draw_menu, handle_menu_events, handle_game_events, draw_controls_hud
+from rpm import calc_engine_rpm, RpmParams
 
 # ======= CONFIGURATION =======
 RELAY_PUBLIC_ENDPOINT = const.RELAY_PUBLIC_ENDPOINT
@@ -81,6 +82,8 @@ def main():
     spawnx = random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200)
     spawny = random.randint(const.TRACK_MARGIN + 120, const.WINDOW_HEIGHT - const.TRACK_MARGIN - 120)
     my_car = car.Car(spawnx, spawny, my_name, is_ai=False)
+    # Local player's engine state (avoid mutating Car which may use __slots__)
+    engine_state = {"gear": 0, "last_rpm": None}
 
     if args.mode == "host" and args.code and args.name:
         my_name = args.name
@@ -395,69 +398,23 @@ def main():
             th = clamp(inp.get("th", 0.0), -1.0, 1.0)
             br = clamp(inp.get("br", 0.0), 0.0, 1.0)
             st = clamp(inp.get("st", 0.0), -1.0, 1.0)
+            
+            # Engine RPM estimation: uses speed, drift state, throttle and smoothing
+            speed_units = math.hypot(my_car.vx, my_car.vy)
+            # Persist transient engine state externally (gear, last rpm)
+            prev_rpm = engine_state.get("last_rpm")
+            rpm = calc_engine_rpm(
+                speed_units=speed_units,
+                drift_ratio=my_car.drift_ratio,
+                throttle=th,
+                prev_rpm=prev_rpm,
+                dt=dt,
+                params=None,
+                _state=engine_state,
+            )
+            engine_state["last_rpm"] = rpm
 
-            # HUD layout
-            hud_w = 200
-            hud_h = 96
-            pad = 12
-            x = const.WINDOW_WIDTH - hud_w - pad
-            y = const.WINDOW_HEIGHT - hud_h - pad
-
-            # semi-transparent background
-            bg = pygame.Surface((hud_w, hud_h), pygame.SRCALPHA)
-            bg.fill((10, 10, 14, 200))
-            ui_surf.blit(bg, (x, y))
-
-            # steering wheel (left side)
-            wheel_size = 76
-            wcx = x + wheel_size // 2 + 10
-            wcy = y + hud_h // 2
-            wheel_r = wheel_size // 2 - 6
-            pygame.draw.circle(ui_surf, (40, 40, 48), (wcx, wcy), wheel_r + 6)  # rim shadow
-            pygame.draw.circle(ui_surf, (20, 20, 26), (wcx, wcy), wheel_r + 4)
-            pygame.draw.circle(ui_surf, (60, 60, 70), (wcx, wcy), wheel_r, 6)   # rim
-
-            # steering indicator (spoke)
-            MAX_WHEEL_ANGLE = math.radians(270)  # visual rotation range
-            angle = st * MAX_WHEEL_ANGLE - (math.pi / 2)  # negative so positive steering rotates clockwise visually
-            sx = int(wcx + math.cos(angle) * (wheel_r - 10))
-            sy = int(wcy + math.sin(angle) * (wheel_r - 10))
-            pygame.draw.line(ui_surf, (200, 200, 220), (wcx, wcy), (sx, sy), 6)
-            # small center hub
-            pygame.draw.circle(ui_surf, (30, 30, 36), (wcx, wcy), 8)
-
-            # Labels
-            lbl = font_small.render("STEER", True, const.WHITE_240)
-            ui_surf.blit(lbl, (wcx - lbl.get_width()//2, y + hud_h - 18))
-
-            # throttle and brake bars (right side)
-            bar_x = x + wheel_size + 20
-            bar_w = hud_w - (wheel_size + 32)
-            bar_h = 16
-            # Throttle bar (top)
-            th_y = y + 18
-            pygame.draw.rect(ui_surf, (40, 40, 48), (bar_x, th_y, bar_w, bar_h), border_radius=4)
-            if th > 0:
-                fg_w = int(bar_w * clamp(th, 0.0, 1.0))
-                pygame.draw.rect(ui_surf, (80, 220, 100), (bar_x, th_y, fg_w, bar_h), border_radius=4)
-            else:
-                # reverse/backwards shown as orange to the left of bar
-                fg_w = int(bar_w * clamp(-th, 0.0, 1.0))
-                pygame.draw.rect(ui_surf, (255, 160, 60), (bar_x + bar_w - fg_w, th_y, fg_w, bar_h), border_radius=4)
-            th_pct = int(th * 100) if th >= 0 else int(th * 100)
-            lbl_th = font_small.render(f"THR {th_pct:+d}%", True, const.WHITE_240)
-            ui_surf.blit(lbl_th, (bar_x, th_y - 18))
-
-            # Brake bar (bottom)
-            br_y = th_y + bar_h + 18
-            pygame.draw.rect(ui_surf, (40, 40, 48), (bar_x, br_y, bar_w, bar_h), border_radius=4)
-            fg_wb = int(bar_w * clamp(br, 0.0, 1.0))
-            pygame.draw.rect(ui_surf, (220, 80, 80), (bar_x, br_y, fg_wb, bar_h), border_radius=4)
-            lbl_br = font_small.render(f"BRK {int(br*100):d}%", True, const.WHITE_240)
-            ui_surf.blit(lbl_br, (bar_x, br_y - 18))
-
-            # Optional thin border around HUD
-            pygame.draw.rect(ui_surf, (80, 88, 100), (x, y, hud_w, hud_h), 1)
+            draw_controls_hud(ui_surf, font_small, st, th, br, rpm)
             for pid, d in remotes.items():
                 drift_points_remote = draw_car(world_surf, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
                                                color_body=const.COLOR_BODY_REMOTE, car_sprites_list=[shadow_sprite, ae86_sprite, light_spray_sprite], lights_on=lights_on)
