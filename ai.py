@@ -104,8 +104,9 @@ def ai_algorithme(
                 pygame.draw.circle(surface, (255, 255, 0), (int(sa[0]), int(sa[1])), 4)
 
             st = angle_diff * 2
-            th = 1 - clamp(abs(angle_diff) * 0.5, 0, 1) + 0.1
-            br = clamp(abs(angle_diff) * 0.25, 0, 1)
+            speed = math.hypot(my_car.vx, my_car.vy)
+            th = 1 - clamp(abs(angle_diff) * speed / 120, 0, 1) + 0.1
+            br = clamp(abs(angle_diff) * speed / 120, 0, 1)
             if ai_path_mode and surface is not None:
                 return {"th": th, "st": st, "br": br}, surface
             return {"th": th, "st": st, "br": br}
