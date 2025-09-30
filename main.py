@@ -196,20 +196,18 @@ def main():
     def switch_cursor_follow_mode():
         global cursor_follow_mode, ai_path_mode
         cursor_follow_mode = not cursor_follow_mode
-        try:
-            if cursor_follow_mode: ai_path_mode = False
-        except Exception: pass
+        if cursor_follow_mode: ai_path_mode = False
+        # stage, substage sock, code, remotes
         try: return "playing", "", sock, code, remotes
-        except Exception: return "playing", "", None, None, {} # stage, substage sock, code, remotes
+        except Exception: return "playing", "", None, None, {}
 
     def switch_ai_path_mode():
         global ai_path_mode, cursor_follow_mode
         ai_path_mode = not ai_path_mode
-        try:
-            if ai_path_mode: cursor_follow_mode = False
-        except Exception: pass
+        if ai_path_mode: cursor_follow_mode = False
+        # stage, substage sock, code, remotes
         try: return "playing", "", sock, code, remotes
-        except Exception: return "playing", "", None, None, {} # stage, substage sock, code, remotes
+        except Exception: return "playing", "", None, None, {}
 
     buttons = [
     btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.3, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, lambda: leave_room(sock, code, my_id, remotes)),
@@ -379,7 +377,7 @@ def main():
 
         if stage == "playing":
             # title, room code, relay
-            if substage == "settings": 
+            if substage != "settings": 
                 title = font_big.render("In Game", True, const.WHITE_240)
                 ui_surf.blit(title, (const.WINDOW_WIDTH//2 - title.get_width()//2, const.TITLE_Y))
             room_label = code if code else "Offline"
@@ -420,9 +418,9 @@ def main():
             ui_surf.blit(tip, (const.WINDOW_WIDTH//2 - tip.get_width()//2, const.WINDOW_HEIGHT//2 + 40))
 
         if substage == "settings":
-            ui_surf = blur_surface(ui_surf, (const.WINDOW_WIDTH, const.WINDOW_HEIGHT) if stage != "playing" else (track_image.get_width(), track_image.get_height()))
             title = font_big.render("Settings", True, const.WHITE_240)
             ui_surf.blit(title, (const.WINDOW_WIDTH//2 - title.get_width()//2, const.TITLE_Y))
+            world_surf = blur_surface(world_surf, (const.WINDOW_WIDTH, const.WINDOW_HEIGHT) if stage != "playing" else (track_image.get_width(), track_image.get_height()))
             for button in buttons:
                 try:
                     if button.action == switch_cursor_follow_mode:
@@ -440,8 +438,10 @@ def main():
                             button.text = "AI Path Mode : Off"
                             button.color = const.RED
                 except Exception: pass
+                
                 res = button.draw(ui_surf)
-                if isinstance(res, tuple) and len(res) == 4:
+                # button.draw returns a 5-tuple: (stage, substage, sock, code, remotes)
+                if isinstance(res, tuple) and len(res) == 5:
                     new_stage, new_substage, new_sock, new_code, new_remotes = res
                     stage = new_stage
                     substage = new_substage
@@ -468,4 +468,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
