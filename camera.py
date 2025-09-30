@@ -1,5 +1,6 @@
-try: import pygame_ce as pygame
+try: import pygame_ce as pygame # type: ignore
 except Exception: import pygame
+import const
 
 def clamp(x, lo, hi):
     return lo if x < lo else hi if x > hi else x
@@ -14,7 +15,6 @@ class Camera:
         self.offset = [0, 0]  # additional pan offset
 
     def update(self, target, world_size):
-        # Follow the target with any offset
         self.x = clamp(target.x + self.offset[0], self.width / 2 / self.zoom, world_size[0] - self.width / 2 / self.zoom)
         self.y = clamp(target.y + self.offset[1], self.height / 2 / self.zoom, world_size[1] - self.height / 2 / self.zoom)
 

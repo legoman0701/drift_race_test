@@ -1,0 +1,21 @@
+{
+  "input": "assets/Map/Map1.png",
+  "image_size": [
+    3000,
+    1200
+  ],
+  "tile": 1024,
+  "tiles_x": 3,
+  "tiles_y": 2,
+  "indexing": "zero",
+  "ix_start": 0,
+  "iy_start": 0,
+  "prefix": "",
+  "pad_color": [
+    28,
+    28,
+    28,
+    255
+  ],
+  "count_written": 6
+}
