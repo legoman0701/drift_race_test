@@ -20,23 +20,24 @@ def draw_car(surface, x, y, angle, name,
         if i == 2 and not lights_on:  # light spray
             continue
         show_angle = (-angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
-        sprite_index = int(show_angle * 32) % 32
+        sprite_index = round(show_angle * 64) % 64
         sprite_size = (car_sprite[sprite_index].get_width(), car_sprite[sprite_index].get_height())
         surface.blit(car_sprite[sprite_index], (int(x - sprite_size[0] / 2), int(y - sprite_size[1] / 2)))
 
     # Draw oriented collision rectangle overlay
-    ca, sa = math.cos(angle), math.sin(angle)
-    halfL, halfW = CAR_LEN * 0.7, CAR_WID * 0.5
-    pts_local = [(+halfL, +halfW), (+halfL, -halfW), (-halfL, -halfW), (-halfL, +halfW)]
-    wpts = []
-    for px, py in pts_local:
-        rx = px * ca - py * sa
-        ry = px * sa + py * ca
-        wpts.append((int(x + rx), int(y + ry)))
-    try:
-        pygame.draw.polygon(surface, (60, 220, 180), wpts, 1)
-    except Exception:
-        pass
+    if False: # enable for debugging
+        ca, sa = math.cos(angle), math.sin(angle)
+        halfL, halfW = CAR_LEN * 0.7, CAR_WID * 0.5
+        pts_local = [(+halfL, +halfW), (+halfL, -halfW), (-halfL, -halfW), (-halfL, +halfW)]
+        wpts = []
+        for px, py in pts_local:
+            rx = px * ca - py * sa
+            ry = px * sa + py * ca
+            wpts.append((int(x + rx), int(y + ry)))
+        try:
+            pygame.draw.polygon(surface, (60, 220, 180), wpts, 1)
+        except Exception:
+            pass
 
     if name:
         scale = getattr(const, "UI_SCALE", 1.0)
