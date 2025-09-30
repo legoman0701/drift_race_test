@@ -8,6 +8,7 @@ try: import pygame_ce as pygame  # type: ignore
 except Exception: import pygame ; print("failed to load pygame-ce")
 import socket, json, time, random, string, sys, math, uuid, argparse, os # global imports
 import camera, car, button as btn, path_finder # local imports
+from renderer import WorldRenderer
 import const
 from helpers import clamp, rand_code, rand_name, car_local_to_world
 from ai import ai_algorithme
@@ -170,10 +171,8 @@ def main():
             stage = "playing"
             I_AM_HOST = False
     
-    tire_mark = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), pygame.SRCALPHA)
-    tire_mark.fill((255, 255, 255, 0))
-    
-    drift_points_old_remotes = {}
+    # Renderer handles track, cars, and drift marks
+    renderer = WorldRenderer(track_image, flags)
 
     joysticks = [pygame.joystick.Joystick(i) for i in range(pygame.joystick.get_count())]
     for js in joysticks:
@@ -239,7 +238,7 @@ def main():
 
     while True:
         dt = clock.tick(const.FPS) / 1000.0
-        dt = min(dt, 1 / const.FPS)  # Cap dt to avoid large jumps
+        #dt = min(dt, 1 / const.FPS)  # Cap dt to avoid large jumps
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
                 if sock and code:
@@ -365,59 +364,25 @@ def main():
                 ai.step(ai_algorithme(path_poly, ai), dt, remotes_with_ai_for_ais, world_size)
         cam.update(my_car, (const.WINDOW_WIDTH, const.WINDOW_HEIGHT) if stage != "playing" else (track_image.get_width(), track_image.get_height()))
 
-        # Draw game world onto an off-screen surface.
-        if stage != "playing":
-            world_surf = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), flags)
-            world_surf.fill(const.GREY_20)
-        else:
-            world_surf = pygame.Surface((track_image.get_width(), track_image.get_height()), flags)
-            # Calculate the camera viewport in the track image coordinates.
-            
-            top_right_pos = cam.x-(const.WINDOW_WIDTH/2)/cam.zoom, cam.y-(const.WINDOW_HEIGHT/2)/cam.zoom
-            camera_rect = pygame.Rect(top_right_pos[0],
-                                      top_right_pos[1],
-                                      const.WINDOW_WIDTH/cam.zoom,
-                                      const.WINDOW_HEIGHT/cam.zoom)
-            visible_track = track_image.subsurface(camera_rect)
-            #pygame.draw.rect(world_surf, TRACK_COLOR, camera_rect)
-            world_surf.blit(visible_track, top_right_pos)
+        # Draw game world via renderer
+        world_surf, resized = renderer.render_world(
+            cam=cam,
+            stage=stage,
+            my_car=my_car,
+            ai_cars=ai_cars,
+            remotes=remotes,
+            lights_on=lights_on,
+            car_sprites_list=[shadow_sprite, ae86_sprite, light_spray_sprite],
+        )
 
-        if tire_mark.get_width() != world_surf.get_width() or tire_mark.get_height() != world_surf.get_height():
-            tire_mark = pygame.Surface((world_surf.get_width(), world_surf.get_height()), pygame.SRCALPHA)
-            tire_mark.fill((255, 255, 255, 0))
+        if resized:
             path_poly = path_finder.discover_track("assets/Map/Map1.png")
         
         ui_surf = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), pygame.SRCALPHA)
         ui_surf.fill((0,0,0,0)) # transparent surface
         
         draw_track_ui(ui_surf)
-        # world_surf.blit(bg_map, (0, 0))
-        
-        if my_car.drift_ratio > 0.5 and my_car.drift_points_old:
-            pygame.draw.line(tire_mark, const.TIRE_MARK_SMOKE, my_car.drift_points[0], my_car.drift_points_old[0], 3)
-            pygame.draw.line(tire_mark, const.TIRE_MARK_SMOKE, my_car.drift_points[1], my_car.drift_points_old[1], 3)
-        
-        for ai_car in ai_cars:
-            draw_car(world_surf, ai_car.x, ai_car.y, ai_car.angle, ai_car.name,
-                                  color_body=const.COLOR_BODY_DEFAULT, car_sprites_list=[shadow_sprite, ae86_sprite, light_spray_sprite], lights_on=lights_on)
-
-            if ai_car.drift_ratio > 0.5 and ai_car.drift_points_old:
-                pygame.draw.line(tire_mark, const.TIRE_MARK_SMOKE, ai_car.drift_points[0], ai_car.drift_points_old[0], 3)
-                pygame.draw.line(tire_mark, const.TIRE_MARK_SMOKE, ai_car.drift_points[1], ai_car.drift_points_old[1], 3)
-
-        # fade smoke to ground and draw visible segment
-        tire_mark.fill(const.TIRE_MARK_GROUND, special_flags=pygame.BLEND_RGBA_MULT)
-        top_right_pos = (cam.x - (const.WINDOW_WIDTH/2)/cam.zoom,
-                         cam.y - (const.WINDOW_HEIGHT/2)/cam.zoom)
-        camera_rect = pygame.Rect(top_right_pos[0],
-                                  top_right_pos[1],
-                                  const.WINDOW_WIDTH/cam.zoom,
-                                  const.WINDOW_HEIGHT/cam.zoom)
-        visible_tire_mark = tire_mark.subsurface(camera_rect)
-        world_surf.blit(visible_tire_mark, top_right_pos)
-        
-        draw_car(world_surf, my_car.x, my_car.y, my_car.angle, my_car.name,
-                                                                    color_body=const.COLOR_MY_CAR, car_sprites_list=[shadow_sprite, ae86_sprite, light_spray_sprite], lights_on=lights_on)
+        # world drawing is now handled by renderer
         
 
         if stage == "menu":
@@ -464,15 +429,6 @@ def main():
             engine_state["last_rpm"] = rpm
 
             draw_controls_hud(ui_surf, font_small, st, th, br, rpm)
-            for pid, d in remotes.items():
-                drift_points_remote = draw_car(world_surf, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
-                                               color_body=const.COLOR_BODY_REMOTE, car_sprites_list=[shadow_sprite, ae86_sprite, light_spray_sprite], lights_on=lights_on)
-                if d["drift_ratio"] > 0.8 and pid in drift_points_old_remotes:
-                    old_pts = drift_points_old_remotes[pid]
-                    if drift_points_remote != None:
-                        pygame.draw.line(tire_mark, const.TIRE_MARK_SMOKE, drift_points_remote[0], old_pts[0], 3)
-                        pygame.draw.line(tire_mark, const.TIRE_MARK_SMOKE, drift_points_remote[1], old_pts[1], 3)
-                drift_points_old_remotes[pid] = drift_points_remote
 
         if stage == "settings":
             title = font_big.render("Settings", True, const.WHITE_240)

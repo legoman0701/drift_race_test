@@ -157,7 +157,6 @@ def handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, 
 
     return stage, my_name, code, sock, error_msg
 
-
 def handle_game_events(screen, ev, stage, remotes, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref):
     if ev.type == pygame.KEYDOWN:
         if stage == "menu":
@@ -190,7 +189,6 @@ def handle_game_events(screen, ev, stage, remotes, sock, code, my_name, my_id, m
             my_car = car.Car(spawnx, spawny, my_name, is_ai=False)
 
     return ev, stage, remotes, sock, code, my_car, error_msg
-
 
 def draw_controls_hud(ui_surf: pygame.Surface,
                       font_small: pygame.font.Font,
