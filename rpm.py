@@ -39,6 +39,12 @@ class RpmParams:
     max_rpm_change_per_s: float = 9000.0  # engine spinup limit for smoothing
     engine_brake_strength: float = 0.25   # how fast rpm decays toward wheel rpm on low throttle
 
+    # Drift behavior tuning
+    drift_threshold: float = 0.5          # start of drift influence
+    drift_free_rev_gain: float = 0.85     # contribution of free-rev target at full drift (0..1)
+    drift_slip_gain: float = 0.5          # extra slip allowance at full drift
+    drift_brake_scale: float = 0.3        # scale of engine braking at full drift (lower => less braking)
+
 
 def _clamp(v: float, lo: float, hi: float) -> float:
     return hi if v > hi else lo if v < lo else v
@@ -118,24 +124,27 @@ def calc_engine_rpm(
         _state = {}
     current_gear: int = _state.get("gear", 0)
 
-    # Drifting => go to redline
-    if drift_ratio >= 0.6:
-        target_rpm = p.redline_rpm
-        # simple smoothing toward redline
-        base = prev_rpm if prev_rpm is not None else p.redline_rpm * 0.8
-        max_delta = p.max_rpm_change_per_s * dt
-        rpm = base + _clamp(target_rpm - base, -max_delta, max_delta)
-        rpm = _clamp(rpm, p.idle_rpm, p.redline_rpm)
-        _state["gear"] = current_gear
-        return rpm
+    # Drift influence factor
+    # 0 below threshold, 1 at max drift, smooth ramp between
+    if p.drift_threshold < 1.0:
+        drift_factor = _clamp((drift_ratio - p.drift_threshold) / max(1e-6, (1.0 - p.drift_threshold)), 0.0, 1.0)
+    else:
+        drift_factor = 0.0
 
     # Pick gear that keeps rpm in band based on wheel speed
-    # If vehicle is essentially stopped, keep current gear and idle
+    # If vehicle is essentially stopped, allow free-rev toward throttle-based target when drifting,
+    # otherwise bleed toward idle.
     if wheel_rps < 1e-4:
         _state["gear"] = current_gear
         base = prev_rpm if prev_rpm is not None else p.idle_rpm
-        # bleed toward idle when stopped
-        rpm = base + (p.idle_rpm - base) * _clamp(dt * 2.0, 0.0, 1.0)
+        th = _clamp(throttle, 0.0, 1.0)
+        th_eff = th ** 0.9
+        free_rev_rpm = p.idle_rpm + th_eff * (p.redline_rpm - p.idle_rpm)
+        # Blend toward free-rev when drifting and/or throttle is applied
+        blend = max(drift_factor * p.drift_free_rev_gain, th * 0.5)
+        target = base + (free_rev_rpm - base) * _clamp(blend, 0.0, 1.0)
+        max_delta = p.max_rpm_change_per_s * dt
+        rpm = base + _clamp(target - base, -max_delta, max_delta)
         return _clamp(rpm, p.idle_rpm, p.redline_rpm)
 
     current_gear = _choose_gear(target_rpm=p.upshift_rpm*0.9, wheel_rps=wheel_rps, p=p, current_gear=current_gear)
@@ -150,14 +159,23 @@ def calc_engine_rpm(
     if prev_rpm is None:
         prev_rpm = wheel_based_rpm
 
-    # Blend toward wheel rpm based on throttle (engine braking when low throttle)
-    slip_up = 0.25 + 0.6 * throttle     # how much RPM can sit above wheel RPM under load
-    target_rpm = wheel_based_rpm * (1.0 + slip_up * 0.15)  # modest slip allowance
+    # Free-rev target based on throttle (no wheel coupling)
+    th_eff = throttle ** 0.9
+    free_rev_rpm = p.idle_rpm + th_eff * (p.redline_rpm - p.idle_rpm)
 
-    # If throttle is near zero, apply engine braking pulling RPM down
+    # Blend toward wheel rpm based on throttle and drift (engine braking reduced in drift)
+    slip_up = 0.25 + 0.6 * throttle + p.drift_slip_gain * drift_factor  # how much RPM can sit above wheel RPM under load
+    base_target = wheel_based_rpm * (1.0 + slip_up * 0.15)  # modest slip allowance
+
+    # If throttle is near zero, apply engine braking pulling RPM down (scaled by drift)
     if throttle < 0.15:
-        target_rpm = wheel_based_rpm - (wheel_based_rpm - p.idle_rpm) * p.engine_brake_strength
-        target_rpm = max(target_rpm, p.idle_rpm)
+        brake_scale = 1.0 - drift_factor * (1.0 - p.drift_brake_scale)
+        target_brake = wheel_based_rpm - (wheel_based_rpm - p.idle_rpm) * (p.engine_brake_strength * brake_scale)
+        base_target = max(target_brake, p.idle_rpm)
+
+    # Mix with free-rev based on drift
+    mix = _clamp(drift_factor * p.drift_free_rev_gain, 0.0, 1.0)
+    target_rpm = base_target * (1.0 - mix) + free_rev_rpm * mix
 
     # Smooth rate of change to avoid jumps
     max_delta = p.max_rpm_change_per_s * dt
