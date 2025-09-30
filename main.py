@@ -4,7 +4,7 @@ Top-down drift game client with camera (zoom & pan)
 Refactored to remove magic numbers and reduce spaghetti code.
 """
 
-try: import pygame_ce as pygame
+try: import pygame_ce as pygame  # type: ignore
 except Exception: import pygame ; print("failed to load pygame-ce")
 import socket, json, time, random, string, sys, math, uuid, argparse, os # global imports
 import camera, car, button as btn, path_finder # local imports
@@ -15,7 +15,7 @@ from inputs import get_text_input, get_code_input, get_name_input, read_inputs
 from communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, recv_jsons
 from ui import draw_car, draw_track_ui, draw_menu, handle_menu_events, handle_game_events, draw_controls_hud
 from rpm import calc_engine_rpm, RpmParams
-from engine_sound_blend import EngineSoundBlend
+from engine_audio import EngineAudio
 
 # ======= CONFIGURATION =======
 RELAY_PUBLIC_ENDPOINT = const.RELAY_PUBLIC_ENDPOINT
@@ -94,14 +94,13 @@ def main():
     my_car = car.Car(spawnx, spawny, my_name, is_ai=False)
     # Local player's engine state (avoid mutating Car which may use __slots__)
     engine_state = {"gear": 0, "last_rpm": None}
-    # Engine sound setup (BeamNG blend JSON)
+    # Engine audio: 4A-GE Bluetop intake+exhaust layers
     engine_sound = None
     try:
-        blend_json = "assets/AE86/sound/blends/4AGE_TODA.sfxBlend2D.json"
-        if os.path.isfile(blend_json):
-            engine_sound = EngineSoundBlend(blend_json)
-        else:
-            print("Engine blend JSON not found:", blend_json)
+        engine_sound = EngineAudio(
+            intake_blend_json="assets/AE86/sound/blends/4agein.sfxBlend2D.json",
+            exhaust_blend_json="assets/AE86/sound/blends/4ageex.sfxBlend2D.json",
+        )
     except Exception as e:
         print("Engine sound init failed:", e)
 
@@ -240,6 +239,7 @@ def main():
 
     while True:
         dt = clock.tick(const.FPS) / 1000.0
+        dt = min(dt, 1 / const.FPS)  # Cap dt to avoid large jumps
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
                 if sock and code:
@@ -438,7 +438,12 @@ def main():
             hud = font_small.render(f"Room: {room_label}", True, const.GREY_180)
             ui_surf.blit(hud, (10, const.RELAY_Y))
             # HUD: steering wheel + throttle/brake % bars (bottom-right)
-            inp = read_inputs(joysticks, my_car, cam, mouse_follow_mode, ai_path_mode)
+            # When AI path mode is active, display AI's controls on the HUD;
+            # otherwise display local (human) inputs.
+            if ai_path_mode and 'controls' in locals() and controls is not None:
+                inp = controls
+            else:
+                inp = read_inputs(joysticks, my_car, cam, mouse_follow_mode, ai_path_mode)
             th = clamp(inp.get("th", 0.0), -1.0, 1.0)
             br = clamp(inp.get("br", 0.0), 0.0, 1.0)
             st = clamp(inp.get("st", 0.0), -1.0, 1.0)

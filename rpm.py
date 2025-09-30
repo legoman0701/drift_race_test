@@ -31,7 +31,7 @@ class RpmParams:
     wheel_radius_m: float = 0.31  # ~ 615 mm diameter tire
 
     # Units mapping (game units to meters)
-    units_per_meter: float = 10.0  # 50 px == 1 m; adjust to your map scaling
+    units_per_meter: float = 20.0  # 50 px == 1 m; adjust to your map scaling
 
     # Dynamics/smoothing
     upshift_rpm: float = 4500.0

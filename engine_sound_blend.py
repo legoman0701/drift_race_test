@@ -1,21 +1,22 @@
 """
 Engine sound blending for RPM using BeamNG-style sfxBlend2D JSON.
 
-This module provides EngineSoundBlend which:
-- Loads one or more rows of RPM-indexed loop samples from a .sfxBlend2D.json
-- Keeps each sample playing on a dedicated mixer Channel at 0 volume (always running, stays in sync)
-- Crossfades volumes between nearest RPM samples each frame
-- Mixes OFF/coast layer vs ON/throttle layer based on current throttle
+What this provides
+- EngineSoundBlend: a small mixer that
+	- Loads one or more rows of RPM-indexed loop samples from a .sfxBlend2D.json
+	- Keeps each sample playing on a dedicated mixer Channel at 0 volume (always running, stays in sync)
+	- Crossfades volumes between nearest RPM samples each frame
+	- Mixes OFF/coast layer vs ON/throttle layer based on current throttle
 
 Assumptions and simplifications
-- We treat row 0 (WAVs like 2950.wav, 4250.wav, ...) as ON/throttle layer
-- We treat row 1 (idle.flac, on1.flac, on2.flac, on3.flac) as OFF/idle/coast layer
+- Auto-detects which row is ON/throttle vs OFF/coast by filename hints
+	("intake" => ON, "off"/"idle"/"back" => OFF). If uncertain, falls back to row0=ON,row1=OFF.
 - All samples are looped; ensure assets are loop-ready to avoid clicks
 - FLAC may not be supported on some systems; files that fail to load are skipped
 
 Paths
-- BeamNG paths like "art/sound/engine/4AGE_TODA/2950.wav" are mapped to
-  "assets/AE86/sound/4AGE_TODA/2950.wav" by default. Override via root_map.
+- BeamNG paths like "art/sound/engine/4agein/5006a_intake.wav" can be mapped to
+	a local folder such as "assets/AE86/sound/4agein/5006a_intake.wav" via root_map.
 """
 from __future__ import annotations
 
@@ -25,7 +26,7 @@ import json
 import os
 
 try:
-	import pygame_ce as pygame
+	import pygame_ce as pygame  # type: ignore
 except Exception:  # pragma: no cover
 	import pygame  # type: ignore
 
@@ -43,9 +44,9 @@ class EngineSoundBlend:
 	def __init__(
 		self,
 		blend_json_path: str,
-	root_map: Optional[Tuple[str, str]] = ("art/sound/engine/4AGE_TODA", "assets/AE86/sound/4AGE_TODA"),
-	base_gain: float = 0.2,  # OFF/coast layer gain (row 1)
-	on_gain: float = 1.0,     # ON/throttle layer gain (row 0)
+		root_map: Optional[Tuple[str, str]] = None,
+		base_gain: float = 0.1,  # OFF/coast layer gain
+		on_gain: float = 1.0,     # ON/throttle layer gain
 		vol_slew_per_s: float = 2.5,
 	) -> None:
 		"""
@@ -61,9 +62,14 @@ class EngineSoundBlend:
 		self.on_gain = on_gain
 		self.vol_slew_per_s = vol_slew_per_s
 		self.rows = []  # type: List[List[_RowSample]]
+		self._on_row_idx: Optional[int] = None
+		self._off_row_idx: Optional[int] = None
 		# Map of global sample index -> sample rpm for idle-like samples
 		self._idle_samples = {}  # type: dict[int, float]
 		self.started = False
+		# Global channel reservation cursor (shared across instances)
+		if not hasattr(EngineSoundBlend, "_chan_cursor_global"):
+			EngineSoundBlend._chan_cursor_global = 0  # type: ignore[attr-defined]
 
 		self._ensure_mixer()
 
@@ -78,16 +84,19 @@ class EngineSoundBlend:
 			print("[EngineSoundBlend] No samples in blend JSON:", blend_json_path)
 			return
 
+		# Reserve a unique channel range for this instance
+		chan_base = EngineSoundBlend._chan_cursor_global  # type: ignore[attr-defined]
+		EngineSoundBlend._chan_cursor_global += total_samples  # type: ignore[attr-defined]
 		# Make sure the mixer has enough channels to keep all loops resident
+		need_channels = chan_base + total_samples
 		current_channels = pygame.mixer.get_num_channels()
-		if current_channels < total_samples:
-			pygame.mixer.set_num_channels(total_samples)
+		if current_channels < need_channels:
+			pygame.mixer.set_num_channels(need_channels)
 
 		# Load rows
 		chan_cursor = 0
 		from_pref, to_pref = (root_map or ("", ""))
 		for row in samples:
-			print(row)
 			row_list: List[_RowSample] = []
 			for entry in row:
 				try:
@@ -104,12 +113,16 @@ class EngineSoundBlend:
 						print(f"[EngineSoundBlend] Failed to load {resolved}: {e}")
 				else:
 					print(f"[EngineSoundBlend] Missing sample: {resolved}")
-				row_list.append(_RowSample(rpm=rpm, path=resolved, sound=snd, channel_index=chan_cursor))
+				# Assign channel relative to this instance's base
+				row_list.append(_RowSample(rpm=rpm, path=resolved, sound=snd, channel_index=chan_base + chan_cursor))
 				chan_cursor += 1
 
 			# Sort by RPM just in case
 			row_list.sort(key=lambda s: s.rpm)
 			self.rows.append(row_list)
+
+		# Decide which row is ON vs OFF by filename heuristics
+		self._detect_row_roles()
 
 		# Kick off loops with volume 0 (all channels play forever so they stay synced)
 		self._start_all()
@@ -134,6 +147,34 @@ class EngineSoundBlend:
 			rel_norm = to_pref + rel_norm[len(from_pref):]
 		# Ensure OS path
 		return os.path.normpath(rel_norm)
+
+	def _detect_row_roles(self) -> None:
+		"""Heuristically classify rows as ON (throttle) vs OFF (coast/idle).
+		Sets self._on_row_idx and self._off_row_idx if at least 2 rows exist.
+		"""
+		if len(self.rows) < 2:
+			self._on_row_idx = 0 if self.rows else None
+			self._off_row_idx = None
+			return
+		# Score rows by filename tokens
+		def score_row_on(row: List[_RowSample]) -> float:
+			score = 0.0
+			for s in row:
+				name = os.path.basename(s.path or "").lower()
+				if "intake" in name or "on" in name:
+					score += 1.0
+				if "idle" in name:
+					score -= 0.6
+				if "off" in name or "back" in name:
+					score -= 1.0
+			return score
+		scores = [score_row_on(r) for r in self.rows[:2]]
+		# Higher score = more likely ON layer
+		if scores[0] == scores[1]:
+			self._on_row_idx, self._off_row_idx = 0, 1
+		else:
+			self._on_row_idx = 0 if scores[0] > scores[1] else 1
+			self._off_row_idx = 1 - self._on_row_idx
 
 	def _start_all(self) -> None:
 		chan_count = pygame.mixer.get_num_channels()
@@ -169,9 +210,15 @@ class EngineSoundBlend:
 			return
 		throttle = max(0.0, min(1.0, throttle))
 
-		# Row mapping: row 0 = ON/throttle, row 1 = OFF/coast
-		on_row = self.rows[0] if len(self.rows) >= 1 else []
-		off_row = self.rows[1] if len(self.rows) >= 2 else []
+		# Row mapping (auto-detected):
+		if self._on_row_idx is None:
+			on_row = self.rows[0] if self.rows else []
+		else:
+			on_row = self.rows[self._on_row_idx]
+		if self._off_row_idx is None or self._off_row_idx >= len(self.rows):
+			off_row = []
+		else:
+			off_row = self.rows[self._off_row_idx]
 
 		on_weights = self._rpm_weights(on_row, rpm) if on_row else {}
 		off_weights = self._rpm_weights(off_row, rpm) if off_row else {}
