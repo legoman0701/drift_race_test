@@ -48,8 +48,8 @@ def parse_color(s: str):
 
 
 def slice_map(
-    input_path: str = "assets/Map/Map1.png",
-    outdir: str = "assets/Map/Map1_chunks",
+    input_path: str = "assets/Map/Map2.png",
+    outdir: str = "assets/Map/Map2_chunks",
     tile: int = 1024,
     indexing: str = "zero",
     prefix: str = "",
@@ -143,8 +143,8 @@ def slice_map(
 
 def main():
     ap = argparse.ArgumentParser(description="Slice a large map PNG into ix_iy.png tiles for the chunked renderer.")
-    ap.add_argument("--input", "-i", default="assets/Map/Map1.png", help="Path to source map image (PNG recommended).")
-    ap.add_argument("--outdir", "-o", default="assets/Map/Map1_chunks", help="Directory to write tiles into.")
+    ap.add_argument("--input", "-i", default="assets/Map/Map2.png", help="Path to source map image (PNG recommended).")
+    ap.add_argument("--outdir", "-o", default="assets/Map/Map2_chunks", help="Directory to write tiles into.")
     ap.add_argument("--tile", "-t", type=int, default=1024, help="Tile size in pixels (square).")
     ap.add_argument("--indexing", choices=("zero", "center"), default="zero",
                     help="'zero': top-left tile is 0_0; 'center': indices centered near image center (negative/positive).")

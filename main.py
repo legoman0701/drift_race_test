@@ -70,7 +70,7 @@ def main():
         light_spray_sprite.append(img)
         
     track_image = pygame.image.load(f"assets/Map/Map{const.MAP_NUM}.png").convert()
-    chunk_map = ChunkedMap(root="assets/Map/Map1_chunks", tile_size=1024)
+    chunk_map = ChunkedMap(root=f"assets/Map/Map{const.MAP_NUM}_chunks", tile_size=1024)
 
     stage = "menu" # menu | playing | error
     substage = "" # "" | settings
