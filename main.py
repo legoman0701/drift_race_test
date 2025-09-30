@@ -54,17 +54,17 @@ def main():
 
     # Load car sprites
     ae86_sprite = []
-    for i in range(32):
+    for i in range(64):
         img = pygame.image.load(f"assets/AE86/Diffuse/Image{i:04}.png").convert_alpha()
         ae86_sprite.append(img)
     
     shadow_sprite = []
-    for i in range(32):
+    for i in range(64):
         img = pygame.image.load(f"assets/AE86/Shadow_Map/Image{i:04}.png").convert_alpha()
         shadow_sprite.append(img)
     
     light_spray_sprite = []
-    for i in range(32):
+    for i in range(64):
         img = pygame.image.load(f"assets/AE86/Light_Spray/{i:04}.png").convert_alpha()
         light_spray_sprite.append(img)
         
