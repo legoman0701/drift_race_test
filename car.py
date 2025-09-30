@@ -63,8 +63,8 @@ class Car:
         acc_fx += -self.vx - self.vx*br
         acc_fy += -self.vy - self.vy*br
         
-        self.vx += acc_fx/2 * dt
-        self.vy += acc_fy/2 * dt
+        self.vx += acc_fx/1.2 * dt
+        self.vy += acc_fy/1.2 * dt
         self.x  += self.vx * dt
         self.y  += (self.vy * dt)*math.sqrt(2) # compensate for isometric view at 45deg
 
