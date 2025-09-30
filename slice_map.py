@@ -24,11 +24,8 @@ Notes:
 - Edge tiles are padded to the tile size using --pad R,G,B (default 28,28,28).
 - A manifest.json is written in the output directory for reference.
 """
-import argparse
-import json
-import math
-import os
-import sys
+import argparse, json, math, os, sys
+import const
 
 # Use pygame for zero-deps in your project (already installed). Pillow is optional.
 try:
@@ -48,8 +45,8 @@ def parse_color(s: str):
 
 
 def slice_map(
-    input_path: str = "assets/Map/Map2.png",
-    outdir: str = "assets/Map/Map2_chunks",
+    input_path: str = f"assets/Map/Map{const.MAP_NUM}.png",
+    outdir: str = f"assets/Map/Map{const.MAP_NUM}_chunks",
     tile: int = 1024,
     indexing: str = "zero",
     prefix: str = "",
@@ -143,8 +140,8 @@ def slice_map(
 
 def main():
     ap = argparse.ArgumentParser(description="Slice a large map PNG into ix_iy.png tiles for the chunked renderer.")
-    ap.add_argument("--input", "-i", default="assets/Map/Map2.png", help="Path to source map image (PNG recommended).")
-    ap.add_argument("--outdir", "-o", default="assets/Map/Map2_chunks", help="Directory to write tiles into.")
+    ap.add_argument("--input", "-i", default=f"assets/Map/Map{const.MAP_NUM}.png", help="Path to source map image (PNG recommended).")
+    ap.add_argument("--outdir", "-o", default=f"assets/Map/Map{const.MAP_NUM}_chunks", help="Directory to write tiles into.")
     ap.add_argument("--tile", "-t", type=int, default=1024, help="Tile size in pixels (square).")
     ap.add_argument("--indexing", choices=("zero", "center"), default="zero",
                     help="'zero': top-left tile is 0_0; 'center': indices centered near image center (negative/positive).")
