@@ -1,7 +1,5 @@
-import random
-import string
-import math
-import const  # type: ignore
+import random, string, math # global
+import const  # local
 
 
 def clamp(x: float, lo: float, hi: float) -> float:

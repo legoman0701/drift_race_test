@@ -4,18 +4,20 @@ Top-down drift game client with camera (zoom & pan)
 Refactored to remove magic numbers and reduce spaghetti code.
 """
 
+# global imports
 try: import pygame_ce as pygame
 except Exception: import pygame ; print("failed to load pygame-ce")
-import socket, json, time, random, string, sys, math, uuid, argparse # global imports
-import camera, car, button as btn, path_finder # local imports
-import const
-from helpers import clamp, rand_code, rand_name, car_local_to_world
+import json, time, random, sys, math, uuid, argparse
+# local imports
+import const, camera, car, button as btn, path_finder
+from helpers import clamp, rand_name
 from ai import ai_algorithme
-from inputs import get_text_input, get_code_input, get_name_input, read_inputs
+from inputs import read_inputs
 from communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping
-from ui import draw_car, draw_track_ui, draw_menu, handle_menu_events, handle_game_events
+from ui import draw_car, draw_track_ui, handle_game_events
 
 # ======= CONFIGURATION =======
+
 RELAY_PUBLIC_ENDPOINT = const.RELAY_PUBLIC_ENDPOINT
 # Host/Join role flag: set True when this client creates a room, False when joining
 I_AM_HOST = False
@@ -25,9 +27,7 @@ mouse_follow_mode = False
 flags = const.FLAGS
 
 # =============================
-
-    
-
+  
 def main():
     global I_AM_HOST  # ensure all references/assignments in this function use the module global
     parser = argparse.ArgumentParser()
@@ -215,7 +215,7 @@ def main():
                 cam.offset[0] -= ev.rel[0] / cam.zoom
                 cam.offset[1] -= ev.rel[1] / cam.zoom
 
-            ev, stage, remotes, sock, code, my_car, error_msg = handle_game_events(screen, ev, stage, remotes, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref)
+            ev, stage, remotes, sock, code, my_car, error_msg = handle_game_events(screen, ev, stage, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref)
             I_AM_HOST = host_ref[0]
 
         if sock:

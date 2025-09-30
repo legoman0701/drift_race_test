@@ -1,7 +1,5 @@
-try:
-    import pygame_ce as pygame
-except Exception:
-    import pygame  # type: ignore
+try: import pygame_ce as pygame
+except Exception: import pygame  # type: ignore
 
 # ======= CONFIGURATION =======
 RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"

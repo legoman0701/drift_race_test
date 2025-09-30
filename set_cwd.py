@@ -1,7 +1,6 @@
 # Runtime hook to set CWD to the executable directory at startup.
 # This helps when the game loads assets using relative paths like 'assets/...'.
-import os
-import sys
+import os, sys
 
 if hasattr(sys, '_MEIPASS'):
     # When running from a PyInstaller one-file bundle, resources are extracted to _MEIPASS.
