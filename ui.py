@@ -156,7 +156,7 @@ def handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, 
 
     return stage, my_name, code, sock, error_msg
 
-def handle_game_events(screen, ev, stage, remotes, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref):
+def handle_game_events(screen, ev, stage, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref):
     if ev.type == pygame.KEYDOWN:
         if stage == "menu":
             stage, my_name, code, sock, error_msg = handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, code, sock, error_msg, is_host_flag_ref)

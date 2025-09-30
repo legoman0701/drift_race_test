@@ -4,12 +4,13 @@ Top-down drift game client with camera (zoom & pan)
 Refactored to remove magic numbers and reduce spaghetti code.
 """
 
+# global imports
 try: import pygame_ce as pygame  # type: ignore
-except Exception: import pygame ; print("failed to load pygame-ce")
-import socket, json, time, random, string, sys, math, uuid, argparse, os # global imports
-import camera, car, button as btn, path_finder # local imports
+except Exception: import pygame
+import json, time, random, sys, math, uuid, argparse
+# local imports
+import const, camera, car, button as btn, path_finder
 from renderer import WorldRenderer
-import const
 from helpers import clamp, rand_code, rand_name, car_local_to_world
 from ai import ai_algorithme
 from inputs import get_text_input, get_code_input, get_name_input, read_inputs
