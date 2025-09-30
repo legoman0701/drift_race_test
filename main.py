@@ -4,12 +4,13 @@ Top-down drift game client with camera (zoom & pan)
 Refactored to remove magic numbers and reduce spaghetti code.
 """
 
+# global imports
 try: import pygame_ce as pygame  # type: ignore
-except Exception: import pygame ; print("failed to load pygame-ce")
-import socket, json, time, random, string, sys, math, uuid, argparse, os # global imports
-import camera, car, button as btn, path_finder # local imports
+except Exception: import pygame
+import json, time, random, sys, math, uuid, argparse
+# local imports
+import const, camera, car, button as btn, path_finder
 from renderer import WorldRenderer
-import const
 from helpers import clamp, rand_code, rand_name, car_local_to_world
 from ai import ai_algorithme
 from inputs import get_text_input, get_code_input, get_name_input, read_inputs
@@ -19,6 +20,7 @@ from rpm import calc_engine_rpm, RpmParams
 from engine_audio import EngineAudio
 
 # ======= CONFIGURATION =======
+
 RELAY_PUBLIC_ENDPOINT = const.RELAY_PUBLIC_ENDPOINT
 # Host/Join role flag: set True when this client creates a room, False when joining
 I_AM_HOST = False
@@ -28,9 +30,7 @@ mouse_follow_mode = False
 flags = const.FLAGS
 
 # =============================
-
-    
-
+  
 def main():
     global I_AM_HOST  # ensure all references/assignments in this function use the module global
     parser = argparse.ArgumentParser()
@@ -280,7 +280,7 @@ def main():
                 cam.offset[0] -= ev.rel[0] / cam.zoom
                 cam.offset[1] -= ev.rel[1] / cam.zoom
 
-            ev, stage, remotes, sock, code, my_car, error_msg = handle_game_events(screen, ev, stage, remotes, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref)
+            ev, stage, remotes, sock, code, my_car, error_msg = handle_game_events(screen, ev, stage, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref)
             I_AM_HOST = host_ref[0]
 
         if sock:

@@ -1,7 +1,5 @@
-import math
-import pygame
-from typing import List, Tuple, Optional, Dict, Any
-
+import math, pygame
+from typing import List, Tuple, Optional, Dict
 from helpers import clamp
 
 

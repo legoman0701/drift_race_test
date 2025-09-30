@@ -1,6 +1,4 @@
-import socket
-import json
-import math
+import socket, json, math
 from typing import Dict, Any, Optional
 
 import const

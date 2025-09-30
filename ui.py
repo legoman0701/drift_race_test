@@ -1,9 +1,8 @@
-import math
-import time
-import json
-import pygame
+# global
+import math, time, json, pygame
 from typing import Dict, Any, Optional, Tuple
 
+# local
 import const
 from car import CAR_LEN, CAR_WID
 from helpers import clamp, rand_code
@@ -157,7 +156,7 @@ def handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, 
 
     return stage, my_name, code, sock, error_msg
 
-def handle_game_events(screen, ev, stage, remotes, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref):
+def handle_game_events(screen, ev, stage, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref):
     if ev.type == pygame.KEYDOWN:
         if stage == "menu":
             stage, my_name, code, sock, error_msg = handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, code, sock, error_msg, is_host_flag_ref)
@@ -174,6 +173,7 @@ def handle_game_events(screen, ev, stage, remotes, sock, code, my_name, my_id, m
             stage = "menu"
             error_msg = ""
             remotes.clear()
+            ai_cars.clear()
             if sock:
                 try:
                     sock.send(json.dumps({"t": "bye", "code": code, "id": my_id}).encode("utf-8"))

@@ -1,9 +1,7 @@
-import math
-import pygame
+import math,  pygame # global
 from typing import Optional, Dict, Any
 
-import const
-from helpers import clamp
+import const # local
 
 
 def get_text_input(surface: pygame.Surface, title_text: str, tip_text: str,
