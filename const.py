@@ -4,6 +4,10 @@ except Exception: import pygame  # type: ignore
 # ======= CONFIGURATION =======
 RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
 
+# Global UI scale factor
+# 1.0 = original size, 1.5 = 150% (50% bigger)
+UI_SCALE = 1
+
 # World dimensions
 WINDOW_WIDTH, WINDOW_HEIGHT = 1000, 700
 TRACK_MARGIN = 40

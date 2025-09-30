@@ -4,17 +4,19 @@ Top-down drift game client with camera (zoom & pan)
 Refactored to remove magic numbers and reduce spaghetti code.
 """
 
-# global imports
-try: import pygame_ce as pygame
+try: import pygame_ce as pygame  # type: ignore
 except Exception: import pygame ; print("failed to load pygame-ce")
-import json, time, random, sys, math, uuid, argparse
-# local imports
-import const, camera, car, button as btn, path_finder
-from helpers import clamp, rand_name
+import socket, json, time, random, string, sys, math, uuid, argparse, os # global imports
+import camera, car, button as btn, path_finder # local imports
+from renderer import WorldRenderer
+import const
+from helpers import clamp, rand_code, rand_name, car_local_to_world
 from ai import ai_algorithme
-from inputs import read_inputs
-from communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping
-from ui import draw_car, draw_track_ui, handle_game_events
+from inputs import get_text_input, get_code_input, get_name_input, read_inputs
+from communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, recv_jsons
+from ui import draw_car, draw_track_ui, draw_menu, handle_menu_events, handle_game_events, draw_controls_hud
+from rpm import calc_engine_rpm, RpmParams
+from engine_audio import EngineAudio
 
 # ======= CONFIGURATION =======
 
@@ -38,6 +40,15 @@ def main():
 
     pygame.init()
     pygame.joystick.init()
+    # Audio init
+    try:
+        pygame.mixer.pre_init(44100, size=-16, channels=2, buffer=512)
+    except Exception:
+        pass
+    try:
+        pygame.mixer.init()
+    except Exception:
+        print("Audio mixer init failed")
     screen = pygame.display.set_mode((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
     pygame.display.set_caption("Drift Race Test")
     clock = pygame.time.Clock()
@@ -81,6 +92,17 @@ def main():
     spawnx = random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200)
     spawny = random.randint(const.TRACK_MARGIN + 120, const.WINDOW_HEIGHT - const.TRACK_MARGIN - 120)
     my_car = car.Car(spawnx, spawny, my_name, is_ai=False)
+    # Local player's engine state (avoid mutating Car which may use __slots__)
+    engine_state = {"gear": 0, "last_rpm": None}
+    # Engine audio: 4A-GE Bluetop intake+exhaust layers
+    engine_sound = None
+    try:
+        engine_sound = EngineAudio(
+            intake_blend_json="assets/AE86/sound/blends/4agein.sfxBlend2D.json",
+            exhaust_blend_json="assets/AE86/sound/blends/4ageex.sfxBlend2D.json",
+        )
+    except Exception as e:
+        print("Engine sound init failed:", e)
 
     if args.mode == "host" and args.code and args.name:
         my_name = args.name
@@ -90,11 +112,30 @@ def main():
             sock = connect_to_relay()
             join_pkt = {"t": "create", "code": code, "name": my_name, "id": my_id}
             sock.send(json.dumps(join_pkt).encode("utf-8"))
+            # Wait briefly for confirmation; otherwise offline fallback
+            join_ok_received = False
+            timeout = time.time() + 1.0
+            while time.time() < timeout:
+                for msg in recv_jsons(sock):
+                    if msg.get("t") == "join_ok":
+                        join_ok_received = True
+                        break
+                    if msg.get("t") == "error":
+                        raise Exception(msg.get("msg", "relay error"))
+                if join_ok_received:
+                    break
+                time.sleep(0.02)
+            if join_ok_received:
+                stage = "playing"
+                I_AM_HOST = True  # set host flag for CLI host mode
+            else:
+                raise Exception("no join_ok")
+        except Exception:
+            # Offline fallback
+            sock = None
+            code = "Offline"
             stage = "playing"
-            I_AM_HOST = True  # set host flag for CLI host mode
-        except Exception as ex:
-            stage = "error"
-            error_msg = f"Net error: {ex}"
+            I_AM_HOST = True
     elif args.mode == "join" and args.code and args.name:
         my_name = args.name
         my_car.name = my_name
@@ -104,16 +145,33 @@ def main():
             code = code.upper()
             join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id}
             sock.send(json.dumps(join_pkt).encode("utf-8"))
+            # Wait briefly for confirmation; otherwise offline fallback
+            join_ok_received = False
+            timeout = time.time() + 1.0
+            while time.time() < timeout:
+                for msg in recv_jsons(sock):
+                    if msg.get("t") == "join_ok":
+                        join_ok_received = True
+                        break
+                    if msg.get("t") == "error":
+                        raise Exception(msg.get("msg", "relay error"))
+                if join_ok_received:
+                    break
+                time.sleep(0.02)
+            if join_ok_received:
+                stage = "playing"
+                I_AM_HOST = False  # set host flag for CLI join mode
+            else:
+                raise Exception("no join_ok")
+        except Exception:
+            # Offline fallback
+            sock = None
+            code = "Offline"
             stage = "playing"
-            I_AM_HOST = False  # set host flag for CLI join mode
-        except Exception as ex:
-            stage = "error"
-            error_msg = f"Net error: {ex}"
+            I_AM_HOST = False
     
-    tire_mark = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), pygame.SRCALPHA)
-    tire_mark.fill((255, 255, 255, 0))
-    
-    drift_points_old_remotes = {}
+    # Renderer handles track, cars, and drift marks
+    renderer = WorldRenderer(track_image, flags)
 
     joysticks = [pygame.joystick.Joystick(i) for i in range(pygame.joystick.get_count())]
     for js in joysticks:
@@ -179,11 +237,17 @@ def main():
 
     while True:
         dt = clock.tick(const.FPS) / 1000.0
+        #dt = min(dt, 1 / const.FPS)  # Cap dt to avoid large jumps
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
                 if sock and code:
                     try: sock.send(json.dumps({"t": "bye", "code": code, "id": my_id}).encode("utf-8"))
                     except Exception: pass
+                try:
+                    if 'engine_sound' in locals() and engine_sound:
+                        engine_sound.stop()
+                except Exception:
+                    pass
                 pygame.quit()
                 sys.exit(0)
 
@@ -221,10 +285,16 @@ def main():
         if sock:
             err = handle_network_messages(sock, remotes, dt, my_id, I_AM_HOST)
             if err:
-                stage = "error"
-                error_msg = err
+                # Switch to offline on relay errors
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+                sock = None
+                code = "Offline"
+                remotes.clear()
 
-        if sock and code:
+        if sock and code and code != "Offline":
             now = time.time()
             if now - last_state_send >= 1.0 / const.SEND_HZ:
                 last_state_send = now
@@ -258,6 +328,25 @@ def main():
         if controls is None:
             controls = read_inputs(joysticks, my_car, cam, mouse_follow_mode, ai_path_mode)
         my_car.step(controls, dt, remotes_with_ai_for_player, world_size)
+        # Update engine audio based on RPM and throttle
+        try:
+            if 'engine_sound' in locals() and engine_sound is not None:
+                speed_units = math.hypot(my_car.vx, my_car.vy)
+                th = clamp(controls.get("th", 0.0), -1.0, 1.0)
+                prev_rpm = engine_state.get("last_rpm")
+                rpm = calc_engine_rpm(
+                    speed_units=speed_units,
+                    drift_ratio=my_car.drift_ratio,
+                    throttle=th,
+                    prev_rpm=prev_rpm,
+                    dt=dt,
+                    params=None,
+                    _state=engine_state,
+                )
+                engine_state["last_rpm"] = rpm
+                engine_sound.update(rpm=rpm, throttle=max(0.0, th), dt=dt)
+        except Exception:
+            pass
 
         # Prepare remotes view for AIs: include network remotes + all AIs + the local player (so AIs can detect collisions with player)
         remotes_with_ai_for_ais = dict(remotes)
@@ -274,59 +363,25 @@ def main():
                 ai.step(ai_algorithme(path_poly, ai), dt, remotes_with_ai_for_ais, world_size)
         cam.update(my_car, (const.WINDOW_WIDTH, const.WINDOW_HEIGHT) if stage != "playing" else (track_image.get_width(), track_image.get_height()))
 
-        # Draw game world onto an off-screen surface.
-        if stage != "playing":
-            world_surf = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), flags)
-            world_surf.fill(const.GREY_20)
-        else:
-            world_surf = pygame.Surface((track_image.get_width(), track_image.get_height()), flags)
-            # Calculate the camera viewport in the track image coordinates.
-            
-            top_right_pos = cam.x-(const.WINDOW_WIDTH/2)/cam.zoom, cam.y-(const.WINDOW_HEIGHT/2)/cam.zoom
-            camera_rect = pygame.Rect(top_right_pos[0],
-                                      top_right_pos[1],
-                                      const.WINDOW_WIDTH/cam.zoom,
-                                      const.WINDOW_HEIGHT/cam.zoom)
-            visible_track = track_image.subsurface(camera_rect)
-            #pygame.draw.rect(world_surf, TRACK_COLOR, camera_rect)
-            world_surf.blit(visible_track, top_right_pos)
+        # Draw game world via renderer
+        world_surf, resized = renderer.render_world(
+            cam=cam,
+            stage=stage,
+            my_car=my_car,
+            ai_cars=ai_cars,
+            remotes=remotes,
+            lights_on=lights_on,
+            car_sprites_list=[shadow_sprite, ae86_sprite, light_spray_sprite],
+        )
 
-        if tire_mark.get_width() != world_surf.get_width() or tire_mark.get_height() != world_surf.get_height():
-            tire_mark = pygame.Surface((world_surf.get_width(), world_surf.get_height()), pygame.SRCALPHA)
-            tire_mark.fill((255, 255, 255, 0))
+        if resized:
             path_poly = path_finder.discover_track("assets/Map/Map1.png")
         
         ui_surf = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), pygame.SRCALPHA)
         ui_surf.fill((0,0,0,0)) # transparent surface
         
         draw_track_ui(ui_surf)
-        # world_surf.blit(bg_map, (0, 0))
-        
-        if my_car.drift_ratio > 0.5 and my_car.drift_points_old:
-            pygame.draw.line(tire_mark, const.TIRE_MARK_SMOKE, my_car.drift_points[0], my_car.drift_points_old[0], 3)
-            pygame.draw.line(tire_mark, const.TIRE_MARK_SMOKE, my_car.drift_points[1], my_car.drift_points_old[1], 3)
-        
-        for ai_car in ai_cars:
-            draw_car(world_surf, ai_car.x, ai_car.y, ai_car.angle, ai_car.name,
-                                  color_body=const.COLOR_BODY_DEFAULT, car_sprites_list=[shadow_sprite, ae86_sprite, light_spray_sprite], lights_on=lights_on)
-
-            if ai_car.drift_ratio > 0.5 and ai_car.drift_points_old:
-                pygame.draw.line(tire_mark, const.TIRE_MARK_SMOKE, ai_car.drift_points[0], ai_car.drift_points_old[0], 3)
-                pygame.draw.line(tire_mark, const.TIRE_MARK_SMOKE, ai_car.drift_points[1], ai_car.drift_points_old[1], 3)
-
-        # fade smoke to ground and draw visible segment
-        tire_mark.fill(const.TIRE_MARK_GROUND, special_flags=pygame.BLEND_RGBA_MULT)
-        top_right_pos = (cam.x - (const.WINDOW_WIDTH/2)/cam.zoom,
-                         cam.y - (const.WINDOW_HEIGHT/2)/cam.zoom)
-        camera_rect = pygame.Rect(top_right_pos[0],
-                                  top_right_pos[1],
-                                  const.WINDOW_WIDTH/cam.zoom,
-                                  const.WINDOW_HEIGHT/cam.zoom)
-        visible_tire_mark = tire_mark.subsurface(camera_rect)
-        world_surf.blit(visible_tire_mark, top_right_pos)
-        
-        draw_car(world_surf, my_car.x, my_car.y, my_car.angle, my_car.name,
-                                                                    color_body=const.COLOR_MY_CAR, car_sprites_list=[shadow_sprite, ae86_sprite, light_spray_sprite], lights_on=lights_on)
+        # world drawing is now handled by renderer
         
 
         if stage == "menu":
@@ -343,85 +398,36 @@ def main():
         if stage == "playing":
             title = font_big.render("Waiting for players", True, const.WHITE_240)
             ui_surf.blit(title, (const.WINDOW_WIDTH//2 - title.get_width()//2, const.TITLE_Y))
-            hud = font_small.render(f"Room: {code}", True, const.GREY_180)
+            room_label = code if code else "Offline"
+            hud = font_small.render(f"Room: {room_label}", True, const.GREY_180)
             ui_surf.blit(hud, (10, const.RELAY_Y))
             # HUD: steering wheel + throttle/brake % bars (bottom-right)
-            inp = read_inputs(joysticks, my_car, cam, mouse_follow_mode, ai_path_mode)
+            # When AI path mode is active, display AI's controls on the HUD;
+            # otherwise display local (human) inputs.
+            if ai_path_mode and 'controls' in locals() and controls is not None:
+                inp = controls
+            else:
+                inp = read_inputs(joysticks, my_car, cam, mouse_follow_mode, ai_path_mode)
             th = clamp(inp.get("th", 0.0), -1.0, 1.0)
             br = clamp(inp.get("br", 0.0), 0.0, 1.0)
             st = clamp(inp.get("st", 0.0), -1.0, 1.0)
+            
+            # Engine RPM estimation: uses speed, drift state, throttle and smoothing
+            speed_units = math.hypot(my_car.vx, my_car.vy)
+            # Persist transient engine state externally (gear, last rpm)
+            prev_rpm = engine_state.get("last_rpm")
+            rpm = calc_engine_rpm(
+                speed_units=speed_units,
+                drift_ratio=my_car.drift_ratio,
+                throttle=th,
+                prev_rpm=prev_rpm,
+                dt=dt,
+                params=None,
+                _state=engine_state,
+            )
+            engine_state["last_rpm"] = rpm
 
-            # HUD layout
-            hud_w = 200
-            hud_h = 96
-            pad = 12
-            x = const.WINDOW_WIDTH - hud_w - pad
-            y = const.WINDOW_HEIGHT - hud_h - pad
-
-            # semi-transparent background
-            bg = pygame.Surface((hud_w, hud_h), pygame.SRCALPHA)
-            bg.fill((10, 10, 14, 200))
-            ui_surf.blit(bg, (x, y))
-
-            # steering wheel (left side)
-            wheel_size = 76
-            wcx = x + wheel_size // 2 + 10
-            wcy = y + hud_h // 2
-            wheel_r = wheel_size // 2 - 6
-            pygame.draw.circle(ui_surf, (40, 40, 48), (wcx, wcy), wheel_r + 6)  # rim shadow
-            pygame.draw.circle(ui_surf, (20, 20, 26), (wcx, wcy), wheel_r + 4)
-            pygame.draw.circle(ui_surf, (60, 60, 70), (wcx, wcy), wheel_r, 6)   # rim
-
-            # steering indicator (spoke)
-            MAX_WHEEL_ANGLE = math.radians(270)  # visual rotation range
-            angle = st * MAX_WHEEL_ANGLE - (math.pi / 2)  # negative so positive steering rotates clockwise visually
-            sx = int(wcx + math.cos(angle) * (wheel_r - 10))
-            sy = int(wcy + math.sin(angle) * (wheel_r - 10))
-            pygame.draw.line(ui_surf, (200, 200, 220), (wcx, wcy), (sx, sy), 6)
-            # small center hub
-            pygame.draw.circle(ui_surf, (30, 30, 36), (wcx, wcy), 8)
-
-            # Labels
-            lbl = font_small.render("STEER", True, const.WHITE_240)
-            ui_surf.blit(lbl, (wcx - lbl.get_width()//2, y + hud_h - 18))
-
-            # throttle and brake bars (right side)
-            bar_x = x + wheel_size + 20
-            bar_w = hud_w - (wheel_size + 32)
-            bar_h = 16
-            # Throttle bar (top)
-            th_y = y + 18
-            pygame.draw.rect(ui_surf, (40, 40, 48), (bar_x, th_y, bar_w, bar_h), border_radius=4)
-            if th > 0:
-                fg_w = int(bar_w * clamp(th, 0.0, 1.0))
-                pygame.draw.rect(ui_surf, (80, 220, 100), (bar_x, th_y, fg_w, bar_h), border_radius=4)
-            else:
-                # reverse/backwards shown as orange to the left of bar
-                fg_w = int(bar_w * clamp(-th, 0.0, 1.0))
-                pygame.draw.rect(ui_surf, (255, 160, 60), (bar_x + bar_w - fg_w, th_y, fg_w, bar_h), border_radius=4)
-            th_pct = int(th * 100) if th >= 0 else int(th * 100)
-            lbl_th = font_small.render(f"THR {th_pct:+d}%", True, const.WHITE_240)
-            ui_surf.blit(lbl_th, (bar_x, th_y - 18))
-
-            # Brake bar (bottom)
-            br_y = th_y + bar_h + 18
-            pygame.draw.rect(ui_surf, (40, 40, 48), (bar_x, br_y, bar_w, bar_h), border_radius=4)
-            fg_wb = int(bar_w * clamp(br, 0.0, 1.0))
-            pygame.draw.rect(ui_surf, (220, 80, 80), (bar_x, br_y, fg_wb, bar_h), border_radius=4)
-            lbl_br = font_small.render(f"BRK {int(br*100):d}%", True, const.WHITE_240)
-            ui_surf.blit(lbl_br, (bar_x, br_y - 18))
-
-            # Optional thin border around HUD
-            pygame.draw.rect(ui_surf, (80, 88, 100), (x, y, hud_w, hud_h), 1)
-            for pid, d in remotes.items():
-                drift_points_remote = draw_car(world_surf, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
-                                               color_body=const.COLOR_BODY_REMOTE, car_sprites_list=[shadow_sprite, ae86_sprite, light_spray_sprite], lights_on=lights_on)
-                if d["drift_ratio"] > 0.8 and pid in drift_points_old_remotes:
-                    old_pts = drift_points_old_remotes[pid]
-                    if drift_points_remote != None:
-                        pygame.draw.line(tire_mark, const.TIRE_MARK_SMOKE, drift_points_remote[0], old_pts[0], 3)
-                        pygame.draw.line(tire_mark, const.TIRE_MARK_SMOKE, drift_points_remote[1], old_pts[1], 3)
-                drift_points_old_remotes[pid] = drift_points_remote
+            draw_controls_hud(ui_surf, font_small, st, th, br, rpm)
 
         if stage == "settings":
             title = font_big.render("Settings", True, const.WHITE_240)

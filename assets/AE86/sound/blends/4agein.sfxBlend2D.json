@@ -1,0 +1,30 @@
+{
+    "header" : {
+        "version" : 1
+    },
+    "eventName" : "event:>Engine>default",
+    "samples" : 
+    [
+        [
+			["art/sound/engine/4agein/idle_1029_intake.wav", 1029],
+			["art/sound/engine/4agein/idle_2705_intake.wav", 2705],
+			["art/sound/engine/4agein/4360_off.wav", 4360],
+			["art/sound/engine/4agein/4764a_off.wav", 4764],
+			["art/sound/engine/4agein/6136a_intake.wav", 6136],
+			["art/sound/engine/4agein/6459a_off.wav", 6459],
+			["art/sound/engine/4agein/6702a_off.wav", 6702],
+			["art/sound/engine/4agein/6863a_off.wav", 6863],
+			["art/sound/engine/4agein/7307a_off.wav", 7307],
+			["art/sound/engine/4agein/7348a_off.wav", 7348]
+        ],
+        [
+			["art/sound/engine/4agein/idle_1029_intake.wav", 1029],
+			["art/sound/engine/4agein/idle_2705_intake.wav", 2705],
+			["art/sound/engine/4agein/4683a_intake.wav", 4683],
+			["art/sound/engine/4agein/5006a_intake.wav", 5006],
+			["art/sound/engine/4agein/5813b_intake.wav", 5813],
+			["art/sound/engine/4agein/6419b_intake.wav", 6419],
+			["art/sound/engine/4agein/7348b_intake.wav", 7348]
+        ]
+    ]
+}

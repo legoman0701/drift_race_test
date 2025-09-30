@@ -63,8 +63,8 @@ class Car:
         acc_fx += -self.vx - self.vx*br
         acc_fy += -self.vy - self.vy*br
         
-        self.vx += acc_fx * dt
-        self.vy += acc_fy * dt
+        self.vx += acc_fx/2 * dt
+        self.vy += acc_fy/2 * dt
         self.x  += self.vx * dt
         self.y  += (self.vy * dt)*math.sqrt(2) # compensate for isometric view at 45deg
 
@@ -76,14 +76,27 @@ class Car:
 
         self._handle_track_bounds(dt, bounds)
 
+        # OBB vs OBB collisions with other cars (players dict contains x,y,a)
         for pid, d in players.items():
             if d["name"] == self.name:
                 continue
-            dx = d["x"] - self.x
-            dy = d["y"] - self.y
-            dist2 = dx * dx + dy * dy
-            if dist2 < (CAR_LEN * CAR_LEN):
-                self._handle_collision(dx, dy, dist2)
+            # Build oriented boxes for self and the other car
+            my_pts = self._obb_corners(self.x, self.y, self.angle)
+            other_pts = self._obb_corners(d["x"], d["y"], d.get("a", 0.0))
+            collides, mtv = self._sat_mtv(my_pts, other_pts, (self.x, self.y), (d["x"], d["y"]))
+            if collides:
+                # Push self out along MTV and damp velocity along the collision normal
+                nx, ny = mtv
+                self.x += nx
+                self.y += ny
+                # Reflect velocity along normal component with some restitution
+                n_len = math.hypot(nx, ny) or 1.0
+                nxn, nyn = nx / n_len, ny / n_len
+                v_dot_n = self.vx * nxn + self.vy * nyn
+                if v_dot_n < 0:
+                    # bounce component
+                    self.vx -= (1.0 + WALL_RESTITUTION) * v_dot_n * nxn
+                    self.vy -= (1.0 + WALL_RESTITUTION) * v_dot_n * nyn
                 
         ca, sa = math.cos(self.angle), math.sin(self.angle)
         halfL, halfW = CAR_LEN * 0.5, CAR_WID * 0.5
@@ -124,10 +137,63 @@ class Car:
         if hit:
             self.v_angle *= 0.5
 
-    def _handle_collision(self, dx, dy, dist2):
-        dist = math.sqrt(dist2) if dist2 > 0 else 0.01
-        overlap = (CAR_LEN - dist) / 2.0
-        self.x -= (dx / dist) * overlap*0.9
-        self.y -= (dy / dist) * overlap*0.9
-        self.vx -= (dx / dist) * overlap * 5
-        self.vy -= (dy / dist) * overlap * 5
+    # --- OBB collision helpers (SAT) ---
+    def _obb_corners(self, cx, cy, ang):
+        ca, sa = math.cos(ang), math.sin(ang)
+        # Use extended half-length for collisions as requested
+        hl, hw = CAR_LEN * 0.7, CAR_WID * 0.5
+        local = [(+hl, +hw), (+hl, -hw), (-hl, -hw), (-hl, +hw)]
+        world = []
+        for px, py in local:
+            rx = px * ca - py * sa
+            ry = px * sa + py * ca
+            world.append((cx + rx, cy + ry))
+        return world
+
+    def _axes_from_polygon(self, pts):
+        axes = []
+        for i in range(len(pts)):
+            x1, y1 = pts[i]
+            x2, y2 = pts[(i + 1) % len(pts)]
+            # Edge vector
+            ex, ey = x2 - x1, y2 - y1
+            # Normalized perpendicular (axis)
+            nx, ny = -ey, ex
+            length = math.hypot(nx, ny) or 1.0
+            axes.append((nx / length, ny / length))
+        return axes
+
+    def _project(self, axis, pts):
+        ax, ay = axis
+        mins = maxs = pts[0][0] * ax + pts[0][1] * ay
+        for x, y in pts[1:]:
+            p = x * ax + y * ay
+            if p < mins: mins = p
+            if p > maxs: maxs = p
+        return mins, maxs
+
+    def _interval_overlap(self, a_min, a_max, b_min, b_max):
+        return min(a_max, b_max) - max(a_min, b_min)
+
+    def _sat_mtv(self, ptsA, ptsB, centerA, centerB):
+        # Gather axes from both polygons
+        axes = self._axes_from_polygon(ptsA) + self._axes_from_polygon(ptsB)
+        min_overlap = float('inf')
+        best_axis = (0.0, 0.0)
+        for ax in axes:
+            a_min, a_max = self._project(ax, ptsA)
+            b_min, b_max = self._project(ax, ptsB)
+            overlap = self._interval_overlap(a_min, a_max, b_min, b_max)
+            if overlap <= 0:
+                return False, (0.0, 0.0)
+            if overlap < min_overlap:
+                min_overlap = overlap
+                best_axis = ax
+        # Direction from A to B to orient the MTV
+        dirABx = centerB[0] - centerA[0]
+        dirABy = centerB[1] - centerA[1]
+        if best_axis[0] * dirABx + best_axis[1] * dirABy < 0:
+            best_axis = (-best_axis[0], -best_axis[1])
+        # MTV for A to move out of B
+        mtv = (-best_axis[0] * min_overlap, -best_axis[1] * min_overlap)
+        return True, mtv
