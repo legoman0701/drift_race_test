@@ -104,15 +104,14 @@ class WorldRenderer:
     # ---------- Public API ----------
     def get_world_size(self, stage: str) -> Tuple[int, int]:
         """
-        Size used by physics/camera clamping. In chunked mode we expose a huge world
-        so the camera and cars never clamp on artificial borders.
+        Size used by physics/camera clamping.
         """
         if stage != "playing":
             return (const.WINDOW_WIDTH, const.WINDOW_HEIGHT)
-        if self.chunked_map:
-            BIG = 10**9
-            return (BIG, BIG)
-        return (self.track_image.get_width(), self.track_image.get_height())
+        if self.chunked_map and hasattr(self.chunked_map, "get_world_size"):
+            return self.chunked_map.get_world_size()  # use finite dimensions of the chunked map
+        else:
+            return (self.track_image.get_width(), self.track_image.get_height())
 
     def render_world(self,
                      cam,

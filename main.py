@@ -286,10 +286,7 @@ def main():
             if now - last_ping >= 1.0 / const.PING_HZ:
                 last_ping = now
                 send_ping(sock, code)
-                
         
-        
-        # Build world size tuple used by step()
         world_size = renderer.get_world_size(stage)
 
         # Prepare remotes view for the player: include network remotes + AI cars (so player can collide with AIs)
@@ -343,7 +340,7 @@ def main():
         if I_AM_HOST:
             for ai in ai_cars:
                 ai.step(ai_algorithme(path_poly, ai), dt, remotes_with_ai_for_ais, world_size)
-        cam.update(my_car, (const.WINDOW_WIDTH, const.WINDOW_HEIGHT) if stage != "playing" else (track_image.get_width(), track_image.get_height()))
+        cam.update(my_car, world_size)
 
         # Draw game world via renderer
         world_surf, resized, is_viewport = renderer.render_world(
@@ -425,7 +422,7 @@ def main():
         if substage == "settings":
             title = font_big.render("Settings", True, const.WHITE_240)
             ui_surf.blit(title, (const.WINDOW_WIDTH//2 - title.get_width()//2, const.TITLE_Y))
-            world_surf = blur_surface(world_surf, (const.WINDOW_WIDTH, const.WINDOW_HEIGHT) if stage != "playing" else (track_image.get_width(), track_image.get_height()))
+            world_surf = blur_surface(world_surf, world_size)
             for button in buttons:
                 try:
                     if button.action == switch_cursor_follow_mode:
