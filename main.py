@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-"""
-Top-down drift game client with camera (zoom & pan)
-Refactored to remove magic numbers and reduce spaghetti code.
-"""
+
+# ======= IMPORTS =======
 
 # global imports
-try: import pygame_ce as pygame  # type: ignore
+try: import pygame_ce as pygame # type: ignore
 except Exception: import pygame
 import json, time, random, sys, math, uuid, argparse
 # local imports
@@ -15,21 +13,21 @@ from helpers import clamp, rand_code, rand_name, car_local_to_world
 from ai import ai_algorithme
 from inputs import get_text_input, get_code_input, get_name_input, read_inputs
 from communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, recv_jsons
-from ui import draw_car, draw_track_ui, draw_menu, handle_menu_events, handle_game_events, draw_controls_hud
+from ui import draw_car, draw_track_ui, draw_menu, handle_menu_events, handle_game_events, draw_controls_hud, blur_surface
 from rpm import calc_engine_rpm, RpmParams
 from engine_audio import EngineAudio
 
 # ======= CONFIGURATION =======
 
 RELAY_PUBLIC_ENDPOINT = const.RELAY_PUBLIC_ENDPOINT
-# Host/Join role flag: set True when this client creates a room, False when joining
+# True : client creates a room, False : joining
 I_AM_HOST = False
 
 ai_path_mode = False
-mouse_follow_mode = False
+cursor_follow_mode = False
 flags = const.FLAGS
 
-# =============================
+# ======= MAIN LOOP =======
   
 def main():
     global I_AM_HOST  # ensure all references/assignments in this function use the module global
@@ -42,16 +40,13 @@ def main():
     pygame.init()
     pygame.joystick.init()
     # Audio init
-    try:
-        pygame.mixer.pre_init(44100, size=-16, channels=2, buffer=512)
-    except Exception:
-        pass
-    try:
-        pygame.mixer.init()
-    except Exception:
-        print("Audio mixer init failed")
+    try: pygame.mixer.pre_init(44100, size=-16, channels=2, buffer=512)
+    except Exception: pass
+    try: pygame.mixer.init()
+    except Exception: print("Audio mixer init failed")
+
+    pygame.display.set_caption("Drift Race v0.4")
     screen = pygame.display.set_mode((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
-    pygame.display.set_caption("Drift Race Test")
     clock = pygame.time.Clock()
     font_small = pygame.font.SysFont(None, const.FONT_SMALL_SIZE)
     font_medium = pygame.font.SysFont(None, const.FONT_MEDIUM_SIZE)
@@ -75,7 +70,8 @@ def main():
         
     track_image = pygame.image.load(f"assets/Map/Map1.png").convert()
 
-    stage = "menu"  # menu | playing | settings | keys | error
+    stage = "menu" # menu | playing | error
+    substage = "" # "" | settings
     error_msg = ""
     remotes = {}
     ai_cars = []
@@ -184,7 +180,7 @@ def main():
     host_ref = [I_AM_HOST]
 
     def leave_room(sock, code, my_id, remotes):
-        global ai_path_mode, mouse_follow_mode
+        global ai_path_mode, cursor_follow_mode
         if sock and code:
             try:
                 sock.send(json.dumps({"t": "bye", "code": code, "id": my_id}).encode("utf-8"))
@@ -194,45 +190,30 @@ def main():
         remotes.clear()
         ai_cars.clear()
         ai_path_mode = False
-        mouse_follow_mode = False
-        # stage, sock, code, remotes
-        return "menu", None, None, remotes
-
-    def show_key_binds(): # to do
-        print("Showing key binds...")
+        cursor_follow_mode = False
+        return "menu", "", None, None, remotes # stage, substage sock, code, remotes
         
-    def switch_steering_mode():
-        global mouse_follow_mode, ai_path_mode
-        # toggle mouse follow; when enabling mouse follow, ensure AI path mode is disabled
-        mouse_follow_mode = not mouse_follow_mode
+    def switch_cursor_follow_mode():
+        global cursor_follow_mode, ai_path_mode
+        cursor_follow_mode = not cursor_follow_mode
         try:
-            if mouse_follow_mode:
-                ai_path_mode = False
-        except Exception:
-            pass
-        # Close settings panel by returning the state tuple (new_stage, sock, code, remotes)
-        try:
-            return "playing", sock, code, remotes
-        except Exception:
-            return "playing", None, None, {}
+            if cursor_follow_mode: ai_path_mode = False
+        except Exception: pass
+        try: return "playing", "", sock, code, remotes
+        except Exception: return "playing", "", None, None, {} # stage, substage sock, code, remotes
 
     def switch_ai_path_mode():
-        global ai_path_mode, mouse_follow_mode
-        # toggle AI path mode; when enabling AI, ensure mouse follow is disabled
+        global ai_path_mode, cursor_follow_mode
         ai_path_mode = not ai_path_mode
         try:
-            if ai_path_mode:
-                mouse_follow_mode = False
-        except Exception:
-            pass
-        try:
-            return "playing", sock, code, remotes
-        except Exception:
-            return "playing", None, None, {}
+            if ai_path_mode: cursor_follow_mode = False
+        except Exception: pass
+        try: return "playing", "", sock, code, remotes
+        except Exception: return "playing", "", None, None, {} # stage, substage sock, code, remotes
 
     buttons = [
     btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.3, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, lambda: leave_room(sock, code, my_id, remotes)),
-    btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.6, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, switch_steering_mode),
+    btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.6, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, switch_cursor_follow_mode),
     btn.Button("AI Path Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.72, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, switch_ai_path_mode),
     ]
 
@@ -280,7 +261,7 @@ def main():
                 cam.offset[0] -= ev.rel[0] / cam.zoom
                 cam.offset[1] -= ev.rel[1] / cam.zoom
 
-            ev, stage, remotes, sock, code, my_car, error_msg = handle_game_events(screen, ev, stage, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref)
+            ev, stage, substage, remotes, sock, code, my_car, error_msg = handle_game_events(screen, ev, stage, substage, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref)
             I_AM_HOST = host_ref[0]
 
         if sock:
@@ -327,7 +308,7 @@ def main():
             except Exception:
                 controls = None
         if controls is None:
-            controls = read_inputs(joysticks, my_car, cam, mouse_follow_mode, ai_path_mode)
+            controls = read_inputs(joysticks, my_car, cam, cursor_follow_mode, ai_path_mode)
         my_car.step(controls, dt, remotes_with_ai_for_player, world_size)
         # Update engine audio based on RPM and throttle
         try:
@@ -384,11 +365,11 @@ def main():
         draw_track_ui(ui_surf)
         # world drawing is now handled by renderer
         
-
         if stage == "menu":
             cam.zoom = 1
-            title = font_big.render("Menu", True, const.WHITE_240)
-            ui_surf.blit(title, (const.WINDOW_WIDTH//2 - title.get_width()//2, const.TITLE_Y))
+            if substage != "settings": 
+                title = font_big.render("Menu", True, const.WHITE_240)
+                ui_surf.blit(title, (const.WINDOW_WIDTH//2 - title.get_width()//2, const.TITLE_Y))
             tip1 = font_medium.render("H : Host room", True, const.GREY_200)
             tip2 = font_medium.render("J : Join room", True, const.GREY_200)
             relay = font_small.render(f"Relay: {RELAY_PUBLIC_ENDPOINT}", True, const.GREY_180)
@@ -397,18 +378,18 @@ def main():
             ui_surf.blit(relay, (const.WINDOW_WIDTH//2 - relay.get_width()//2, const.RELAY_Y))
 
         if stage == "playing":
-            title = font_big.render("Waiting for players", True, const.WHITE_240)
-            ui_surf.blit(title, (const.WINDOW_WIDTH//2 - title.get_width()//2, const.TITLE_Y))
+            # title, room code, relay
+            if substage == "settings": 
+                title = font_big.render("In Game", True, const.WHITE_240)
+                ui_surf.blit(title, (const.WINDOW_WIDTH//2 - title.get_width()//2, const.TITLE_Y))
             room_label = code if code else "Offline"
             hud = font_small.render(f"Room: {room_label}", True, const.GREY_180)
             ui_surf.blit(hud, (10, const.RELAY_Y))
+
             # HUD: steering wheel + throttle/brake % bars (bottom-right)
-            # When AI path mode is active, display AI's controls on the HUD;
-            # otherwise display local (human) inputs.
-            if ai_path_mode and 'controls' in locals() and controls is not None:
-                inp = controls
-            else:
-                inp = read_inputs(joysticks, my_car, cam, mouse_follow_mode, ai_path_mode)
+            if ai_path_mode and 'controls' in locals() and controls is not None: inp = controls
+            else: inp = read_inputs(joysticks, my_car, cam, cursor_follow_mode, ai_path_mode)
+
             th = clamp(inp.get("th", 0.0), -1.0, 1.0)
             br = clamp(inp.get("br", 0.0), 0.0, 1.0)
             st = clamp(inp.get("st", 0.0), -1.0, 1.0)
@@ -430,16 +411,22 @@ def main():
 
             draw_controls_hud(ui_surf, font_small, st, th, br, rpm)
 
-        if stage == "settings":
+        if stage == "error":
+            title = font_big.render("ERROR", True, (255,120,120))
+            ui_surf.blit(title, (const.WINDOW_WIDTH//2 - title.get_width()//2, const.WINDOW_HEIGHT//2 - 40))
+            msg = font_small.render(error_msg, True, (255,200,200))
+            ui_surf.blit(msg, (const.WINDOW_WIDTH//2 - msg.get_width()//2, const.WINDOW_HEIGHT//2))
+            tip = font_small.render("Press R to restart", True, const.GREY_200)
+            ui_surf.blit(tip, (const.WINDOW_WIDTH//2 - tip.get_width()//2, const.WINDOW_HEIGHT//2 + 40))
+
+        if substage == "settings":
+            ui_surf = blur_surface(ui_surf, (const.WINDOW_WIDTH, const.WINDOW_HEIGHT) if stage != "playing" else (track_image.get_width(), track_image.get_height()))
             title = font_big.render("Settings", True, const.WHITE_240)
             ui_surf.blit(title, (const.WINDOW_WIDTH//2 - title.get_width()//2, const.TITLE_Y))
-            # Draw buttons and capture any action results. If an action returns a tuple
-            # with new state (stage, sock, code, remotes), apply it.
             for button in buttons:
-                # Update button labels/colors for stateful buttons
                 try:
-                    if button.action == switch_steering_mode:
-                        if mouse_follow_mode:
+                    if button.action == switch_cursor_follow_mode:
+                        if cursor_follow_mode:
                             button.text = "Mouse Following : On"
                             button.color = const.GREEN
                         else:
@@ -452,25 +439,15 @@ def main():
                         else:
                             button.text = "AI Path Mode : Off"
                             button.color = const.RED
-                except Exception:
-                    pass
+                except Exception: pass
                 res = button.draw(ui_surf)
                 if isinstance(res, tuple) and len(res) == 4:
-                    # expected return: (new_stage, new_sock, new_code, new_remotes)
-                    new_stage, new_sock, new_code, new_remotes = res
+                    new_stage, new_substage, new_sock, new_code, new_remotes = res
                     stage = new_stage
+                    substage = new_substage
                     sock = new_sock
                     code = new_code
                     remotes = new_remotes
-            # world_surf.blit(btn_screen, (0, 0))
-
-        if stage == "error":
-            errh = font_big.render("ERROR", True, (255,120,120))
-            ui_surf.blit(errh, (const.WINDOW_WIDTH//2 - errh.get_width()//2, const.WINDOW_HEIGHT//2 - 40))
-            msg = font_small.render(error_msg, True, (255,200,200))
-            ui_surf.blit(msg, (const.WINDOW_WIDTH//2 - msg.get_width()//2, const.WINDOW_HEIGHT//2))
-            tip = font_small.render("Press R to restart", True, const.GREY_200)
-            ui_surf.blit(tip, (const.WINDOW_WIDTH//2 - tip.get_width()//2, const.WINDOW_HEIGHT//2 + 40))
 
         # Apply camera transform (zoom & pan) and blit to screen.
         final_surf = cam.apply(world_surf)
@@ -486,8 +463,7 @@ def main():
                 visible_ai_debug_surface = ai_debug_surface.subsurface(camera_rect)
                 #pygame.draw.rect(world_surf, TRACK_COLOR, camera_rect)
                 screen.blit(visible_ai_debug_surface, (0, 0))
-            except Exception:
-                pass
+            except Exception: pass
         pygame.display.flip()
 
 if __name__ == "__main__":

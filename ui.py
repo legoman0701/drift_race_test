@@ -156,19 +156,16 @@ def handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, 
 
     return stage, my_name, code, sock, error_msg
 
-def handle_game_events(screen, ev, stage, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref):
+def handle_game_events(screen, ev, stage, substage, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref):
     if ev.type == pygame.KEYDOWN:
         if stage == "menu":
             stage, my_name, code, sock, error_msg = handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, code, sock, error_msg, is_host_flag_ref)
             try:
                 if stage == "playing" and my_car is not None:
                     my_car.name = my_name
-            except NameError:
-                pass
-        elif stage == "playing" and ev.key == const.ESCAPE_KEY:  # open settings
-            stage = "settings"
-        elif stage == "settings" and ev.key == const.ESCAPE_KEY:  # close settings
-            stage = "playing"
+            except NameError: pass
+
+        # error
         elif stage == "error" and ev.key == const.RESET_KEY:
             stage = "menu"
             error_msg = ""
@@ -187,8 +184,12 @@ def handle_game_events(screen, ev, stage, remotes, ai_cars, sock, code, my_name,
             spawny = random.randint(const.TRACK_MARGIN + 120, const.WINDOW_HEIGHT - const.TRACK_MARGIN - 120)
             import car
             my_car = car.Car(spawnx, spawny, my_name, is_ai=False)
+        
+        # settings
+        if ev.key == const.ESCAPE_KEY and substage == "" and (stage == "playing" or stage == "menu"): substage = "settings" # open settings
+        elif ev.key == const.ESCAPE_KEY and substage == "settings": substage = "" # close settings
 
-    return ev, stage, remotes, sock, code, my_car, error_msg
+    return ev, stage, substage, remotes, sock, code, my_car, error_msg
 
 def draw_controls_hud(ui_surf: pygame.Surface,
                       font_small: pygame.font.Font,
@@ -340,3 +341,9 @@ def draw_controls_hud(ui_surf: pygame.Surface,
 
     # Optional thin border around HUD
     pygame.draw.rect(ui_surf, (80, 88, 100), (x, y, hud_w, hud_h), max(1, sc(1)))
+
+def blur_surface(surface, world_size, scale_factor=0.1):
+    scaled_size = (max(1, int(world_size[0] * scale_factor)), max(1, int(world_size[1] * scale_factor)))
+    small_surface = pygame.transform.smoothscale(surface, scaled_size) # scale down the surface
+    blurred_surface = pygame.transform.smoothscale(small_surface, world_size) # scale back to original size
+    return blurred_surface
