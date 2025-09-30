@@ -2,6 +2,10 @@
 
 ## Updates History
 
+sep 29+ 2025
+
+- faut mettre a jour
+
 sep 28 2025
 
 - ui (update : settings, menu)
