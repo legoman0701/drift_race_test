@@ -1,6 +1,6 @@
 # global
 import math, time, json, pygame
-from typing import Dict, Any, Optional, Tuple
+from typing import Optional
 
 # local
 import const

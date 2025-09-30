@@ -16,6 +16,7 @@ from communication import connect_to_relay, handle_network_messages, send_networ
 from ui import draw_car, draw_track_ui, draw_menu, handle_menu_events, handle_game_events, draw_controls_hud, blur_surface
 from rpm import calc_engine_rpm, RpmParams
 from engine_audio import EngineAudio
+from map_chunks import ChunkedMap
 
 # ======= CONFIGURATION =======
 
@@ -68,7 +69,8 @@ def main():
         img = pygame.image.load(f"assets/AE86/Light_Spray/{i:04}.png").convert_alpha()
         light_spray_sprite.append(img)
         
-    track_image = pygame.image.load(f"assets/Map/Map1.png").convert()
+    track_image = pygame.image.load(f"assets/Map/Map{const.MAP_NUM}.png").convert()
+    chunk_map = ChunkedMap(root="assets/Map/Map1_chunks", tile_size=1024)
 
     stage = "menu" # menu | playing | error
     substage = "" # "" | settings
@@ -168,7 +170,7 @@ def main():
             I_AM_HOST = False
     
     # Renderer handles track, cars, and drift marks
-    renderer = WorldRenderer(track_image, flags)
+    renderer = WorldRenderer(track_image, flags, chunked_map=chunk_map)
 
     joysticks = [pygame.joystick.Joystick(i) for i in range(pygame.joystick.get_count())]
     for js in joysticks:
@@ -288,7 +290,7 @@ def main():
         
         
         # Build world size tuple used by step()
-        world_size = (const.WINDOW_WIDTH, const.WINDOW_HEIGHT) if stage != "playing" else (track_image.get_width(), track_image.get_height())
+        world_size = renderer.get_world_size(stage)
 
         # Prepare remotes view for the player: include network remotes + AI cars (so player can collide with AIs)
         remotes_with_ai_for_player = dict(remotes)
@@ -344,7 +346,7 @@ def main():
         cam.update(my_car, (const.WINDOW_WIDTH, const.WINDOW_HEIGHT) if stage != "playing" else (track_image.get_width(), track_image.get_height()))
 
         # Draw game world via renderer
-        world_surf, resized = renderer.render_world(
+        world_surf, resized, is_viewport = renderer.render_world(
             cam=cam,
             stage=stage,
             my_car=my_car,
@@ -354,8 +356,11 @@ def main():
             car_sprites_list=[shadow_sprite, ae86_sprite, light_spray_sprite],
         )
 
-        if resized:
+        if resized and not is_viewport:
             path_poly = path_finder.discover_track("assets/Map/Map1.png")
+
+        if is_viewport: final_surf = pygame.transform.smoothscale(world_surf, (const.WINDOW_WIDTH, const.WINDOW_HEIGHT)) # chunk mode
+        else: final_surf = cam.apply(world_surf) # classic mode
         
         ui_surf = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), pygame.SRCALPHA)
         ui_surf.fill((0,0,0,0)) # transparent surface
@@ -449,10 +454,8 @@ def main():
                     code = new_code
                     remotes = new_remotes
 
-        # Apply camera transform (zoom & pan) and blit to screen.
-        final_surf = cam.apply(world_surf)
-        screen.blit(final_surf, (0,0))
-        screen.blit(ui_surf, (0,0))
+        screen.blit(final_surf, (0,0)) # world surface (cars, ai, map...)
+        screen.blit(ui_surf, (0,0)) # top and bottom borders
         if ai_path_mode and stage == "playing":
             try:
                 top_right_pos = cam.x-(const.WINDOW_WIDTH/2)/cam.zoom, cam.y-(const.WINDOW_HEIGHT/2)/cam.zoom

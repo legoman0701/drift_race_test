@@ -1,4 +1,4 @@
-try: import pygame_ce as pygame
+try: import pygame_ce as pygame # type: ignore
 except Exception: import pygame
 
 def clamp(x, lo, hi):
