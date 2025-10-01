@@ -25,7 +25,7 @@ Notes:
 - A manifest.json is written in the output directory for reference.
 """
 import argparse, json, math, os, sys
-import const
+import src.config.const as const
 
 # Use pygame for zero-deps in your project (already installed). Pillow is optional.
 try:

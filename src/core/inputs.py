@@ -1,7 +1,7 @@
 import math,  pygame # global
 from typing import Optional, Dict, Any
 
-import const # local
+import config.const as const # local
 
 
 def get_text_input(surface: pygame.Surface, title_text: str, tip_text: str,
@@ -12,7 +12,7 @@ def get_text_input(surface: pygame.Surface, title_text: str, tip_text: str,
     while True:
         surface.fill((20, 20, 25))
         # caller draws UI frame around if needed
-        from ui import draw_track_ui  # local import to avoid cycle
+        from ui.ui import draw_track_ui  # local import to avoid cycle
         draw_track_ui(surface)
         title = font_big.render("Joining", True, const.WHITE_240)
         surface.blit(title, (const.WINDOW_WIDTH // 2 - title.get_width() // 2, const.TITLE_Y))
@@ -52,7 +52,7 @@ def get_name_input(surface, font_big, font_small, tag):
     pygame.key.set_repeat(const.KEY_REPEAT_DELAY, const.KEY_REPEAT_INTERVAL)
     text = ""
     error_msg = ""
-    from ui import draw_track_ui  # local import to avoid cycle
+    from ui.ui import draw_track_ui  # local import to avoid cycle
     while True:
         surface.fill((20, 20, 25))
         draw_track_ui(surface)
