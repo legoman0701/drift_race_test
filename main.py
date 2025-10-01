@@ -356,8 +356,9 @@ def main():
         if resized and not is_viewport:
             path_poly = path_finder.discover_track("assets/Map/Map1.png")
 
-        if is_viewport: final_surf = pygame.transform.smoothscale(world_surf, (const.WINDOW_WIDTH, const.WINDOW_HEIGHT)) # chunk mode
-        else: final_surf = cam.apply(world_surf) # classic mode
+        # Use nearest-neighbor scaling for crisp pixels when zooming in chunk mode
+        if is_viewport: final_surf = pygame.transform.scale(world_surf, (const.WINDOW_WIDTH, const.WINDOW_HEIGHT))  # chunk mode
+        else: final_surf = cam.apply(world_surf)  # classic mode
         
         ui_surf = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), pygame.SRCALPHA)
         ui_surf.fill((0,0,0,0)) # transparent surface

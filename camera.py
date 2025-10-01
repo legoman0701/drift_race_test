@@ -14,8 +14,8 @@ class Camera:
         self.offset = [0, 0]  # additional pan offset
 
     def update(self, target, world_size):
-        self.x = clamp(target.x + self.offset[0], self.width / 2 / self.zoom, world_size[0] - self.width / 2 / self.zoom)
-        self.y = clamp(target.y + self.offset[1], self.height / 2 / self.zoom, world_size[1] - self.height / 2 / self.zoom)
+        self.x = clamp(target.x + self.offset[0], self.width / 2 / self.zoom, world_size[0] - self.width / 2 / self.zoom) + target.vx / 4
+        self.y = clamp(target.y + self.offset[1], self.height / 4 / self.zoom, world_size[1] - self.height / 2 / self.zoom) + target.vy / 4
 
     def apply(self, world_surf):
         view_w = int(self.width / self.zoom)
