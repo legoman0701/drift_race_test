@@ -9,7 +9,7 @@ RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
 UI_SCALE = 1
 
 # World dimensions
-MAP_NUM = 2
+MAP_NUM = 1
 WINDOW_WIDTH, WINDOW_HEIGHT = 1000, 700
 TRACK_MARGIN = 40
 TRACK_COLOR = (35, 40, 50)
