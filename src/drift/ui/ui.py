@@ -3,11 +3,11 @@ import math, time, json, pygame
 from typing import Optional
 
 # local
-import config.const as const
-from core.car import CAR_LEN, CAR_WID
-from core.helpers import clamp, rand_code
-from core.inputs import get_name_input, get_code_input
-from net.communication import connect_to_relay, recv_jsons
+import drift.config.const as const
+from drift.core.car import CAR_LEN, CAR_WID
+from drift.core.helpers import clamp, rand_code
+from drift.core.inputs import get_name_input, get_code_input
+from drift.net.communication import connect_to_relay, recv_jsons
 
 
 def draw_car(surface, x, y, angle, name,

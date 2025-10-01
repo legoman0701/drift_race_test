@@ -38,6 +38,10 @@ Top-down drift racing game built with **pygame-ce**, featuring:
 - `pygame-ce` 2.5.x
 - (Optional) Controller support enabled in-game
 
+### Quick Run
+- `pip install -e .` (once on your venv)
+- `python -m drift`
+
 ### Multiplayer
 - The player who hosts acts as the server (peer-hosted).
 - The other player(s) join using the generated code.

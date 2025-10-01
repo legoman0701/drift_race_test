@@ -21,7 +21,7 @@ try:
 except Exception:  # pragma: no cover
     import pygame  # type: ignore
 
-from audio.engine_blend import EngineSoundBlend
+from drift.audio.engine_blend import EngineSoundBlend
 
 
 def db_to_linear(db: float) -> float:

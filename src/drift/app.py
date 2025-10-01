@@ -7,16 +7,16 @@ try: import pygame_ce as pygame # type: ignore
 except Exception: import pygame
 import json, time, random, sys, math, uuid, argparse
 # local imports
-import config.const as const, render.camera as camera, core.car as car, ui.button as btn, ai.path_finder as path_finder
-from render.renderer import WorldRenderer
-from core.helpers import clamp, rand_name
-from ai.ai import ai_algorithme
-from core.inputs import read_inputs
-from net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, recv_jsons
-from ui.ui import draw_track_ui, handle_game_events, draw_controls_hud, blur_surface
-from core.rpm import calc_engine_rpm
-from audio.engine_audio import EngineAudio
-from render.map_chunks import ChunkedMap
+import drift.config.const as const, drift.render.camera as camera, drift.core.car as car, drift.ui.button as btn, drift.ai.path_finder as path_finder
+from drift.render.renderer import WorldRenderer
+from drift.core.helpers import clamp, rand_name
+from drift.ai.ai import ai_algorithme
+from drift.core.inputs import read_inputs
+from drift.net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, recv_jsons
+from drift.ui.ui import draw_track_ui, handle_game_events, draw_controls_hud, blur_surface
+from drift.core.rpm import calc_engine_rpm
+from drift.audio.engine_audio import EngineAudio
+from drift.render.map_chunks import ChunkedMap
 
 # ======= CONFIGURATION =======
 
@@ -354,7 +354,7 @@ def main():
         )
 
         if resized and not is_viewport:
-            path_poly = path_finder.discover_track("assets/Map/Map1.png")
+            path_poly = path_finder.discover_track(f"assets/Map/Map{const.MAP_NUM}.png")
 
         # Use nearest-neighbor scaling for crisp pixels when zooming in chunk mode
         if is_viewport: final_surf = pygame.transform.scale(world_surf, (const.WINDOW_WIDTH, const.WINDOW_HEIGHT))  # chunk mode

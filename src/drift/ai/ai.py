@@ -1,6 +1,6 @@
 import math, pygame
 from typing import List, Tuple, Optional, Dict
-from core.helpers import clamp
+from drift.core.helpers import clamp
 
 
 def ai_algorithme(

@@ -3,9 +3,9 @@ from typing import Dict, Tuple, List, Optional
 try: import pygame_ce as pygame  # type: ignore
 except Exception: import pygame  # type: ignore
 # local
-import config.const as const
-from ui.ui import draw_car
-from render.map_chunks import ChunkedMap, TireMarkGrid
+import drift.config.const as const
+from drift.ui.ui import draw_car
+from drift.render.map_chunks import ChunkedMap, TireMarkGrid
 
 
 class WorldRenderer:
