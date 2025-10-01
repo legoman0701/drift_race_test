@@ -47,9 +47,15 @@ class WorldRenderer:
         # Draw only the visible track region into the world surface
         top_left = (cam.x - (const.WINDOW_WIDTH / 2) / cam.zoom,
                     cam.y - (const.WINDOW_HEIGHT / 2) / cam.zoom)
+        # Use an integer rect and clamp it to the track_image bounds before calling subsurface.
         camera_rect = pygame.Rect(top_left[0], top_left[1], const.WINDOW_WIDTH / cam.zoom, const.WINDOW_HEIGHT / cam.zoom)
-        visible = self.track_image.subsurface(camera_rect)
-        world_surf.blit(visible, top_left)
+        camera_int = pygame.Rect(int(camera_rect.left), int(camera_rect.top), int(camera_rect.width), int(camera_rect.height))
+        surf_rect = self.track_image.get_rect()
+        inter = camera_int.clip(surf_rect)
+        if inter.width > 0 and inter.height > 0:
+            visible = self.track_image.subsurface(inter)
+            # Blit at the intersection's topleft so the visible piece appears at the correct world location.
+            world_surf.blit(visible, inter.topleft)
 
     def _update_tire_marks(self, my_car, ai_cars: List, remotes: Dict[str, Dict], stage: str) -> None:
         # Local car drift marks
@@ -74,8 +80,12 @@ class WorldRenderer:
         top_left = (cam.x - (const.WINDOW_WIDTH / 2) / cam.zoom,
                     cam.y - (const.WINDOW_HEIGHT / 2) / cam.zoom)
         camera_rect = pygame.Rect(top_left[0], top_left[1], const.WINDOW_WIDTH / cam.zoom, const.WINDOW_HEIGHT / cam.zoom)
-        visible = self.tire_mark.subsurface(camera_rect)
-        world_surf.blit(visible, top_left)
+        camera_int = pygame.Rect(int(camera_rect.left), int(camera_rect.top), int(camera_rect.width), int(camera_rect.height))
+        surf_rect = self.tire_mark.get_rect()
+        inter = camera_int.clip(surf_rect)
+        if inter.width > 0 and inter.height > 0:
+            visible = self.tire_mark.subsurface(inter)
+            world_surf.blit(visible, inter.topleft)
 
     # ---------- Chunked helpers (viewport-sized) ----------
     def _draw_track_chunked(self, viewport_surf: pygame.Surface, cam) -> pygame.Rect:
