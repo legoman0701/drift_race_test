@@ -3,11 +3,11 @@ import math, time, json, pygame
 from typing import Optional
 
 # local
-import const
-from car import CAR_LEN, CAR_WID
-from helpers import clamp, rand_code
-from inputs import get_name_input, get_code_input
-from communication import connect_to_relay, recv_jsons
+import drift.config.const as const
+from drift.core.car import CAR_LEN, CAR_WID
+from drift.core.helpers import clamp, rand_code
+from drift.core.inputs import get_name_input, get_code_input
+from drift.net.communication import connect_to_relay, recv_jsons
 
 
 def draw_car(surface, x, y, angle, name,
@@ -185,7 +185,7 @@ def handle_game_events(screen, ev, stage, substage, remotes, ai_cars, sock, code
             import random
             spawnx = random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200)
             spawny = random.randint(const.TRACK_MARGIN + 120, const.WINDOW_HEIGHT - const.TRACK_MARGIN - 120)
-            import car
+            import core.car as car
             my_car = car.Car(spawnx, spawny, my_name, is_ai=False)
         
         # settings

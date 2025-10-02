@@ -1,7 +1,7 @@
 import socket, json, math
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
-import const
+import drift.config.const as const
 
 
 def recv_jsons(sock: socket.socket):

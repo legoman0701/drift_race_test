@@ -1,5 +1,5 @@
 import random, string, math # global
-import const  # local
+import drift.config.const as const  # local
 
 
 def clamp(x: float, lo: float, hi: float) -> float:
