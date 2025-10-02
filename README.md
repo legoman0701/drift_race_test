@@ -70,7 +70,12 @@ Top-down drift racing game built with **pygame-ce**, featuring:
 
 ## Changelog
 
+### oct 02 2025
+- v0.6.6 : cam system adjusted
+- clean : entire project structure rework
+
 ### oct 01 2025
+- patch : subsurface rect outside surf area -> fixed
 - v0.6.5 : improved camera logic ; adjusted scaling method for chunk mode
 - clean : better track managing
 - debug : chunk system tested on a 12k track map

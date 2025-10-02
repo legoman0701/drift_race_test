@@ -12,10 +12,24 @@ class Camera:
         self.x = width // 2
         self.y = height // 2
         self.offset = [0, 0]  # additional pan offset
+        # Smoothed camera velocity components (persist across frames)
+        self.cam_vec_x = 0.0
+        self.cam_vec_y = 0.0
 
     def update(self, target, world_size):
-        self.x = clamp(target.x + self.offset[0], self.width / 2 / self.zoom, world_size[0] - self.width / 2 / self.zoom) + target.vx / 4
-        self.y = clamp(target.y + self.offset[1], self.height / 4 / self.zoom, world_size[1] - self.height / 2 / self.zoom) + target.vy / 4
+        # Exponential smoothing for camera movement based on target velocity
+        self.cam_vec_x = (target.vx / 4) * 0.1 + self.cam_vec_x * 0.9
+        self.cam_vec_y = (target.vy / 4) * 0.1 + self.cam_vec_y * 0.9
+        self.x = clamp(
+            target.x + self.offset[0],
+            self.width / 2 / self.zoom,
+            world_size[0] - self.width / 2 / self.zoom,
+        ) + self.cam_vec_x
+        self.y = clamp(
+            target.y + self.offset[1],
+            self.height / 2 / self.zoom,
+            world_size[1] - self.height / 2 / self.zoom,
+        ) + self.cam_vec_y
 
     def apply(self, world_surf):
         view_w = int(self.width / self.zoom)
@@ -28,3 +42,4 @@ class Camera:
         view_rect = pygame.Rect(left, top, view_w, view_h)
         view = world_surf.subsurface(view_rect)
         return pygame.transform.scale(view, (self.width, self.height))
+    
