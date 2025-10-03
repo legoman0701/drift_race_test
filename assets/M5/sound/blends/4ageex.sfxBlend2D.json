@@ -1,0 +1,25 @@
+{
+    "header" : {
+        "version" : 1
+    },
+    "eventName" : "event:>Engine>default",
+    "samples" : 
+    [
+        [
+			["art/sound/engine/4ageex/idle_1029.wav", 1029],
+			["art/sound/engine/4ageex/idle_2705.wav", 2705],
+			["art/sound/engine/4ageex/3472b_back.wav", 3472],
+			["art/sound/engine/4ageex/4905a.wav", 4905],
+			["art/sound/engine/4ageex/5490a.wav", 5490],
+			["art/sound/engine/4ageex/7590a.wav", 7590]
+        ],
+        [
+			["art/sound/engine/4ageex/idle_1029.wav", 1029],
+			["art/sound/engine/4ageex/idle_2705.wav", 2705],
+			["art/sound/engine/4ageex/3472b_back.wav", 3472],
+			["art/sound/engine/4ageex/4905a.wav", 4905],
+			["art/sound/engine/4ageex/5490a.wav", 5490],
+			["art/sound/engine/4ageex/7590a.wav", 7590]
+        ]
+    ]
+}
