@@ -1,6 +1,14 @@
 # Pygame Drift Car Racing — AI & Multiplayer
 
 Top-down drift racing game built with **pygame-ce**, featuring:
+- **Online multiplayer** (host or join via code; the host's PC acts as the server)
+- **Advanced AI driving** (neural network-based AI, player auto-drive and AI opponents)
+- **Multiple car models** (AE86, M5 with unique sound profiles)
+- **Advanced audio system** (threaded engine RPM simulation, gear shifts, turbo sounds)
+- **Track chunking** for very large maps (12k+ resolution support)
+- **Camera zoom/pan** and quality-of-life settingse Drift Car Racing — AI & Multiplayer
+
+Top-down drift racing game built with **pygame-ce**, featuring:
 - **Online multiplayer** (host or join via code; the host’s PC acts as the server)
 - **AI driving** (player auto-drive and AI opponents)
 - **Track chunking** for very large maps
@@ -52,23 +60,41 @@ Top-down drift racing game built with **pygame-ce**, featuring:
 ## Features
 
 ### AI modes
-- Player auto-drive via pathfinding
+- Player auto-drive via advanced pathfinding algorithm
+- Neural network-based AI opponents with speed awareness
 - Spawnable AI opponents (N) in both offline and multiplayer
 ### Drift system
 - Drift detection, scoring objects, and tire marks that fade over time
 ### Large track support
 - Image auto-slicing into tiles (slice_map.py)
 - Chunked rendering and boundary collisions across tiles
+- Support for 12k+ resolution track maps
 ### Camera
-- Smooth zoom/dezoom and clamped panning via a camera object
+- Smooth zoom/dezoom and clamped panning via camera object
+- Improved scaling methods for chunk mode
 ### Audio
-- Engine RPM simulation and sound system (gauges, temp sounds)
+- Threaded audio system for performance
+- Engine RPM simulation with realistic sound blending
+- Gear shift sounds and turbo effects
+- Multiple sound profiles per car model
 ### UI
-- Lobby + in-game settings, improved menus, 64-rotation car sprites (car/shadow/headlights)
+- Lobby + in-game settings, improved menus
+- 64-rotation car sprites (car/shadow/headlights)
+- Multiple car models with unique assets
 
 ---
 
 ## Changelog
+
+### oct 06 2025
+- v0.7.0 : better sound system with new sfx
+- feature : threaded audio system for improved performance
+- enhancement : new audio system with turbo sound effects
+- deps : add dependencies for pillow and numpy
+- clean : update sources and remove dev files
+
+### oct 03 2025
+- feature : added M5 car model and AI neural network model
 
 ### oct 02 2025
 - v0.6.6 : cam system adjusted
@@ -163,13 +189,16 @@ Top-down drift racing game built with **pygame-ce**, featuring:
 ## Misc
 
 ### Known Issues
-- racing ai behavior and not drift racing behavior
+- Racing AI behavior (not full drift racing behavior)
+- Performance optimization needed for large audio processing
 
 ### To-Do List
-- optimize drift/engine sounds
-- multiple car models (ae86, dodge...)
-- multiple track maps
-- customize keybinds
+- Optimize threaded audio system performance
+- Expand neural network AI training
+- Add more car models (Dodge, etc.)
+- Multiple track maps with different themes
+- Customize keybinds interface
+- Sound effect variety expansion
 
 ---
 
