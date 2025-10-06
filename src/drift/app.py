@@ -307,7 +307,7 @@ def main():
         if controls is None:
             controls = read_inputs(joysticks, my_car, cam, cursor_follow_mode, ai_path_mode)
         my_car.step(controls, dt, remotes_with_ai_for_player, world_size)
-        # Update engine audio based on RPM and throttle
+        # Update engine audio based on RPM and throttle with enhanced drift characteristics
         try:
             if 'engine_sound' in locals() and engine_sound is not None:
                 speed_units = math.hypot(my_car.vx, my_car.vy)
@@ -323,8 +323,15 @@ def main():
                     _state=engine_state,
                 )
                 engine_state["last_rpm"] = rpm
-                # Thread-safe audio state update (smooth, independent of FPS)
-                engine_sound.set_engine_state(rpm=rpm, throttle=max(0.0, th))
+                # Get current gear from engine state for gear shift sounds
+                current_gear = engine_state.get("gear", 0)
+                # Thread-safe audio state update with gear and drift info
+                engine_sound.set_engine_state(
+                    rpm=rpm, 
+                    throttle=max(0.0, th),
+                    current_gear=current_gear,
+                    drift_ratio=my_car.drift_ratio
+                )
         except Exception:
             pass
 

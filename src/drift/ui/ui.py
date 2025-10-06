@@ -200,7 +200,7 @@ def draw_controls_hud(ui_surf: pygame.Surface,
                       th: float,
                       br: float,
                       rpm: Optional[float] = None,
-                      rpm_redline: float = 6500.0) -> None:
+                      rpm_redline: float = 7000.0) -> None:
     """Draw bottom-right HUD with RPM gauge, steering wheel, throttle and brake bars.
 
     Parameters

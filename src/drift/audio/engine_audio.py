@@ -28,6 +28,12 @@ try:
 except Exception:  # pragma: no cover
     TurboSound = None  # type: ignore
 
+# NEW: gear shift sound import
+try:
+    from drift.audio.gear_shift_sound import GearShiftSound  # type: ignore
+except Exception:  # pragma: no cover
+    GearShiftSound = None  # type: ignore
+
 
 def parse_jbeam_file(file_path: str) -> dict:
     """Parse a JBEAM file, handling comments and trailing commas."""
@@ -163,7 +169,9 @@ class AudioController(threading.Thread):
     def get_engine_state(self):
         """Thread-safe method to read engine state from audio thread."""
         with self._state_lock:
-            return self._rpm, self._throttle
+            gear = getattr(self, '_current_gear', 0)
+            drift_ratio = getattr(self, '_drift_ratio', 0.0)
+            return self._rpm, self._throttle, gear, drift_ratio
     
     def start_audio_thread(self):
         """Start the audio processing thread."""
@@ -189,11 +197,11 @@ class AudioController(threading.Thread):
             last_time = current_time
             
             # Get current engine state
-            rpm, throttle = self.get_engine_state()
+            rpm, throttle, current_gear, drift_ratio = self.get_engine_state()
             
             # Update audio with fixed timestep
             try:
-                self.engine_audio.update(rpm, throttle, dt)
+                self.engine_audio.update(rpm, throttle, dt, current_gear, drift_ratio)
             except Exception as e:
                 print(f"Audio thread error: {e}")
             
@@ -211,7 +219,7 @@ class EngineAudio:
                  jbeam_file: str = "assets/AE86/sound/bx_sr20det_engine.jbeam",
                  exhaust_json: str = None,
                  # --- Master volumes ---
-                 engine_master_volume: float = 0.1,
+                 engine_master_volume: float = 0.2,
                  turbo_master_volume: float = 0.2,
                  # --- Turbo parameters ---
                  turbo_wav: str = "assets/AE86/sound/turbo_03.wav",
@@ -231,6 +239,10 @@ class EngineAudio:
                  bov_spool_activation: float = 0.6,  # NEW: minimum spool (0-1) for BOV to even consider
                  bov_volume_curve: float = 0.85,  # NEW: exponent shaping for volume scaling vs spool
                  enable_bov: bool = True,
+                 # --- Gear shift parameters ---
+                 enable_gear_shifts: bool = True,
+                 gear_shift_volume: float = 0.8,
+                 aggressive_shift_threshold: float = 0.4,  # drift ratio threshold for aggressive shifts
                  ):
         
         # Load sound samples for intake
@@ -367,6 +379,23 @@ class EngineAudio:
                 print(f"Warning: Could not load BOV sound: {e}")
                 self._bov_cfg["enabled"] = False
 
+        # --- Gear shift sound setup ---
+        self._gear_shift = None
+        self._gear_shift_enabled = enable_gear_shifts and GearShiftSound is not None
+        if self._gear_shift_enabled:
+            try:
+                self._gear_shift = GearShiftSound(
+                    shift_up_volume=gear_shift_volume,
+                    shift_down_volume=gear_shift_volume * 1.2,  # Downshifts slightly louder
+                    gear_grind_volume=gear_shift_volume * 0.8
+                )
+                print("Gear shift sound system initialized")
+            except Exception as e:
+                print(f"Warning: Gear shift sound disabled ({e})")
+                self._gear_shift_enabled = False
+        
+        self._aggressive_shift_threshold = max(0.0, min(1.0, aggressive_shift_threshold))
+        
         # --- Audio thread setup ---
         self._audio_controller = None
         self._threaded_mode = False
@@ -393,10 +422,21 @@ class EngineAudio:
             self._threaded_mode = False
             print("Audio thread mode disabled")
 
-    def set_engine_state(self, rpm: float, throttle: float):
+    def set_engine_state(self, rpm: float, throttle: float, 
+                         current_gear: int = 0, drift_ratio: float = 0.0):
         """Update engine state. Use this instead of update() when using audio thread."""
         if self._threaded_mode and self._audio_controller:
-            self._audio_controller.set_engine_state(rpm, throttle)
+            # Store additional state for thread-safe access
+            with self._audio_controller._state_lock:
+                self._audio_controller._rpm = float(rpm)
+                self._audio_controller._throttle = float(throttle)
+                # Add new state variables
+                if not hasattr(self._audio_controller, '_current_gear'):
+                    self._audio_controller._current_gear = 0
+                if not hasattr(self._audio_controller, '_drift_ratio'):
+                    self._audio_controller._drift_ratio = 0.0
+                self._audio_controller._current_gear = int(current_gear)
+                self._audio_controller._drift_ratio = float(drift_ratio)
         else:
             print("Warning: set_engine_state() called but audio thread not running")
 
@@ -410,21 +450,49 @@ class EngineAudio:
             self.turbo_enabled = False
             print("Turbo sound disabled")
 
-    def update(self, rpm: float, throttle: float, dt: float) -> None:
-        """Update engine audio and optional turbo spool."""
+    def update(self, rpm: float, throttle: float, dt: float, 
+               current_gear: int = 0, drift_ratio: float = 0.0) -> None:
+        """Update engine audio and optional turbo spool + gear shifts."""
         # Clamp inputs
         throttle = max(0.0, min(1.0, throttle))
         rpm = max(0, rpm)
         dt = max(1e-5, dt)
+        drift_ratio = max(0.0, min(1.0, drift_ratio))
+
+        # --- Enhanced drift characteristics ---
+        # Make engine more aggressive when drifting
+        drift_boost_factor = 1.0 + (drift_ratio ** 1.5) * 0.4  # Up to 40% boost when fully drifting
+        
+        # Modify throttle response when drifting for more aggressive sound
+        effective_throttle = throttle
+        if drift_ratio > 0.3:
+            # Make throttle response more snappy and aggressive during drift
+            effective_throttle = min(1.0, throttle * drift_boost_factor)
+            # Add some "pop" when lifting throttle during drift
+            if throttle < 0.2 and drift_ratio > 0.5:
+                effective_throttle = max(effective_throttle, 0.3 * drift_ratio)
 
         # --- 1. Compute target linear gains per layer (pre-normalization) ---
-        intake_load_mix = calculate_load_mix(throttle, self.intake_config.max_load_mix, self.intake_config.min_load_mix)
-        exhaust_load_mix = calculate_load_mix(throttle, self.exhaust_config.max_load_mix, self.exhaust_config.min_load_mix)
+        intake_load_mix = calculate_load_mix(effective_throttle, 
+                                           self.intake_config.max_load_mix, 
+                                           self.intake_config.min_load_mix)
+        exhaust_load_mix = calculate_load_mix(effective_throttle, 
+                                            self.exhaust_config.max_load_mix, 
+                                            self.exhaust_config.min_load_mix)
 
-        intake_on_gain = intake_load_mix * self.intake_config.on_load_gain_linear * self.intake_config.main_gain_linear * self.intake_config.intake_muffling
-        intake_off_gain = (1.0 - intake_load_mix) * self.intake_config.off_load_gain_linear * self.intake_config.main_gain_linear * self.intake_config.intake_muffling
-        exhaust_on_gain = exhaust_load_mix * self.exhaust_config.on_load_gain_linear * self.exhaust_config.main_gain_linear
-        exhaust_off_gain = (1.0 - exhaust_load_mix) * self.exhaust_config.off_load_gain_linear * self.exhaust_config.main_gain_linear
+        # Apply drift boost to gain calculations
+        intake_base_gain = self.intake_config.main_gain_linear * self.intake_config.intake_muffling
+        exhaust_base_gain = self.exhaust_config.main_gain_linear
+        
+        if drift_ratio > 0.3:
+            # Boost exhaust more than intake during drift for more aggressive sound
+            intake_base_gain *= (1.0 + drift_ratio * 0.2)
+            exhaust_base_gain *= drift_boost_factor
+
+        intake_on_gain = intake_load_mix * self.intake_config.on_load_gain_linear * intake_base_gain
+        intake_off_gain = (1.0 - intake_load_mix) * self.intake_config.off_load_gain_linear * intake_base_gain
+        exhaust_on_gain = exhaust_load_mix * self.exhaust_config.on_load_gain_linear * exhaust_base_gain
+        exhaust_off_gain = (1.0 - exhaust_load_mix) * self.exhaust_config.off_load_gain_linear * exhaust_base_gain
 
         # --- 2. Layer pair normalization (on/off pairs) to keep crossfade sum <= 1.0 ---
         def normalize_pair(a: float, b: float, cap: float = 1.0):
@@ -472,43 +540,75 @@ class EngineAudio:
         self._update_sound_layer(self.exhaust_off, rpm, exhaust_off_gain)
         self._update_sound_layer(self.exhaust_on, rpm, exhaust_on_gain)
 
-        # --- 7. Turbo spool / playback ---
+        # --- 7. Enhanced Turbo spool / playback with drift characteristics ---
         if self.turbo and self.turbo_enabled:
             # target spool is based on throttle and rpm fraction
             rpm_ratio = min(1.0, rpm / max(100.0, self._turbo_cfg["target_rpm"]))
-            target = throttle * rpm_ratio
-            if target > self._turbo_spool:
-                self._turbo_spool = min(1.0, self._turbo_spool + self._turbo_cfg["spool_rate"] * dt * (target - self._turbo_spool + 0.2))
+            base_target = effective_throttle * rpm_ratio
+            
+            # Boost turbo spool during drift for more aggressive sound
+            if drift_ratio > 0.3:
+                drift_spool_boost = 1.0 + (drift_ratio ** 1.2) * 0.6  # Up to 60% boost when drifting
+                base_target = min(1.0, base_target * drift_spool_boost)
+            
+            if base_target > self._turbo_spool:
+                spool_gain = 0.2 + (drift_ratio * 0.3)  # Faster spool during drift
+                self._turbo_spool = min(1.0, self._turbo_spool + self._turbo_cfg["spool_rate"] * dt * (base_target - self._turbo_spool + spool_gain))
             else:
-                self._turbo_spool = max(0.0, self._turbo_spool - self._turbo_cfg["decay_rate"] * dt * (self._turbo_spool - target + 0.05))
+                decay_rate = self._turbo_cfg["decay_rate"]
+                # Slower decay during drift to maintain aggressive sound longer
+                if drift_ratio > 0.4:
+                    decay_rate *= (1.0 - drift_ratio * 0.4)
+                self._turbo_spool = max(0.0, self._turbo_spool - decay_rate * dt * (self._turbo_spool - base_target + 0.05))
+            
             pitch_span = self._turbo_cfg["max_pitch"] - self._turbo_cfg["min_pitch"]
-            pitch = self._turbo_cfg["min_pitch"] + pitch_span * (self._turbo_spool ** 0.65)  # mild easing
+            # Make pitch more aggressive during drift
+            pitch_curve = 0.65 + (drift_ratio * 0.2)  # More aggressive pitch curve when drifting
+            pitch = self._turbo_cfg["min_pitch"] + pitch_span * (self._turbo_spool ** pitch_curve)
+            
             turbo_vol = self._turbo_cfg["volume"] * (0.3 + 0.7 * self._turbo_spool)
+            # Boost turbo volume during drift
+            if drift_ratio > 0.2:
+                turbo_vol *= (1.0 + drift_ratio * 0.5)
             turbo_vol *= self.turbo_master_volume
             self.turbo.play(pitch, volume=turbo_vol)
         elif self.turbo and not self.turbo_enabled:
             self.turbo.stop()
 
-        # --- 8. BOV logic (trigger on rapid throttle lift if spool high) ---
+        # --- 8. Enhanced BOV logic with drift sensitivity ---
         if self._bov_cfg["enabled"] and self._bov_sound:
             self._bov_time_since += dt
             drop = self._last_throttle - throttle
-            if (drop >= self._bov_cfg["min_drop"] and
+            
+            # Make BOV more sensitive during drift
+            min_drop = self._bov_cfg["min_drop"]
+            if drift_ratio > 0.4:
+                min_drop *= (1.0 - drift_ratio * 0.3)  # Easier to trigger BOV when drifting
+            
+            if (drop >= min_drop and
                 self._turbo_spool >= self._bov_cfg["spool_activation"] and
                 throttle < 0.2 and  # ensure mostly closed
                 self._bov_time_since >= self._bov_cfg["cooldown"]):
-                # play one-shot
+                # play one-shot with drift-enhanced volume
                 try:
                     self._bov_sound.stop()  # ensure retrigger crisp
-                    self._bov_sound.set_volume(self._compute_bov_volume())
+                    bov_volume = self._compute_bov_volume()
+                    if drift_ratio > 0.3:
+                        bov_volume *= (1.0 + drift_ratio * 0.4)  # Louder BOV when drifting
+                    self._bov_sound.set_volume(min(1.0, bov_volume))
                     self._bov_sound.play()
                 except Exception:
                     pass
                 self._bov_time_since = 0.0
+        
+        # --- 9. Gear shift sound update ---
+        if self._gear_shift and self._gear_shift_enabled:
+            self._gear_shift.update(current_gear, rpm, throttle, drift_ratio)
+        
         self._last_throttle = throttle
 
     def stop_all(self):
-        """Stop all looping sounds (engine layers + turbo) and audio thread."""
+        """Stop all looping sounds (engine layers + turbo + gear shifts) and audio thread."""
         # Stop audio thread first
         self.stop_audio_thread()
         
@@ -521,6 +621,10 @@ class EngineAudio:
                     pass
         if self.turbo:
             self.turbo.stop()
+        
+        # Stop gear shift sounds
+        if self._gear_shift:
+            self._gear_shift.stop_all()
 
     def _update_sound_layer(self, sound_layer, rpm: float, gain_multiplier: float):
         """Update a sound layer (on or off throttle) based on RPM with BeamNG-style mixing."""
@@ -644,4 +748,4 @@ class EngineAudio:
         }
 
 
-__all__ = ["EngineAudio", "AudioController", "JBeamSoundConfig", "db_to_linear", "calculate_load_mix", "parse_jbeam_file", "TurboSound"]
+__all__ = ["EngineAudio", "AudioController", "JBeamSoundConfig", "db_to_linear", "calculate_load_mix", "parse_jbeam_file", "TurboSound", "GearShiftSound"]
