@@ -86,16 +86,18 @@ Top-down drift racing game built with **pygame-ce**, featuring:
 
 ## Changelog
 
+### oct 07 2025
+- clean : fixed pyinstaller
+
 ### oct 06 2025
-- fixed pyinstaller
-- v0.7.0 : better sound system with new sfx
-- feature : threaded audio system for improved performance
-- enhancement : new audio system with turbo sound effects
-- deps : add dependencies for pillow and numpy
+- v0.7.2 : better sound system with new sfx
+- v0.7.1 : threaded audio system for improved performance
 - clean : update sources and remove dev files
+- clean : add dependencies for pillow and numpy
+- v0.7.0 : new audio system with turbo sound effects
 
 ### oct 03 2025
-- feature : added M5 car model and AI neural network model
+- v0.6.7 : added M5 car model and AI neural network model
 
 ### oct 02 2025
 - v0.6.6 : cam system adjusted
@@ -220,7 +222,9 @@ Top-down drift racing game built with **pygame-ce**, featuring:
 ![v1-2](assets/demo/v1-2.png)
 ![v1-3](assets/demo/v1-3.png)
 
+### v0.7
+[Watch this video](https://www.youtube.com/watch?v=Qid3QSuOBOc)
 
-source
+## Sources
 
-https://samplefocus.com/samples/blow-off-valve-supra-stutututu
+- https://samplefocus.com/samples/blow-off-valve-supra-stutututu
