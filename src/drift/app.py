@@ -97,6 +97,9 @@ def main():
     engine_sound = None
     try:
         engine_sound = EngineAudio()
+        # Start audio thread at 100 Hz for smooth audio independent of FPS
+        engine_sound.start_audio_thread(120.0)
+        print("Threaded audio system initialized")
     except Exception as e:
         print("Engine sound init failed:", e)
 
@@ -224,7 +227,7 @@ def main():
                     except Exception: pass
                 try:
                     if 'engine_sound' in locals() and engine_sound:
-                        engine_sound.stop()
+                        engine_sound.stop_all()  # This stops the audio thread and all sounds
                 except Exception:
                     pass
                 pygame.quit()
@@ -320,7 +323,8 @@ def main():
                     _state=engine_state,
                 )
                 engine_state["last_rpm"] = rpm
-                engine_sound.update(rpm=rpm, throttle=max(0.0, th), dt=dt)
+                # Thread-safe audio state update (smooth, independent of FPS)
+                engine_sound.set_engine_state(rpm=rpm, throttle=max(0.0, th))
         except Exception:
             pass
 

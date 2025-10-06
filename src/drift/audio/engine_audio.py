@@ -18,6 +18,8 @@ except Exception:  # pragma: no cover
 import json
 import math
 import re
+import threading
+import time
 from typing import Optional  # added
 
 # NEW: turbo import
@@ -129,6 +131,77 @@ class JBeamSoundConfig:
         self.main_gain_linear = db_to_linear(self.main_gain)
         self.on_load_gain_linear = self.on_load_gain  # These are already linear multipliers
         self.off_load_gain_linear = self.off_load_gain
+
+
+class AudioController(threading.Thread):
+    """Separate thread for audio processing at fixed rate independent of game FPS."""
+    
+    def __init__(self, engine_audio, update_rate: float = 100.0):
+        """Initialize audio controller thread.
+        
+        Args:
+            engine_audio: EngineAudio instance to control
+            update_rate: Updates per second (Hz) for audio processing
+        """
+        super().__init__(daemon=True)
+        self.engine_audio = engine_audio
+        self.update_interval = 1.0 / update_rate
+        self._running = False
+        self._state_lock = threading.Lock()
+        
+        # Thread-safe state variables
+        self._rpm = 0.0
+        self._throttle = 0.0
+        self._last_update = time.perf_counter()
+        
+    def set_engine_state(self, rpm: float, throttle: float):
+        """Thread-safe method to update engine state from game thread."""
+        with self._state_lock:
+            self._rpm = float(rpm)
+            self._throttle = float(throttle)
+    
+    def get_engine_state(self):
+        """Thread-safe method to read engine state from audio thread."""
+        with self._state_lock:
+            return self._rpm, self._throttle
+    
+    def start_audio_thread(self):
+        """Start the audio processing thread."""
+        if not self._running:
+            self._running = True
+            self.start()
+            print(f"Audio thread started at {1.0/self.update_interval:.1f} Hz")
+    
+    def stop_audio_thread(self):
+        """Stop the audio processing thread."""
+        if self._running:
+            self._running = False
+            self.join(timeout=1.0)
+            print("Audio thread stopped")
+    
+    def run(self):
+        """Main audio thread loop - runs at fixed rate independent of game FPS."""
+        last_time = time.perf_counter()
+        
+        while self._running:
+            current_time = time.perf_counter()
+            dt = current_time - last_time
+            last_time = current_time
+            
+            # Get current engine state
+            rpm, throttle = self.get_engine_state()
+            
+            # Update audio with fixed timestep
+            try:
+                self.engine_audio.update(rpm, throttle, dt)
+            except Exception as e:
+                print(f"Audio thread error: {e}")
+            
+            # Sleep to maintain target update rate
+            elapsed = time.perf_counter() - current_time
+            sleep_time = max(0, self.update_interval - elapsed)
+            if sleep_time > 0:
+                time.sleep(sleep_time)
 
 
 class EngineAudio:
@@ -294,6 +367,39 @@ class EngineAudio:
                 print(f"Warning: Could not load BOV sound: {e}")
                 self._bov_cfg["enabled"] = False
 
+        # --- Audio thread setup ---
+        self._audio_controller = None
+        self._threaded_mode = False
+
+    def start_audio_thread(self, update_rate: float = 100.0):
+        """Start audio processing in a separate thread at fixed rate.
+        
+        Args:
+            update_rate: Updates per second (Hz) for audio processing
+        """
+        if self._audio_controller is None:
+            self._audio_controller = AudioController(self, update_rate)
+            self._audio_controller.start_audio_thread()
+            self._threaded_mode = True
+            print("Audio thread mode enabled")
+        else:
+            print("Audio thread already running")
+
+    def stop_audio_thread(self):
+        """Stop the audio processing thread."""
+        if self._audio_controller is not None:
+            self._audio_controller.stop_audio_thread()
+            self._audio_controller = None
+            self._threaded_mode = False
+            print("Audio thread mode disabled")
+
+    def set_engine_state(self, rpm: float, throttle: float):
+        """Update engine state. Use this instead of update() when using audio thread."""
+        if self._threaded_mode and self._audio_controller:
+            self._audio_controller.set_engine_state(rpm, throttle)
+        else:
+            print("Warning: set_engine_state() called but audio thread not running")
+
     def enable_turbo(self, enabled: bool = True):
         if enabled and self.turbo and not self.turbo_enabled:
             self.turbo_enabled = True
@@ -402,7 +508,11 @@ class EngineAudio:
         self._last_throttle = throttle
 
     def stop_all(self):
-        """Stop all looping sounds (engine layers + turbo)."""
+        """Stop all looping sounds (engine layers + turbo) and audio thread."""
+        # Stop audio thread first
+        self.stop_audio_thread()
+        
+        # Stop all sound layers
         for layer in (self.intake_off, self.intake_on, self.exhaust_off, self.exhaust_on):
             for snd, _ in layer:
                 try:
@@ -534,4 +644,4 @@ class EngineAudio:
         }
 
 
-__all__ = ["EngineAudio", "JBeamSoundConfig", "db_to_linear", "calculate_load_mix", "parse_jbeam_file", "TurboSound"]
+__all__ = ["EngineAudio", "AudioController", "JBeamSoundConfig", "db_to_linear", "calculate_load_mix", "parse_jbeam_file", "TurboSound"]
