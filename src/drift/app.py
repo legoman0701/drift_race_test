@@ -96,10 +96,7 @@ def main():
     # Engine audio: 4A-GE Bluetop intake+exhaust layers
     engine_sound = None
     try:
-        engine_sound = EngineAudio(
-            intake_blend_json="assets/AE86/sound/blends/4agein.sfxBlend2D.json",
-            exhaust_blend_json="assets/AE86/sound/blends/4ageex.sfxBlend2D.json",
-        )
+        engine_sound = EngineAudio()
     except Exception as e:
         print("Engine sound init failed:", e)
 
