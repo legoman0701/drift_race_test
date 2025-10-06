@@ -87,6 +87,7 @@ Top-down drift racing game built with **pygame-ce**, featuring:
 ## Changelog
 
 ### oct 06 2025
+- fixed pyinstaller
 - v0.7.0 : better sound system with new sfx
 - feature : threaded audio system for improved performance
 - enhancement : new audio system with turbo sound effects
