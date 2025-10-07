@@ -13,7 +13,7 @@ ENGINE_ACC      = 450.0
 #DRAG            = 0.35
 #ROLLING         = 1.6
 LATERAL_GRIP    = 4
-STEER_SENS      = 1/50
+STEER_SENS      = 1/25
 #DRIFT_SENS      = 1/8000
 OVERSTEER       = 1.5/100
 #MAX_SPEED       = 1200.0
@@ -71,6 +71,9 @@ class Car:
         drift_moment = (STEER_SENS * st * math.copysign(v_forward, th) + (OVERSTEER * -self.v_angle))
         drift_moment +=  math.copysign(self.v_angle/100, st)
         self.v_angle += drift_moment
+
+        if self.drift_ratio < 0.3:
+            self.v_angle = self.v_angle * self.drift_ratio
         
         self.angle += ((STEER_SENS * st * v_forward)*(1-self.drift_ratio) + self.v_angle*self.drift_ratio * dt) * dt
 
