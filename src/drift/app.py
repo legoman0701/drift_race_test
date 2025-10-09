@@ -5,7 +5,7 @@
 # global imports
 try: import pygame_ce as pygame # type: ignore
 except Exception: import pygame
-import json, time, random, sys, math, uuid, argparse
+import json, time, random, sys, math, uuid, argparse, threading
 # local imports
 import drift.config.const as const, drift.render.camera as camera, drift.core.car as car, drift.ui.button as btn, drift.ai.path_finder as path_finder
 from drift.render.renderer import WorldRenderer
@@ -17,6 +17,134 @@ from drift.ui.ui import draw_track_ui, handle_game_events, draw_controls_hud, bl
 from drift.core.rpm import calc_engine_rpm
 from drift.audio.engine_audio import EngineAudio
 from drift.render.map_chunks import ChunkedMap
+
+# ======= CONFIGURATION =======
+
+class AudioController(threading.Thread):
+    """Separate thread for audio processing at adaptive rate for better low-end device compatibility."""
+    
+    def __init__(self, engine_audio, update_rate: float = 100.0):
+        """Initialize audio controller thread.
+        
+        Args:
+            engine_audio: EngineAudio instance to control
+            update_rate: Updates per second (Hz) for audio processing
+        """
+        super().__init__(daemon=True)
+        self.engine_audio = engine_audio
+        self.target_update_rate = update_rate
+        self.update_interval = 1.0 / update_rate
+        self._running = False
+        self._state_lock = threading.Lock()
+        
+        # Adaptive rate limiting for low-end devices
+        self._performance_samples = []
+        self._adaptive_rate = update_rate
+        self._last_rate_adjust = 0.0
+        self._rate_adjust_interval = 2.0  # Check performance every 2 seconds
+        
+        # Thread-safe state variables
+        self._rpm = 0.0
+        self._throttle = 0.0
+        self._current_gear = 0
+        self._drift_ratio = 0.0
+        self._last_update = time.perf_counter()
+        
+    def set_engine_state(self, rpm: float, throttle: float, current_gear: int = 0, drift_ratio: float = 0.0):
+        """Thread-safe method to update engine state from game thread."""
+        with self._state_lock:
+            self._rpm = float(rpm)
+            self._throttle = float(throttle)
+            self._current_gear = int(current_gear)
+            self._drift_ratio = float(drift_ratio)
+    
+    def get_engine_state(self):
+        """Thread-safe method to read engine state from audio thread."""
+        with self._state_lock:
+            return self._rpm, self._throttle, self._current_gear, self._drift_ratio
+    
+    def _adjust_adaptive_rate(self, processing_time: float):
+        """Adjust audio update rate based on processing performance."""
+        current_time = time.perf_counter()
+        
+        # Track processing time samples
+        self._performance_samples.append(processing_time)
+        if len(self._performance_samples) > 50:  # Keep last 50 samples
+            self._performance_samples.pop(0)
+        
+        # Only adjust rate every few seconds
+        if current_time - self._last_rate_adjust < self._rate_adjust_interval:
+            return
+            
+        self._last_rate_adjust = current_time
+        
+        if len(self._performance_samples) < 10:
+            return
+            
+        # Calculate average processing time
+        avg_processing_time = sum(self._performance_samples) / len(self._performance_samples)
+        target_frame_time = 1.0 / self._adaptive_rate
+        
+        # If processing takes more than 70% of frame time, reduce rate
+        if avg_processing_time > target_frame_time * 0.7:
+            new_rate = max(30.0, self._adaptive_rate * 0.8)  # Minimum 30 Hz
+            if new_rate != self._adaptive_rate:
+                self._adaptive_rate = new_rate
+                self.update_interval = 1.0 / self._adaptive_rate
+                print(f"Audio rate reduced to {self._adaptive_rate:.1f} Hz due to performance")
+        
+        # If processing is fast, try to increase rate (but not above target)
+        elif avg_processing_time < target_frame_time * 0.3:
+            new_rate = min(self.target_update_rate, self._adaptive_rate * 1.1)
+            if new_rate != self._adaptive_rate:
+                self._adaptive_rate = new_rate
+                self.update_interval = 1.0 / self._adaptive_rate
+                print(f"Audio rate increased to {self._adaptive_rate:.1f} Hz")
+    
+    def start_audio_thread(self):
+        """Start the audio processing thread."""
+        if not self._running:
+            self._running = True
+            self.start()
+            print(f"Audio thread started at {self._adaptive_rate:.1f} Hz (adaptive)")
+    
+    def stop_audio_thread(self):
+        """Stop the audio processing thread."""
+        if self._running:
+            self._running = False
+            self.join(timeout=1.0)
+            print("Audio thread stopped")
+    
+    def run(self):
+        """Main audio thread loop - runs at adaptive rate for better low-end device performance."""
+        last_time = time.perf_counter()
+        
+        while self._running:
+            current_time = time.perf_counter()
+            dt = current_time - last_time
+            last_time = current_time
+            
+            # Get current engine state
+            rpm, throttle, current_gear, drift_ratio = self.get_engine_state()
+            
+            # Update audio with measured processing time
+            processing_start = time.perf_counter()
+            try:
+                self.engine_audio.update(rpm, throttle, dt, current_gear, drift_ratio)
+            except Exception as e:
+                print(f"Audio thread error: {e}")
+            
+            processing_time = time.perf_counter() - processing_start
+            
+            # Adapt update rate based on performance
+            self._adjust_adaptive_rate(processing_time)
+            
+            # Sleep to maintain target update rate
+            elapsed = time.perf_counter() - current_time
+            sleep_time = max(0, self.update_interval - elapsed)
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+
 
 # ======= CONFIGURATION =======
 
@@ -40,11 +168,38 @@ def main():
 
     pygame.init()
     pygame.joystick.init()
-    # Audio init
-    try: pygame.mixer.pre_init(44100, size=-16, channels=2, buffer=512)
-    except Exception: pass
-    try: pygame.mixer.init()
-    except Exception: print("Audio mixer init failed")
+    # Audio init with fallback configurations for low-end devices
+    audio_configs = [
+        # High quality (try first)
+        {"freq": 44100, "size": -16, "channels": 2, "buffer": 1024},
+        # Medium quality (fallback 1)
+        {"freq": 22050, "size": -16, "channels": 2, "buffer": 2048},
+        # Low quality (fallback 2 - for very low-end devices)
+        {"freq": 22050, "size": -16, "channels": 1, "buffer": 4096},
+    ]
+    
+    audio_initialized = False
+    for i, config in enumerate(audio_configs):
+        try:
+            pygame.mixer.pre_init(
+                frequency=config["freq"],
+                size=config["size"], 
+                channels=config["channels"], 
+                buffer=config["buffer"]
+            )
+            pygame.mixer.init()
+            print(f"Audio initialized with config {i+1}: {config['freq']}Hz, {config['channels']}ch, buffer={config['buffer']}")
+            audio_initialized = True
+            break
+        except Exception as e:
+            print(f"Audio config {i+1} failed: {e}")
+            try:
+                pygame.mixer.quit()
+            except:
+                pass
+    
+    if not audio_initialized:
+        print("Warning: All audio configurations failed - audio will be disabled")
 
     pygame.display.set_caption("Drift Race v0.4")
     screen = pygame.display.set_mode((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
@@ -95,13 +250,21 @@ def main():
     engine_state = {"gear": 0, "last_rpm": None}
     # Engine audio: 4A-GE Bluetop intake+exhaust layers
     engine_sound = None
+    audio_controller = None
     try:
-        engine_sound = EngineAudio()
-        # Start audio thread at 100 Hz for smooth audio independent of FPS
-        engine_sound.start_audio_thread(120.0)
-        print("Threaded audio system initialized")
+        if audio_initialized:
+            engine_sound = EngineAudio()
+            # Start with lower rate for better compatibility on low-end devices
+            initial_rate = 80.0  # Reduced from 120 Hz
+            audio_controller = AudioController(engine_sound, initial_rate)
+            audio_controller.start_audio_thread()
+            print("Threaded audio system initialized")
+        else:
+            print("Audio system disabled due to initialization failure")
     except Exception as e:
         print("Engine sound init failed:", e)
+        engine_sound = None
+        audio_controller = None
 
     if args.mode == "host" and args.code and args.name:
         my_name = args.name
@@ -226,8 +389,10 @@ def main():
                     try: sock.send(json.dumps({"t": "bye", "code": code, "id": my_id}).encode("utf-8"))
                     except Exception: pass
                 try:
-                    if 'engine_sound' in locals() and engine_sound:
-                        engine_sound.stop_all()  # This stops the audio thread and all sounds
+                    if engine_sound:
+                        engine_sound.stop_all()  # Stop all sounds
+                    if audio_controller:
+                        audio_controller.stop_audio_thread()  # Stop the audio thread
                 except Exception:
                     pass
                 pygame.quit()
@@ -309,7 +474,7 @@ def main():
         my_car.step(controls, dt, remotes_with_ai_for_player, world_size)
         # Update engine audio based on RPM and throttle with enhanced drift characteristics
         try:
-            if 'engine_sound' in locals() and engine_sound is not None:
+            if engine_sound is not None and audio_controller is not None and audio_initialized:
                 speed_units = math.hypot(my_car.vx, my_car.vy)
                 th = clamp(controls.get("th", 0.0), -1.0, 1.0)
                 prev_rpm = engine_state.get("last_rpm")
@@ -326,13 +491,14 @@ def main():
                 # Get current gear from engine state for gear shift sounds
                 current_gear = engine_state.get("gear", 0)
                 # Thread-safe audio state update with gear and drift info
-                engine_sound.set_engine_state(
+                audio_controller.set_engine_state(
                     rpm=rpm, 
                     throttle=max(0.0, th),
                     current_gear=current_gear,
                     drift_ratio=my_car.drift_ratio
                 )
-        except Exception:
+        except Exception as e:
+            # Silently handle audio errors to prevent crashes on low-end devices
             pass
 
         # Prepare remotes view for AIs: include network remotes + all AIs + the local player (so AIs can detect collisions with player)
