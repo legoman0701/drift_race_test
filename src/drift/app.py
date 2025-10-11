@@ -3,9 +3,7 @@
 # ======= IMPORTS =======
 
 # global imports
-try: import pygame_ce as pygame # type: ignore
-except Exception: import pygame
-import json, time, random, sys, math, uuid, argparse, threading
+import pygame, json, time, random, sys, math, uuid, argparse, threading
 # local imports
 import drift.config.const as const, drift.render.camera as camera, drift.core.car as car, drift.ui.button as btn, drift.ai.path_finder as path_finder
 from drift.render.renderer import WorldRenderer
@@ -13,7 +11,7 @@ from drift.core.helpers import clamp, rand_name
 from drift.ai.ai import ai_algorithme
 from drift.core.inputs import read_inputs
 from drift.net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, recv_jsons
-from drift.ui.ui import draw_track_ui, handle_game_events, draw_controls_hud, blur_surface
+from drift.ui.ui import draw_track_ui, handle_game_events, draw_controls_hud, blur_surface, draw_fps
 from drift.core.rpm import calc_engine_rpm
 from drift.audio.engine_audio import EngineAudio
 from drift.render.map_chunks import ChunkedMap
@@ -201,28 +199,39 @@ def main():
     if not audio_initialized:
         print("Warning: All audio configurations failed - audio will be disabled")
 
-    pygame.display.set_caption("Drift Race v0.4")
+    pygame.display.set_caption("Drift Race v0.7")
     screen = pygame.display.set_mode((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
     clock = pygame.time.Clock()
     font_small = pygame.font.SysFont(None, const.FONT_SMALL_SIZE)
     font_medium = pygame.font.SysFont(None, const.FONT_MEDIUM_SIZE)
     font_big = pygame.font.SysFont(None, const.FONT_BIG_SIZE)
 
-    # Load car sprites
-    ae86_sprite = []
-    for i in range(64):
-        img = pygame.image.load(f"assets/AE86/Diffuse/Image{i:04}.png").convert_alpha()
-        ae86_sprite.append(img)
+    # Load car sprites dynamically based on car types
+    def load_car_sprites(car_type):
+        """Load sprites for a specific car type."""
+        if car_type not in const.CAR_SPRITES:
+            car_type = "ae86"  # Default fallback
+        
+        car_sprites = []
+        for path_template in const.CAR_SPRITES[car_type]["paths"]:
+            sprite_list = []
+            for i in range(64):
+                try:
+                    img = pygame.image.load(path_template.format(i=i)).convert_alpha()
+                    sprite_list.append(img)
+                except Exception as e:
+                    print(f"Warning: Could not load {path_template.format(i=i)}: {e}")
+                    # Create a placeholder surface if sprite fails to load
+                    placeholder = pygame.Surface((32, 32), pygame.SRCALPHA)
+                    placeholder.fill((255, 0, 255, 128))  # Magenta placeholder
+                    sprite_list.append(placeholder)
+            car_sprites.append(sprite_list)
+        return car_sprites
     
-    shadow_sprite = []
-    for i in range(64):
-        img = pygame.image.load(f"assets/AE86/Shadow_Map/Image{i:04}.png").convert_alpha()
-        shadow_sprite.append(img)
-    
-    light_spray_sprite = []
-    for i in range(64):
-        img = pygame.image.load(f"assets/AE86/Light_Spray/{i:04}.png").convert_alpha()
-        light_spray_sprite.append(img)
+    # Load all car type sprites
+    car_sprites_cache = {}
+    for car_type in const.CAR_SPRITES.keys():
+        car_sprites_cache[car_type] = load_car_sprites(car_type)
         
     track_image = pygame.image.load(f"assets/Map/Map{const.MAP_NUM}.png").convert()
     chunk_map = ChunkedMap(root=f"assets/Map/Map{const.MAP_NUM}_chunks", tile_size=1024)
@@ -245,7 +254,7 @@ def main():
 
     spawnx = random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200)
     spawny = random.randint(const.TRACK_MARGIN + 120, const.WINDOW_HEIGHT - const.TRACK_MARGIN - 120)
-    my_car = car.Car(spawnx, spawny, my_name, is_ai=False)
+    my_car = car.Car(spawnx, spawny, my_name, is_ai=False, car_type="ae86")
     # Local player's engine state (avoid mutating Car which may use __slots__)
     engine_state = {"gear": 0, "last_rpm": None}
     # Engine audio: 4A-GE Bluetop intake+exhaust layers
@@ -400,14 +409,23 @@ def main():
 
             if ev.type == pygame.KEYDOWN and ev.key == pygame.K_l:
                 lights_on = not lights_on
+            if ev.type == pygame.KEYDOWN and ev.key == const.CHANGE_CAR_KEY:
+                # Cycle through available car types
+                available_types = list(const.CAR_SPRITES.keys())
+                current_index = available_types.index(my_car.car_type)
+                next_index = (current_index + 1) % len(available_types)
+                my_car.car_type = available_types[next_index]
             if ev.type == pygame.KEYDOWN and ev.key == pygame.K_n:
                 if I_AM_HOST and stage == "playing":
+                    # Randomly assign car type for AI cars
+                    ai_car_type = random.choice(["ae86", "m5"])
                     ai_cars.append(
                         car.Car(
                             random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200),
                             random.randint(const.TRACK_MARGIN + 120, const.WINDOW_HEIGHT - const.TRACK_MARGIN - 120),
                             name=f"AI-{len(ai_cars)+1}",
                             is_ai=True,
+                            car_type=ai_car_type,
                         )
                     )
                 
@@ -524,7 +542,7 @@ def main():
             ai_cars=ai_cars,
             remotes=remotes,
             lights_on=lights_on,
-            car_sprites_list=[shadow_sprite, ae86_sprite, light_spray_sprite],
+            car_sprites_cache=car_sprites_cache,
         )
 
         if resized and not is_viewport:
@@ -628,6 +646,11 @@ def main():
 
         screen.blit(final_surf, (0,0)) # world surface (cars, ai, map...)
         screen.blit(ui_surf, (0,0)) # top and bottom borders
+        
+        # Draw FPS counter
+        current_fps = clock.get_fps()
+        draw_fps(screen, font_small, current_fps)
+        
         if ai_path_mode and stage == "playing":
             try:
                 top_right_pos = cam.x-(const.WINDOW_WIDTH/2)/cam.zoom, cam.y-(const.WINDOW_HEIGHT/2)/cam.zoom

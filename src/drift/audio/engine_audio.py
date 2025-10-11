@@ -11,24 +11,13 @@ Uses authentic BeamNG load calculation and gain mixing:
 - EQ filtering with low/high shelf and parametric EQ
 """
 
-try:
-    import pygame_ce as pygame  # type: ignore
-except Exception:  # pragma: no cover
-    import pygame  # type: ignore
-import json
-import math
-import re
-from typing import Optional  # added
-
-# NEW: turbo import
-try:
-    from drift.audio.turbo_sound import TurboSound  # type: ignore
+import pygame, json, re
+# urbo import
+try: from drift.audio.turbo_sound import TurboSound  # type: ignore
 except Exception:  # pragma: no cover
     TurboSound = None  # type: ignore
-
-# NEW: gear shift sound import
-try:
-    from drift.audio.gear_shift_sound import GearShiftSound  # type: ignore
+# gear shift sound import
+try: from drift.audio.gear_shift_sound import GearShiftSound  # type: ignore
 except Exception:  # pragma: no cover
     GearShiftSound = None  # type: ignore
 

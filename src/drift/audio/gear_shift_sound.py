@@ -3,14 +3,8 @@ Gear shift sound system for aggressive manual transmission feel.
 Provides rough, aggressive gear shift sounds for drift racing.
 """
 
-try:
-    import pygame_ce as pygame  # type: ignore
-except Exception:  # pragma: no cover
-    import pygame  # type: ignore
-
-import time
-import threading
-from typing import Optional, List
+import pygame, time, threading
+from typing import List
 
 
 class GearShiftSound:

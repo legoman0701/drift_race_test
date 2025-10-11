@@ -1,6 +1,4 @@
-try: import pygame_ce as pygame # type: ignore
-except Exception: import pygame # type: ignore
-import sys
+import pygame, sys
 
 # Initialize pygame and joystick
 pygame.init()

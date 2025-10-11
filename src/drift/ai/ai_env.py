@@ -3,20 +3,11 @@
 # ======= IMPORTS =======
 
 # global imports
-try:
-    import pygame_ce as pygame  # type: ignore
-except Exception:
-    import pygame
-import random, sys, math
-import numpy as np
-import pickle
-import os
+import pygame, sys, math, pickle, os, numpy as np
 
 # local imports (only what's needed for local play)
-import const, camera, car
-from helpers import clamp, rand_name
-from ui import draw_track_ui, draw_controls_hud
-from map_chunks import ChunkedMap
+import drift.config.const as const, drift.core.car as car
+from drift.core.helpers import clamp
 
 # ======= CONFIGURATION =======
 
