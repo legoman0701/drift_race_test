@@ -29,8 +29,8 @@ def main():
     pygame.init()
     
     # Load track
-    track_image = pygame.image.load(f"assets/Map/Map{drift.config.const.MAP_NUM}.png")
-    track_mask_img = pygame.image.load(f"assets/Map/Map{drift.config.const.MAP_NUM}_ring.png")
+    track_image = pygame.image.load(f"assets/track/map{const.MAP_NUM}/main.png")
+    track_mask_img = pygame.image.load(f"assets/track/map{const.MAP_NUM}/ring.png")
     scaled_track = pygame.transform.scale_by(track_image, (0.5, 0.5))
 
     pygame.display.set_caption("Drift Race - Best AI Demo")

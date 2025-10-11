@@ -233,8 +233,8 @@ def main():
     for car_type in const.CAR_SPRITES.keys():
         car_sprites_cache[car_type] = load_car_sprites(car_type)
         
-    track_image = pygame.image.load(f"assets/Map/Map{const.MAP_NUM}.png").convert()
-    chunk_map = ChunkedMap(root=f"assets/Map/Map{const.MAP_NUM}_chunks", tile_size=1024)
+    track_image = pygame.image.load(f"assets/track/map{const.MAP_NUM}/main.png").convert()
+    chunk_map = ChunkedMap(root=f"assets/track/map{const.MAP_NUM}/chunks", tile_size=1024)
 
     stage = "menu" # menu | playing | error
     substage = "" # "" | settings
@@ -546,7 +546,7 @@ def main():
         )
 
         if resized and not is_viewport:
-            path_poly = path_finder.discover_track(f"assets/Map/Map{const.MAP_NUM}.png")
+            path_poly = path_finder.discover_track(f"assets/track/map{const.MAP_NUM}/main.png")
 
         # Use nearest-neighbor scaling for crisp pixels when zooming in chunk mode
         if is_viewport: final_surf = pygame.transform.scale(world_surf, (const.WINDOW_WIDTH, const.WINDOW_HEIGHT))  # chunk mode

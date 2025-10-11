@@ -68,7 +68,7 @@ def main():
     """Generate gear shift sound files."""
     
     # Ensure output directory exists
-    output_dir = "assets/AE86/sound"
+    output_dir = "assets/cars/AE86/sound"
     os.makedirs(output_dir, exist_ok=True)
     
     # Generate different types of gear shift sounds

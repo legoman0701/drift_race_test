@@ -129,14 +129,14 @@ class JBeamSoundConfig:
 class EngineAudio:
     """BeamNG-style engine audio mixer with intake and exhaust layers + optional turbo spool."""
 
-    def __init__(self, engine_json: str = "assets/AE86/sound/sr20det_es.sfxBlend2D.json", 
-                 jbeam_file: str = "assets/AE86/sound/bx_sr20det_engine.jbeam",
+    def __init__(self, engine_json: str = "assets/cars/AE86/sound/sr20det_es.sfxBlend2D.json", 
+                 jbeam_file: str = "assets/cars/AE86/sound/bx_sr20det_engine.jbeam",
                  exhaust_json: str = None,
                  # --- Master volumes ---
                  engine_master_volume: float = 0.2,
                  turbo_master_volume: float = 0.2,
                  # --- Turbo parameters ---
-                 turbo_wav: str = "assets/AE86/sound/turbo_03.wav",
+                 turbo_wav: str = "assets/cars/AE86/sound/turbo_03.wav",
                  turbo_min_pitch: float = 0.5,
                  turbo_max_pitch: float = 2.5,
                  turbo_volume: float = 0.5,
@@ -145,7 +145,7 @@ class EngineAudio:
                  turbo_target_rpm: float = 8000.0,  # rpm at which turbo pitch reaches max
                  enable_turbo: bool = True,
                  # --- Blow-off valve (BOV) parameters ---
-                 bov_wav: str = "assets/AE86/sound/turbo_bov.wav",
+                 bov_wav: str = "assets/cars/AE86/sound/turbo_bov.wav",
                  bov_volume: float = 0.7,
                  bov_min_spool: float = 0.25,   # minimum internal spool to allow BOV
                  bov_min_throttle_drop: float = 0.35,  # required drop between last throttle and current
