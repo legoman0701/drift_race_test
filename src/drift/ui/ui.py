@@ -203,7 +203,7 @@ def handle_game_events(screen, ev, stage, substage, remotes, ai_cars, sock, code
             spawnx = random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200)
             spawny = random.randint(const.TRACK_MARGIN + 120, const.WINDOW_HEIGHT - const.TRACK_MARGIN - 120)
             import drift.core.car as car
-            my_car = car.Car(spawnx, spawny, my_name, is_ai=False)
+            my_car = car.Car(spawnx, spawny, my_name, is_ai=False, car_type="ae86")
         
         # settings
         if ev.key == const.ESCAPE_KEY and substage == "" and (stage == "playing" or stage == "menu"): substage = "settings" # open settings

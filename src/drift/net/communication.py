@@ -52,8 +52,9 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
                     continue
                 tx, ty, ta, tdr = float(d["x"]), float(d["y"]), float(d["a"]), float(d["drift_ratio"])
                 name = d.get("name", f"Player{pid}")
+                car_type = d.get("car_type", "ae86")
                 if pid not in remotes:
-                    remotes[pid] = {"x": tx, "y": ty, "a": ta, "name": name, "drift_ratio": tdr}
+                    remotes[pid] = {"x": tx, "y": ty, "a": ta, "name": name, "drift_ratio": tdr, "car_type": car_type}
                 else:
                     cur = remotes[pid]
                     cur["x"] += (tx - cur["x"]) * alpha_pos
@@ -62,6 +63,7 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
                     da = ((ta - cur["a"] + math.pi) % (2 * math.pi)) - math.pi
                     cur["a"] = (cur["a"] + da * alpha_angle) % (2 * math.pi)
                     cur["name"] = name
+                    cur["car_type"] = car_type
             for pid in list(remotes.keys()):
                 if pid not in players:
                     remotes.pop(pid, None)
@@ -82,6 +84,7 @@ def send_network_state(sock, code: str, my_id: str, my_car):
         "vy": round(my_car.vy, 2),
         "drift_ratio": round(my_car.drift_ratio, 2),
         "name": my_car.name,
+        "car_type": getattr(my_car, "car_type", "ae86"),
     }
     try:
         sock.send(json.dumps(pkt).encode("utf-8"))
@@ -102,6 +105,7 @@ def send_ai_states(sock, code: str, ai_cars):
             "vy": round(ai.vy, 2),
             "drift_ratio": round(ai.drift_ratio, 2),
             "name": ai.name,
+            "car_type": getattr(ai, "car_type", "ae86"),
         }
         try:
             sock.send(json.dumps(pkt).encode("utf-8"))

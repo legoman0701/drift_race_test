@@ -49,6 +49,7 @@ ESCAPE_KEY = pygame.K_ESCAPE
 RESET_KEY = pygame.K_r
 HOST_KEY = pygame.K_h
 JOIN_KEY = pygame.K_j
+CHANGE_CAR_KEY = pygame.K_c
 
 # car
 CAR_LEN = 38.0
@@ -82,3 +83,21 @@ MAX_NAME_LENGTH = 12
 PROFANITY_SET = {"NIGGER", "NIGGA", "NIGA"}
 
 VIEW_ANGLE = 70 * math.pi / 180.0  # radians
+
+# Car sprite configurations [shadow, main, headlights]
+CAR_SPRITES = {
+    "ae86": {
+        "paths": [
+            "assets/AE86/Shadow_Map/Image{i:04}.png",
+            "assets/AE86/Diffuse/Image{i:04}.png", 
+            "assets/AE86/Light_Spray/{i:04}.png"
+        ]
+    },
+    "m5": {
+        "paths": [
+            "assets/M5/Shadow_Map/Image{i:04}.png",
+            "assets/M5/Diffuse/Image{i:04}.png",
+            "assets/M5/Light_Spray/{i:04}.png"
+        ]
+    }
+}

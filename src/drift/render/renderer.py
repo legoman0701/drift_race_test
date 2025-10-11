@@ -129,7 +129,7 @@ class WorldRenderer:
                      ai_cars: List,
                      remotes: Dict[str, Dict],
                      lights_on: bool,
-                     car_sprites_list: List[List[pygame.Surface]],
+                     car_sprites_cache: Dict[str, List[List[pygame.Surface]]],
                      draw_remotes: bool = True,
                      ) -> Tuple[pygame.Surface, bool]:
         """
@@ -156,23 +156,27 @@ class WorldRenderer:
             # Cars (AIs first)
             offx, offy = camera_rect.left, camera_rect.top
             for ai_car in ai_cars:
+                car_sprites = car_sprites_cache.get(ai_car.car_type, car_sprites_cache.get("ae86", []))
                 draw_car(world_surf, ai_car.x - offx, ai_car.y - offy, ai_car.angle, ai_car.name,
                          color_body=const.COLOR_BODY_DEFAULT,
-                         car_sprites_list=car_sprites_list,
+                         car_sprites_list=car_sprites,
                          lights_on=lights_on)
 
             # Player
+            my_car_sprites = car_sprites_cache.get(my_car.car_type, car_sprites_cache.get("ae86", []))
             draw_car(world_surf, my_car.x - offx, my_car.y - offy, my_car.angle, my_car.name,
                      color_body=const.COLOR_MY_CAR,
-                     car_sprites_list=car_sprites_list,
+                     car_sprites_list=my_car_sprites,
                      lights_on=lights_on)
 
             # Remotes (draw + their tire marks)
             if draw_remotes:
                 for pid, d in remotes.items():
+                    # Default to ae86 for remotes since we don't have their car type info yet
+                    remote_car_sprites = car_sprites_cache.get(d.get("car_type", "ae86"), car_sprites_cache.get("ae86", []))
                     drift_pts = draw_car(world_surf, d["x"] - offx, d["y"] - offy, d["a"], d.get("name", f"Player{pid}"),
                                          color_body=const.COLOR_BODY_REMOTE,
-                                         car_sprites_list=car_sprites_list,
+                                         car_sprites_list=remote_car_sprites,
                                          lights_on=lights_on)
                     if d.get("drift_ratio", 0.0) > 0.8 and pid in self._drift_points_old_remotes and drift_pts is not None:
                         old_pts = self._drift_points_old_remotes[pid]
@@ -206,9 +210,10 @@ class WorldRenderer:
 
         # 2) AIs
         for ai_car in ai_cars:
+            car_sprites = car_sprites_cache.get(ai_car.car_type, car_sprites_cache.get("ae86", []))
             draw_car(world_surf, ai_car.x, ai_car.y, ai_car.angle, ai_car.name,
                      color_body=const.COLOR_BODY_DEFAULT,
-                     car_sprites_list=car_sprites_list,
+                     car_sprites_list=car_sprites,
                      lights_on=lights_on)
 
         # 3) Tire marks accumulation
@@ -218,17 +223,19 @@ class WorldRenderer:
         self._blit_visible_tire_marks(world_surf, cam)
 
         # 5) Player
+        my_car_sprites = car_sprites_cache.get(my_car.car_type, car_sprites_cache.get("ae86", []))
         draw_car(world_surf, my_car.x, my_car.y, my_car.angle, my_car.name,
                  color_body=const.COLOR_MY_CAR,
-                 car_sprites_list=car_sprites_list,
+                 car_sprites_list=my_car_sprites,
                  lights_on=lights_on)
 
         # 6) Remotes (draw + drift marks accumulation)
         if stage == "playing" and draw_remotes:
             for pid, d in remotes.items():
+                remote_car_sprites = car_sprites_cache.get(d.get("car_type", "ae86"), car_sprites_cache.get("ae86", []))
                 drift_pts = draw_car(world_surf, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
                                      color_body=const.COLOR_BODY_REMOTE,
-                                     car_sprites_list=car_sprites_list,
+                                     car_sprites_list=remote_car_sprites,
                                      lights_on=lights_on)
                 if d.get("drift_ratio", 0.0) > 0.8 and pid in self._drift_points_old_remotes and drift_pts is not None:
                     old_pts = self._drift_points_old_remotes[pid]
