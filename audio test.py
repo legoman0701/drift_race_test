@@ -1,8 +1,4 @@
-import os
-import sys
-import math
-import pygame
-import numpy as np
+import os, sys, math, pygame, numpy as np
 
 SAMPLE_RATE = 48000
 CHUNK_SAMPLES = 2048  # ~42.7 ms at 48kHz

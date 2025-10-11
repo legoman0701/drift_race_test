@@ -4,13 +4,7 @@ Generate synthetic gear shift sounds for the drift racing game.
 Creates aggressive, rough gear shift sounds for manual transmission feel.
 """
 
-try:
-    import pygame_ce as pygame
-except ImportError:
-    import pygame
-
-import numpy as np
-import os
+import os, numpy as np
 
 def generate_gear_shift_sound(filename, duration=0.25, sample_rate=44100, 
                              noise_intensity=0.3, click_intensity=0.7):

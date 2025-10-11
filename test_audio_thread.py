@@ -6,9 +6,7 @@ This script demonstrates how to use the new audio thread functionality
 to prevent audio clipping when FPS drops occur in the main game loop.
 """
 
-import time
-import math
-import pygame
+import time, math, pygame
 from src.drift.audio.engine_audio import EngineAudio
 
 def test_threaded_audio():

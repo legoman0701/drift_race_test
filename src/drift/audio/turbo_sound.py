@@ -22,13 +22,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-import wave
-import numpy as np
-
-try:  # Prefer pygame-ce if project depends on it
-    import pygame_ce as pygame  # type: ignore
-except Exception:  # pragma: no cover
-    import pygame  # type: ignore
+import wave, numpy as np, pygame
 
 __all__ = ["TurboSound", "load_wav_samples"]
 

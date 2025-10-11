@@ -1,5 +1,4 @@
-try: import pygame_ce as pygame # type: ignore
-except Exception: import pygame  # type: ignore
+import pygame, string, math
 
 # ======= CONFIGURATION =======
 RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
@@ -73,8 +72,6 @@ TIP2_Y = 8
 RELAY_Y = WINDOW_HEIGHT - 16
 
 # username & room code
-import string
-
 ROOM_ALPHABET = string.ascii_uppercase + string.digits
 JOIN_CODE_LEN = 4
 MAX_CODE_LENGTH = 12
@@ -83,7 +80,5 @@ KEY_REPEAT_INTERVAL = 35
 MIN_NAME_LENGTH = 3
 MAX_NAME_LENGTH = 12
 PROFANITY_SET = {"NIGGER", "NIGGA", "NIGA"}
-
-import math
 
 VIEW_ANGLE = 70 * math.pi / 180.0  # radians

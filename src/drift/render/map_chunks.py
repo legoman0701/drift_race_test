@@ -1,7 +1,6 @@
+import pygame
 from typing import Dict, Tuple, Optional, Iterable
 import os, drift.config.const as const
-try: import pygame_ce as pygame  # type: ignore
-except Exception: import pygame  # type: ignore
 
 class ChunkedMap:
     """

@@ -1,7 +1,6 @@
 # global
+import pygame
 from typing import Dict, Tuple, List, Optional
-try: import pygame_ce as pygame  # type: ignore
-except Exception: import pygame  # type: ignore
 # local
 import drift.config.const as const
 from drift.ui.ui import draw_car

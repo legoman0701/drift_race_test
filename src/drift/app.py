@@ -201,7 +201,7 @@ def main():
     if not audio_initialized:
         print("Warning: All audio configurations failed - audio will be disabled")
 
-    pygame.display.set_caption("Drift Race v0.4")
+    pygame.display.set_caption("Drift Race v0.7")
     screen = pygame.display.set_mode((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
     clock = pygame.time.Clock()
     font_small = pygame.font.SysFont(None, const.FONT_SMALL_SIZE)
