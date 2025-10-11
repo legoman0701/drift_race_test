@@ -40,19 +40,24 @@ try:
     hiddenimports += collect_submodules('jaraco')
 except Exception:
     pass
+# Add drift package modules
+try:
+    hiddenimports += collect_submodules('drift')
+except Exception:
+    pass
 
 
 a = Analysis(
-    ['main.py'],
+    ['src/drift/__main__.py'],
     # In spec files, __file__ is not defined; use current working directory instead.
-    pathex=[os.getcwd()],
+    pathex=[os.getcwd(), os.path.join(os.getcwd(), 'src')],
     binaries=[],
     datas=[],  # add assets in COLLECT below using Tree(...)
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     # Ensure working directory is the executable folder to support relative asset loads
-    runtime_hooks=['set_cwd.py'],
+    runtime_hooks=[os.path.join('tools', 'set_cwd.py')],
     excludes=[],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -87,6 +92,7 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     Tree('assets', prefix='assets'),  # include entire assets directory next to the exe
+    Tree('ai_models', prefix='ai_models'),  # include AI models directory
     strip=False,
     upx=True,
     upx_exclude=[],

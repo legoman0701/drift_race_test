@@ -95,13 +95,28 @@ def get_name_input(surface, font_big, font_small, tag):
 
 def read_inputs(joysticks, car, cam, mouse_follow_mode: bool, ai_path_mode: bool) -> Dict[str, float]:
     keys = pygame.key.get_pressed()
+    # Raw digital inputs
     th = (1 if any(keys[key] for key in const.UP_KEY) else 0) - (1 if any(keys[key] for key in const.DOWN_KEY) else 0)
-    st = (1 if any(keys[key] for key in const.RIGHT_KEY) else 0) - (1 if any(keys[key] for key in const.LEFT_KEY) else 0)
+    raw_st = (1 if any(keys[key] for key in const.RIGHT_KEY) else 0) - (1 if any(keys[key] for key in const.LEFT_KEY) else 0)
     br = 1.0 if keys[const.BRAKE_KEY] else 0.0
+
+    # Normalize to -1 / 0 / 1
     if th != 0:
         th = 1.0 if th > 0 else -1.0
-    if st != 0:
-        st = 1.0 if st > 0 else -1.0
+    if raw_st != 0:
+        raw_st = 1.0 if raw_st > 0 else -1.0
+
+    # Exponential smoothing for steering (keyboard only)
+    if not hasattr(read_inputs, "_smoothed_st"):
+        read_inputs._smoothed_st = 0.0
+    if read_inputs._smoothed_st < raw_st:
+        read_inputs._smoothed_st += 0.07
+    else:
+        read_inputs._smoothed_st -= 0.07
+    # Avoid tiny float drift
+    if abs(read_inputs._smoothed_st) < 1e-3:
+        read_inputs._smoothed_st = 0.0
+    st = read_inputs._smoothed_st
 
     if mouse_follow_mode:
         mouse_pos = pygame.mouse.get_pos()

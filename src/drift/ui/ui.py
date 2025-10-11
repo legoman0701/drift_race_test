@@ -185,7 +185,7 @@ def handle_game_events(screen, ev, stage, substage, remotes, ai_cars, sock, code
             import random
             spawnx = random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200)
             spawny = random.randint(const.TRACK_MARGIN + 120, const.WINDOW_HEIGHT - const.TRACK_MARGIN - 120)
-            import core.car as car
+            import drift.core.car as car
             my_car = car.Car(spawnx, spawny, my_name, is_ai=False)
         
         # settings
@@ -200,7 +200,7 @@ def draw_controls_hud(ui_surf: pygame.Surface,
                       th: float,
                       br: float,
                       rpm: Optional[float] = None,
-                      rpm_redline: float = 8000.0) -> None:
+                      rpm_redline: float = 7000.0) -> None:
     """Draw bottom-right HUD with RPM gauge, steering wheel, throttle and brake bars.
 
     Parameters

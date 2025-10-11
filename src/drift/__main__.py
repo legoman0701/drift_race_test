@@ -1,5 +1,5 @@
 # src/drift/__main__.py
-from .app import main
+from drift.app import main
 
 if __name__ == "__main__":
     main()
