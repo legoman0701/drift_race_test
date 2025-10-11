@@ -20,7 +20,7 @@ class GearShiftSound:
                  # BOV parameters for powershifting
                  powershift_bov_volume: float = 0.05,
                  powershift_throttle_threshold: float = 0.6,
-                 bov_sample_path: str = "assets/AE86/sound/turbo_bov.wav"):
+                 bov_sample_path: str = "assets/cars/AE86/sound/turbo_bov.wav"):
         """
         Initialize gear shift sound system.
         
@@ -53,9 +53,9 @@ class GearShiftSound:
         # Load default gear shift samples if none provided
         if gear_shift_samples is None:
             gear_shift_samples = [
-                "assets/AE86/sound/gear_shift_1.wav",
-                "assets/AE86/sound/gear_shift_2.wav", 
-                "assets/AE86/sound/gear_shift_3.wav"
+                "assets/cars/AE86/sound/gear_shift_1.wav",
+                "assets/cars/AE86/sound/gear_shift_2.wav", 
+                "assets/cars/AE86/sound/gear_shift_3.wav"
             ]
         
         self.shift_sounds = []
