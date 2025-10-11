@@ -3,9 +3,7 @@
 # ======= IMPORTS =======
 
 # global imports
-try: import pygame_ce as pygame # type: ignore
-except Exception: import pygame
-import json, time, random, sys, math, uuid, argparse, threading
+import pygame, json, time, random, sys, math, uuid, argparse, threading
 # local imports
 import drift.config.const as const, drift.render.camera as camera, drift.core.car as car, drift.ui.button as btn, drift.ai.path_finder as path_finder
 from drift.render.renderer import WorldRenderer
@@ -13,7 +11,7 @@ from drift.core.helpers import clamp, rand_name
 from drift.ai.ai import ai_algorithme
 from drift.core.inputs import read_inputs
 from drift.net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, recv_jsons
-from drift.ui.ui import draw_track_ui, handle_game_events, draw_controls_hud, blur_surface
+from drift.ui.ui import draw_track_ui, handle_game_events, draw_controls_hud, blur_surface, draw_fps
 from drift.core.rpm import calc_engine_rpm
 from drift.audio.engine_audio import EngineAudio
 from drift.render.map_chunks import ChunkedMap
@@ -628,6 +626,11 @@ def main():
 
         screen.blit(final_surf, (0,0)) # world surface (cars, ai, map...)
         screen.blit(ui_surf, (0,0)) # top and bottom borders
+        
+        # Draw FPS counter
+        current_fps = clock.get_fps()
+        draw_fps(screen, font_small, current_fps)
+        
         if ai_path_mode and stage == "playing":
             try:
                 top_right_pos = cam.x-(const.WINDOW_WIDTH/2)/cam.zoom, cam.y-(const.WINDOW_HEIGHT/2)/cam.zoom
