@@ -68,15 +68,17 @@ class Car:
         self.x  += self.vx * dt
         self.y  += (self.vy * dt)*math.sqrt(2) # compensate for isometric view at 45deg
 
-        drift_moment = (STEER_SENS * st * math.copysign(v_forward, th) + (OVERSTEER * -self.v_angle))
-        drift_moment +=  math.copysign(self.v_angle/100, st)
-        self.v_angle += drift_moment
+        #drift_moment = (STEER_SENS * st * math.copysign(v_forward, th) + (OVERSTEER * -self.v_angle))
+        #drift_moment +=  math.copysign(self.v_angle/100, st)
+        self.v_angle += st*STEER_SENS*dt*v_forward
 
         if self.drift_ratio < 0.3:
             self.v_angle = self.v_angle * self.drift_ratio
         
-        self.angle += ((STEER_SENS * st * v_forward)*(1-self.drift_ratio) + self.v_angle*self.drift_ratio * dt) * dt
-
+        self.v_angle = st*STEER_SENS*50*dt*v_forward * (1-self.drift_ratio)
+        
+        #self.angle += ((STEER_SENS * st * v_forward)*(1-self.drift_ratio) + self.v_angle*self.drift_ratio * dt) * dt
+        self.angle += self.v_angle * dt
         self._handle_track_bounds(dt, bounds)
 
         # OBB vs OBB collisions with other cars (players dict contains x,y,a)
