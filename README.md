@@ -33,6 +33,7 @@ Top-down drift racing game built with **pygame-ce**, featuring:
 ### In-Game
 - **Esc** — open Settings
 - **N** — spawn an AI car
+- **C** — change car assets
 
 ---
 
@@ -82,6 +83,9 @@ Top-down drift racing game built with **pygame-ce**, featuring:
 ---
 
 ## Changelog
+
+### oct 15 2025
+- v0.7.6: physics update & ae86 new assets
 
 ### oct 12 2025
 - clean : assets restructure
