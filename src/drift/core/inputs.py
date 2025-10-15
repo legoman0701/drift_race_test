@@ -1,5 +1,5 @@
-import math,  pygame # global
-from typing import Optional, Dict, Any
+import math, pygame # global
+from typing import Optional, Dict
 
 import drift.config.const as const # local
 

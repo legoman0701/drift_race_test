@@ -3,8 +3,8 @@
 slice_map.py — cut a large map image into ix_iy.png tiles for the chunked renderer.
 
 Defaults match the project layout:
-- input  : assets/Map/Map1.png
-- outdir : assets/Map/Map1_chunks
+- input  : assets/track/map1.png
+- outdir : assets/track/map1/chunks
 - tile   : 1024
 - indexing: "zero" (top-left tile is 0_0, as the current game uses world coords >= 0)
 - prefix : ""  (renderer also accepts "Map1_" as prefix if you prefer)
@@ -12,7 +12,7 @@ Defaults match the project layout:
 USAGE EXAMPLES
 --------------
 # Basic (recommended for your current Map1.png):
-python slice_map.py --input assets/Map/Map1.png --outdir assets/Map/Map1_chunks --tile 1024 --indexing zero
+python slice_map.py --input assets/track/map1.png --outdir assets/track/map1/chunks --tile 1024 --indexing zero
 
 # With file prefix (loader supports this too):
 python slice_map.py --prefix Map1_
@@ -25,7 +25,7 @@ Notes:
 - A manifest.json is written in the output directory for reference.
 """
 import argparse, json, math, os, sys
-import src.config.const as const
+import drift.config.const as const
 
 # Use pygame for zero-deps in your project (already installed). Pillow is optional.
 try:
@@ -45,8 +45,8 @@ def parse_color(s: str):
 
 
 def slice_map(
-    input_path: str = f"assets/Map/Map{const.MAP_NUM}.png",
-    outdir: str = f"assets/Map/Map{const.MAP_NUM}_chunks",
+    input_path: str = f"assets/track/map{const.MAP_NUM}/main.png",
+    outdir: str = f"assets/track/map{const.MAP_NUM}/chunks",
     tile: int = 1024,
     indexing: str = "zero",
     prefix: str = "",
@@ -140,8 +140,8 @@ def slice_map(
 
 def main():
     ap = argparse.ArgumentParser(description="Slice a large map PNG into ix_iy.png tiles for the chunked renderer.")
-    ap.add_argument("--input", "-i", default=f"assets/Map/Map{const.MAP_NUM}.png", help="Path to source map image (PNG recommended).")
-    ap.add_argument("--outdir", "-o", default=f"assets/Map/Map{const.MAP_NUM}_chunks", help="Directory to write tiles into.")
+    ap.add_argument("--input", "-i", default=f"assets/track/map{const.MAP_NUM}/main.png", help="Path to source map image (PNG recommended).")
+    ap.add_argument("--outdir", "-o", default=f"assets/track/map{const.MAP_NUM}/chunks", help="Directory to write tiles into.")
     ap.add_argument("--tile", "-t", type=int, default=1024, help="Tile size in pixels (square).")
     ap.add_argument("--indexing", choices=("zero", "center"), default="zero",
                     help="'zero': top-left tile is 0_0; 'center': indices centered near image center (negative/positive).")

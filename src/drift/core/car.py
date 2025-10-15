@@ -24,8 +24,8 @@ def clamp(x, lo, hi):
     return lo if x < lo else hi if x > hi else x
 
 class Car:
-    __slots__ = ("x", "y", "vx", "vy", "angle", "v_angle", "name", "drift_ratio", "is_ai", "drift_points", "drift_points_old")
-    def __init__(self, x, y, name, is_ai=False):
+    __slots__ = ("x", "y", "vx", "vy", "angle", "v_angle", "name", "drift_ratio", "is_ai", "drift_points", "drift_points_old", "car_type")
+    def __init__(self, x, y, name, is_ai=False, car_type="ae86"):
         self.x, self.y = float(x), float(y)
         self.vx, self.vy = 0.0, 0.0
         self.angle = 0.0
@@ -33,6 +33,7 @@ class Car:
         self.name = name
         self.drift_ratio = 0 
         self.is_ai = is_ai
+        self.car_type = car_type
         self.drift_points = [(0,0),(0,0)]
         self.drift_points_old = [(0,0),(0,0)]
 

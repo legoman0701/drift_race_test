@@ -1,5 +1,4 @@
-try: import pygame_ce as pygame # type: ignore
-except Exception: import pygame
+import pygame
 
 class Button:
     def __init__(self, text, x, y, width, height, color, action=None):

@@ -3,16 +3,11 @@
 Test script to run the best trained AI network
 """
 
-import pygame
-import sys
-import math
-import numpy as np
-import pickle
-import os
+import pygame, sys, math, numpy as np, pickle, os
 
 # Import from our main AI environment
 from drift.ai.ai_env import AITrainingEnv, NeuralNetwork, create_black_mask, draw_cars_fast, raycast_black_mask
-import drift.config.const as const, drift.core.car as car
+import drift.config.const as const
 
 def load_best_network(filename="ai_models/ai_model.pkl"):
     """Load the best trained network"""
@@ -34,8 +29,8 @@ def main():
     pygame.init()
     
     # Load track
-    track_image = pygame.image.load(f"assets/Map/Map{const.MAP_NUM}.png")
-    track_mask_img = pygame.image.load(f"assets/Map/Map{const.MAP_NUM}_ring.png")
+    track_image = pygame.image.load(f"assets/track/map{const.MAP_NUM}/main.png")
+    track_mask_img = pygame.image.load(f"assets/track/map{const.MAP_NUM}/ring.png")
     scaled_track = pygame.transform.scale_by(track_image, (0.5, 0.5))
 
     pygame.display.set_caption("Drift Race - Best AI Demo")

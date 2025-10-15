@@ -3,14 +3,7 @@
 # ======= IMPORTS =======
 
 # global imports
-try:
-    import pygame_ce as pygame  # type: ignore
-except Exception:
-    import pygame
-import random, sys, math
-import numpy as np
-import pickle
-import os
+import pygame, sys, math, pickle, os, numpy as np
 
 # local imports (only what's needed for local play)
 import drift.config.const as const, drift.render.camera as camera, drift.core.car as car
@@ -784,8 +777,8 @@ def main():
     pygame.joystick.init()
 
     # Load image before setting the display; convert after display is initialized
-    track_image = pygame.image.load(f"assets/Map/Map{const.MAP_NUM}.png")
-    track_mask_img = pygame.image.load(f"assets/Map/Map{const.MAP_NUM}_ring.png")
+    track_image = pygame.image.load(f"assets/track/map{const.MAP_NUM}/main.png")
+    track_mask_img = pygame.image.load(f"assets/track/map{const.MAP_NUM}/ring.png")
     scaled_track = pygame.transform.scale_by(track_image, (0.5, 0.5))
 
     pygame.display.set_caption("Drift Race - AI Training with Neural Network")
