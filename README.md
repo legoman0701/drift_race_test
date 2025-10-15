@@ -8,12 +8,6 @@ Top-down drift racing game built with **pygame-ce**, featuring:
 - **Track chunking** for very large maps (12k+ resolution support)
 - **Camera zoom/pan** and quality-of-life settingse Drift Car Racing — AI & Multiplayer
 
-Top-down drift racing game built with **pygame-ce**, featuring:
-- **Online multiplayer** (host or join via code; the host’s PC acts as the server)
-- **AI driving** (player auto-drive and AI opponents)
-- **Track chunking** for very large maps
-- **Camera zoom/pan** and quality-of-life settings
-
 ---
 
 ## Controls
