@@ -84,6 +84,9 @@ Top-down drift racing game built with **pygame-ce**, featuring:
 ## Changelog
 
 ### oct 12 2025
+- clean : assets restructure
+
+### oct 11 2025
 - v0.7.5: car class update. 'C' to change car. ai car is random
 - debug : fps ui at screen top right
 - clean : fixed imports
