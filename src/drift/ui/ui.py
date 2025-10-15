@@ -50,6 +50,23 @@ def draw_car(surface, x, y, angle, name,
     return (wpts[2], wpts[3])
 
 
+def draw_fps(surface, font, fps: float, x: int = None, y: int = 10):
+    """Draw FPS counter at specified position (defaults to top-right)."""
+    if x is None:
+        x = const.WINDOW_WIDTH - 70  # Default to top-right with margin
+    
+    # Choose color based on FPS value
+    if fps >= 50:
+        color = (120, 255, 120)  # Green for good FPS
+    elif fps >= 30:
+        color = (255, 255, 120)  # Yellow for moderate FPS
+    else:
+        color = (255, 120, 120)  # Red for low FPS
+    
+    fps_text = font.render(f"FPS: {fps:.1f}", True, color)
+    surface.blit(fps_text, (x, y))
+
+
 def draw_track_ui(screen):
     pygame.draw.rect(screen, const.TRACK_BORDER_COLOR, (0, 0, const.WINDOW_WIDTH, const.TOP_LINE_Y))
     pygame.draw.rect(screen, const.TRACK_BORDER_COLOR, (0, const.BOTTOM_LINE_Y, const.WINDOW_WIDTH, const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y))
@@ -186,7 +203,7 @@ def handle_game_events(screen, ev, stage, substage, remotes, ai_cars, sock, code
             spawnx = random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200)
             spawny = random.randint(const.TRACK_MARGIN + 120, const.WINDOW_HEIGHT - const.TRACK_MARGIN - 120)
             import drift.core.car as car
-            my_car = car.Car(spawnx, spawny, my_name, is_ai=False)
+            my_car = car.Car(spawnx, spawny, my_name, is_ai=False, car_type="ae86")
         
         # settings
         if ev.key == const.ESCAPE_KEY and substage == "" and (stage == "playing" or stage == "menu"): substage = "settings" # open settings

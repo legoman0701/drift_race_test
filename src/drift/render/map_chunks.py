@@ -1,16 +1,15 @@
+import pygame
 from typing import Dict, Tuple, Optional, Iterable
 import os, drift.config.const as const
-try: import pygame_ce as pygame  # type: ignore
-except Exception: import pygame  # type: ignore
 
 class ChunkedMap:
     """
-    Lazy-loading tiled map. Tiles live in assets/Map/Map1_chunks as PNGs named: {ix}_{iy}.png
+    Lazy-loading tiled map. Tiles live in assets/track/map{x}/chunks as PNGs named: {ix}_{iy}.png
     - World coords (x,y) -> tile indices (ix,iy) via floor division by tile_size.
     - Missing tiles render as a flat color (background).
     """
     def __init__(self,
-                 root: str = f"assets/Map/Map{const.MAP_NUM}_chunks",
+                 root: str = f"assets/track/map{const.MAP_NUM}/chunks",
                  tile_size: int = 1024, # 1024x1024
                  default_color=(28, 28, 28)) -> None:
         self.root = root
@@ -19,7 +18,7 @@ class ChunkedMap:
         self._cache: Dict[Tuple[int, int], pygame.Surface] = {} # {(x, y): surface}
 
     def _load_tile(self, ix: int, iy: int) -> pygame.Surface:
-        link = os.path.join(self.root, f"{ix}_{iy}.png") # ./assets/Map/Map0_chunks/
+        link = os.path.join(self.root, f"{ix}_{iy}.png") # ./assets/track/map{x}/chunks/
         surf: Optional[pygame.Surface] = None
         if os.path.exists(link):
             try: surf = pygame.image.load(link).convert()

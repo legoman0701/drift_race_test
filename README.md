@@ -86,7 +86,16 @@ Top-down drift racing game built with **pygame-ce**, featuring:
 
 ## Changelog
 
+### oct 12 2025
+- v0.7.5: car class update. 'C' to change car. ai car is random
+- debug : fps ui at screen top right
+- clean : fixed imports
+
+### oct 09 2025
+- v0.7.4 : audio thread update
+
 ### oct 07 2025
+- v0.7.3 : added input soothing and fixed car physics
 - clean : fixed pyinstaller
 
 ### oct 06 2025
@@ -208,19 +217,19 @@ Top-down drift racing game built with **pygame-ce**, featuring:
 ## Demo assets (🚧 update needed 🚧)
 
 ### v0.3
-![v3-1](assets/demo/v3-1.png)
-![v3-2](assets/demo/v3-2.png)
-![v3-3](assets/demo/v3-3.png)
+![v3-1](assets/git/demo/v3-1.png)
+![v3-2](assets/git/demo/v3-2.png)
+![v3-3](assets/git/demo/v3-3.png)
 
 ### v0.2
-![v2-1](assets/demo/v2-1.png)
-![v2-2](assets/demo/v2-2.png)
-![v2-3](assets/demo/v2-3.png)
+![v2-1](assets/git/demo/v2-1.png)
+![v2-2](assets/git/demo/v2-2.png)
+![v2-3](assets/git/demo/v2-3.png)
 
 ### v0.1
-![v1-1](assets/demo/v1-1.png)
-![v1-2](assets/demo/v1-2.png)
-![v1-3](assets/demo/v1-3.png)
+![v1-1](assets/git/demo/v1-1.png)
+![v1-2](assets/git/demo/v1-2.png)
+![v1-3](assets/git/demo/v1-3.png)
 
 ### v0.7
 [Watch this video](https://www.youtube.com/watch?v=Qid3QSuOBOc)
