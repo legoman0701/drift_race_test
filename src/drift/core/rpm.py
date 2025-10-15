@@ -27,7 +27,7 @@ class RpmParams:
 
     # Driveline
     final_drive: float = 4.1
-    gear_ratios: tuple[float, ...] = (3.166, 1.481, 1.0)
+    gear_ratios: tuple[float, ...] = (3.166, 1.481, 1.1, 0.8)
     wheel_radius_m: float = 0.31  # ~ 615 mm diameter tire
 
     # Units mapping (game units to meters)

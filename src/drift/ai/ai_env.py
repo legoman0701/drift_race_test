@@ -187,8 +187,8 @@ class GeneticAlgorithm:
             new_population.append(self.population[sorted_indices[i]].copy())
         
         # Calculate adaptive mutation parameters
-        base_mutation_rate = 0.05
-        base_mutation_strength = 0.03
+        base_mutation_rate = 0.005
+        base_mutation_strength = 0.003
         
         # Determine fitness thresholds for targeted mutation
         fitness_array = np.array(self.fitness_scores)
@@ -406,7 +406,7 @@ class AITrainingEnv:
         self.num_cars = num_cars
         self.cars = []
         self.crashed_cars = set()  # Track which cars have crashed
-        self.raycast_angles = [-60, -20, -10, -5, 0, 5, 10, 20, 60]  # degrees
+        self.raycast_angles = [-80, -40, -20, -10, -5, 0, 5, 10, 20, 40, 80]  # degrees
         self.raycast_radians = [math.radians(a) for a in self.raycast_angles]
         self.max_raycast_dist = 400.0
         self.episode_steps = 0
@@ -540,7 +540,7 @@ class AITrainingEnv:
             
             # Convert AI output to car inputs
             inputs = {
-                "th": clamp(filtered_action[0], -1.0, 1.0),  # throttle
+                "th": clamp(filtered_action[0], 0.0, 1.0),  # throttle
                 "st": clamp(filtered_action[1], -1.0, 1.0),  # steering  
                 "br": clamp(filtered_action[2], 0.0, 1.0)   # brake
             }
@@ -663,7 +663,7 @@ class AITrainingEnv:
     
     def get_observation_space_size(self):
         """Get the size of the observation space (for neural network input layer)"""
-        return 13  # 4 car state + 9 raycast distances
+        return 15  # 4 car state + 9 raycast distances
     
     def get_action_space_size(self):
         """Get the size of the action space (for neural network output layer)"""

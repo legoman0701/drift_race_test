@@ -3,7 +3,7 @@ import pygame
 from typing import Dict, Tuple, List, Optional
 # local
 import drift.config.const as const
-from drift.ui.ui import draw_car
+from drift.ui.ui import draw_car, draw_wheel_debug
 from drift.render.map_chunks import ChunkedMap, TireMarkGrid
 
 
@@ -168,6 +168,8 @@ class WorldRenderer:
                      color_body=const.COLOR_MY_CAR,
                      car_sprites_list=my_car_sprites,
                      lights_on=lights_on)
+            # Per-wheel debug overlay for local car
+            draw_wheel_debug(world_surf, my_car, offx, offy)
 
             # Remotes (draw + their tire marks)
             if draw_remotes:
@@ -228,6 +230,8 @@ class WorldRenderer:
                  color_body=const.COLOR_MY_CAR,
                  car_sprites_list=my_car_sprites,
                  lights_on=lights_on)
+        # Per-wheel debug overlay for local car
+        draw_wheel_debug(world_surf, my_car, 0, 0)
 
         # 6) Remotes (draw + drift marks accumulation)
         if stage == "playing" and draw_remotes:

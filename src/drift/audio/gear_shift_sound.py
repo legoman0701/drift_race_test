@@ -321,6 +321,14 @@ class GearShiftSound:
                     self.bov_sound.stop()
                 except Exception:
                     pass
+    
+    def is_currently_shifting(self) -> bool:
+        """Check if a gear shift is currently in progress.
+        
+        Returns:
+            bool: True if currently shifting gears, False otherwise
+        """
+        return self.is_shifting
 
 
 __all__ = ["GearShiftSound"]

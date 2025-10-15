@@ -156,8 +156,8 @@
         "revLimiterSmoothOvershootRPM":1000,
 		"redlineTorqueDropOffRange":900,
         "inertia":0.08,
-        "friction":11
-        "dynamicFriction":0.0238
+        "friction":11,
+        "dynamicFriction":0.0238,
         //"burnEfficiency":0.34
         "burnEfficiency":[
             [0, 0.10],

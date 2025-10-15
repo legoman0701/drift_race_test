@@ -4,14 +4,11 @@ Top-down drift racing game built with **pygame-ce**, featuring:
 - **Online multiplayer** (host or join via code; the host's PC acts as the server)
 - **Advanced AI driving** (neural network-based AI, player auto-drive and AI opponents)
 - **Multiple car models** (AE86, M5 with unique sound profiles)
-- **Advanced audio system** (threaded engine RPM simulation, gear shifts, turbo sounds)
+- **Enhanced audio system** with separated intake and engine sounds
+  - **Intake sounds**: RPM-based only (no throttle volume modulation)
+  - **Engine sounds**: RPM + throttle-based volume and load mixing
+  - **Turbo sounds**: Spool, blow-off valve, gear shifts
 - **Track chunking** for very large maps (12k+ resolution support)
-- **Camera zoom/pan** and quality-of-life settingse Drift Car Racing — AI & Multiplayer
-
-Top-down drift racing game built with **pygame-ce**, featuring:
-- **Online multiplayer** (host or join via code; the host’s PC acts as the server)
-- **AI driving** (player auto-drive and AI opponents)
-- **Track chunking** for very large maps
 - **Camera zoom/pan** and quality-of-life settings
 
 ---

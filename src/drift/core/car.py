@@ -12,19 +12,37 @@ ENGINE_ACC      = 450.0
 #BRAKE_DECEL     = 1400.0
 #DRAG            = 0.35
 #ROLLING         = 1.6
-LATERAL_GRIP    = 4
-STEER_SENS      = 1/25
+STEER_SENS      = 1/50
+# Added for debug wheel kinematics (not used to alter dynamics)
+MAX_STEER_ANGLE = math.radians(25.0)  # visual front wheel steering angle
+# simple wheel placement relative to body center (x: forward, y: right)
+WHEEL_X_OFF = CAR_LEN * 0.35
+WHEEL_Y_OFF = CAR_WID * 0.45
 #DRIFT_SENS      = 1/8000
 OVERSTEER       = 1.5/100
 #MAX_SPEED       = 1200.0
 WALL_RESTITUTION = 0.3
 #ANGLE_DAMP      = 25
 
+# Simple physics constants
+MASS = 5  # effective mass-like divisor used previously
+BRAKE_COEFF = 600.0  # braking strength (N/kg) opposing wheel long. speed in wheel frame
+CORNERING_STIFFNESS = 1  # lateral force per unit lateral speed (wheel frame)
+LATERAL_FORCE_MAX = 2000.0  # clamp for lateral force magnitude (visual + stability)
+ANGULAR_DAMP = 2.0  # simple yaw damping
+INERTIA_Z = MASS * (CAR_LEN**2 + CAR_WID**2) / 12.0  # rough box inertia
+
+# New: rolling resistance and aerodynamic drag
+GRAVITY = 9.81
+ROLLING_RES_COEFF = 0.015  # typical car tire rolling resistance coefficient
+AERO_DRAG_COEFF = 0.005    # combined 0.5*rho*CdA scaling (tune to taste)
+BRAKE_DRAG_COEFF = 50.0    # body-level brake drag (opposes velocity)
+
 def clamp(x, lo, hi):
     return lo if x < lo else hi if x > hi else x
 
 class Car:
-    __slots__ = ("x", "y", "vx", "vy", "angle", "v_angle", "name", "drift_ratio", "is_ai", "drift_points", "drift_points_old", "car_type")
+    __slots__ = ("x", "y", "vx", "vy", "angle", "v_angle", "name", "drift_ratio", "is_ai", "drift_points", "drift_points_old", "car_type", "wheel_debug")
     def __init__(self, x, y, name, is_ai=False, car_type="ae86"):
         self.x, self.y = float(x), float(y)
         self.vx, self.vy = 0.0, 0.0
@@ -36,50 +54,143 @@ class Car:
         self.car_type = car_type
         self.drift_points = [(0,0),(0,0)]
         self.drift_points_old = [(0,0),(0,0)]
+        # Per-wheel debug data populated each step
+        self.wheel_debug = {
+            "wheels": []  # list of dicts per wheel
+        }
 
     def step(self, inputs, dt, players, bounds):
-        th = clamp(inputs.get("th", 0.0), -1.0, 1.0)
-        st = clamp(inputs.get("st", 0.0), -1.0, 1.0)
-        br = inputs.get("br", 0.0)
+        # Inputs
+        throttle_input = clamp(inputs.get("th", 0.0), -1.0, 1.0)
+        steering_input = clamp(inputs.get("st", 0.0), -1.0, 1.0)
+        brake_input = clamp(inputs.get("br", 0.0), 0.0, 1.0)
 
-        fx, fy = math.cos(self.angle), math.sin(self.angle)
-        rx, ry = -fy, fx
+        # Orientation and basis vectors
+        forward_x, forward_y = math.cos(self.angle), math.sin(self.angle)
+        right_x, right_y = -forward_y, forward_x
 
-        v_forward = self.vx * fx + self.vy * fy
-        v_lateral = self.vx * rx + self.vy * ry
-        
-        vel_vec = (v_forward/math.sqrt(v_forward**2+v_lateral**2+1e-4),
-                   v_lateral/math.sqrt(v_forward**2+v_lateral**2+1e-4))
-        
-        angle = ((math.atan2(vel_vec[0], vel_vec[1])-math.pi/2 + math.pi)%(2*math.pi) - math.pi) * clamp(abs(v_forward)-10, 0, 1)
-        
-        self.drift_ratio = clamp(abs(angle), 0, 1)
+        # Velocity in body frame (x: forward, y: right)
+        body_forward_speed = self.vx * forward_x + self.vy * forward_y
+        body_lateral_speed = self.vx * right_x + self.vy * right_y
 
-        a_forward = th * ENGINE_ACC
-        a_lateral = -v_lateral * LATERAL_GRIP * (1-self.drift_ratio/2) * (1-br)
-        
-        acc_fx = fx * a_forward + rx * a_lateral
-        acc_fy = fy * a_forward + ry * a_lateral
-        
-        acc_fx += -self.vx - self.vx*br
-        acc_fy += -self.vy - self.vy*br
-        
-        self.vx += acc_fx/1.2 * dt
-        self.vy += acc_fy/1.2 * dt
+        # Drift angle/ratio (difference between velocity vector and heading)
+        speed_norm = math.sqrt(body_forward_speed**2 + body_lateral_speed**2 + 1e-4)
+        vel_dir_f = body_forward_speed / speed_norm
+        vel_dir_r = body_lateral_speed / speed_norm
+        drift_angle = ((math.atan2(vel_dir_f, vel_dir_r) - math.pi/2 + math.pi) % (2*math.pi) - math.pi)
+        self.drift_ratio = clamp(abs(drift_angle) * clamp(abs(body_forward_speed) - 10.0, 0.0, 1.0), 0.0, 1.0)
+
+        # Wheel configuration (local positions in body frame)
+        wheel_local_positions = [
+            ( +WHEEL_X_OFF, +WHEEL_Y_OFF),  # Front Left (FL)
+            ( +WHEEL_X_OFF, -WHEEL_Y_OFF),  # Front Right (FR)
+            ( -WHEEL_X_OFF, +WHEEL_Y_OFF),  # Rear Left (RL)
+            ( -WHEEL_X_OFF, -WHEEL_Y_OFF),  # Rear Right (RR)
+        ]
+        wheel_steer_angle = steering_input * MAX_STEER_ANGLE
+
+        # Accumulators for net forces/torque (body frame)
+        total_force_body_x = 0.0
+        total_force_body_y = 0.0
+        total_torque_z = 0.0
+        wheel_debug_list = []
+
+        for index, (wx_local, wy_local) in enumerate(wheel_local_positions):
+            # Velocity at wheel contact in body frame: v + omega x r
+            wheel_speed_x_body = body_forward_speed - self.v_angle * wy_local
+            wheel_speed_y_body = body_lateral_speed + self.v_angle * wx_local
+
+            # Wheel heading relative to body (front wheels steer)
+            local_wheel_angle = wheel_steer_angle if index in (0, 1) else 0.0
+            cwa, swa = math.cos(local_wheel_angle), math.sin(local_wheel_angle)
+
+            # Transform to wheel frame (longitudinal x, lateral y)
+            wheel_speed_long = wheel_speed_x_body * cwa + wheel_speed_y_body * swa
+            wheel_speed_lat  = -wheel_speed_x_body * swa + wheel_speed_y_body * cwa
+            
+            has_broken_grip = False
+            if abs(wheel_speed_lat) > 5.0 and abs(wheel_speed_long) > 5.0:
+                has_broken_grip = True
+
+            # Longitudinal force: engine on rear + braking opposing wheel-long velocity
+            longitudinal_force = throttle_input * ENGINE_ACC
+            lateral_force = -wheel_speed_lat * (CORNERING_STIFFNESS*5 if has_broken_grip else CORNERING_STIFFNESS)
+            lateral_force = clamp(lateral_force, -LATERAL_FORCE_MAX, LATERAL_FORCE_MAX)
+
+            # Back to body frame (rotate by wheel angle)
+            force_body_x = longitudinal_force * cwa - lateral_force * swa
+            force_body_y = longitudinal_force * swa + lateral_force * cwa
+
+            total_force_body_x += force_body_x
+            total_force_body_y += force_body_y
+
+            # Torque about center (2D cross: r x F = x*Fy - y*Fx)
+            total_torque_z += wx_local * force_body_y - wy_local * force_body_x
+
+            # Prepare debug info (world position, wheel angle, forces, slip)
+            # World position of wheel
+            rx = wx_local * forward_x + wy_local * right_x
+            ry = wx_local * forward_y + wy_local * right_y
+            wheel_world_pos = (self.x + rx, self.y + ry)
+            slip_angle = math.atan2(wheel_speed_lat, max(0.1, abs(wheel_speed_long)))
+            wheel_debug_list.append({
+                "index": index,
+                "local_pos": (wx_local, wy_local),
+                "world_pos": wheel_world_pos,
+                "wheel_angle": local_wheel_angle,
+                "v_wheel": (wheel_speed_long, wheel_speed_lat),
+                "F_long": longitudinal_force,
+                "F_lat": lateral_force,
+                "slip": slip_angle,
+            })
+
+        # Convert total body forces to world frame
+        total_force_world_x = total_force_body_x * forward_x + total_force_body_y * right_x
+        total_force_world_y = total_force_body_x * forward_y + total_force_body_y * right_y
+
+        # Rolling resistance, aerodynamic drag, and body-level braking (all oppose velocity)
+        speed_world = math.hypot(self.vx, self.vy)
+        rolling_x = rolling_y = drag_x = drag_y = brake_x = brake_y = 0.0
+        if speed_world > 1e-4:
+            # Rolling resistance ~ constant magnitude opposing motion
+            Frr_mag = ROLLING_RES_COEFF * MASS * GRAVITY
+            nx, ny = self.vx / speed_world, self.vy / speed_world
+            rolling_x = -Frr_mag * nx
+            rolling_y = -Frr_mag * ny
+
+            # Aerodynamic drag ~ v^2, implemented as -k * |v| * v
+            k = AERO_DRAG_COEFF * speed_world
+            drag_x = -k * self.vx
+            drag_y = -k * self.vy
+
+            # Body-level brake drag (simple model): magnitude scales with brake input
+            B = BRAKE_DRAG_COEFF * brake_input
+            brake_x = -B * nx
+            brake_y = -B * ny
+
+            total_force_world_x += rolling_x + drag_x + brake_x
+            total_force_world_y += rolling_y + drag_y + brake_y
+
+        # Integrate linear motion
+        accel_x = total_force_world_x / MASS
+        accel_y = total_force_world_y / MASS
+        self.vx += accel_x * dt
+        self.vy += accel_y * dt
         self.x  += self.vx * dt
-        self.y  += (self.vy * dt)*math.sqrt(2) # compensate for isometric view at 45deg
+        self.y  += (self.vy * dt) * math.sqrt(2)  # compensate for isometric view at 45deg
 
-        #drift_moment = (STEER_SENS * st * math.copysign(v_forward, th) + (OVERSTEER * -self.v_angle))
-        #drift_moment +=  math.copysign(self.v_angle/100, st)
-        self.v_angle += st*STEER_SENS*dt*v_forward
+        # Integrate yaw (angular) motion with simple damping
+        angular_accel = (total_torque_z - ANGULAR_DAMP * self.v_angle) / max(1e-4, INERTIA_Z)
+        self.v_angle += angular_accel * dt
+        self.angle   += self.v_angle * dt
 
-        if self.drift_ratio < 0.3:
-            self.v_angle = self.v_angle * self.drift_ratio
-        
-        self.v_angle = st*STEER_SENS*50*dt*v_forward * (1-self.drift_ratio)
-        
-        #self.angle += ((STEER_SENS * st * v_forward)*(1-self.drift_ratio) + self.v_angle*self.drift_ratio * dt) * dt
-        self.angle += self.v_angle * dt
+        # Save wheel debug for renderer (including body-level forces)
+        self.wheel_debug["wheels"] = wheel_debug_list
+        self.wheel_debug["body_forces"] = {
+            "rolling": (rolling_x, rolling_y),
+            "aero_drag": (drag_x, drag_y),
+            "brake": (brake_x, brake_y),
+        }
         self._handle_track_bounds(dt, bounds)
 
         # OBB vs OBB collisions with other cars (players dict contains x,y,a)
@@ -107,17 +218,19 @@ class Car:
         ca, sa = math.cos(self.angle), math.sin(self.angle)
         halfL, halfW = CAR_LEN * 0.5, CAR_WID * 0.5
         pts = [(+halfL, +halfW),
-            (+halfL, -halfW),
-            (-halfL, -halfW),
-            (-halfL, +halfW)]
+               (+halfL, -halfW),
+               (-halfL, -halfW),
+               (-halfL, +halfW)]
         wpts = []
         for px, py in pts:
             rx = px * ca - py * sa
             ry = px * sa + py * ca
             wpts.append((int(self.x + rx), int(self.y + ry)))
-            
+
         self.drift_points_old = self.drift_points
         self.drift_points = (wpts[2], wpts[3])
+
+    # wheel_debug already updated inside step above
             
     
     def _handle_track_bounds(self, dt, bounds):
@@ -142,6 +255,8 @@ class Car:
             hit = True
         if hit:
             self.v_angle *= 0.5
+
+    # (wheel debug and world transform now computed directly inside step)
 
     # --- OBB collision helpers (SAT) ---
     def _obb_corners(self, cx, cy, ang):

@@ -602,7 +602,7 @@ def main():
             )
             engine_state["last_rpm"] = rpm
 
-            draw_controls_hud(ui_surf, font_small, st, th, br, rpm)
+            draw_controls_hud(ui_surf, font_small, st, th, br, rpm, 7000)
 
         if stage == "error":
             title = font_big.render("ERROR", True, (255,120,120))

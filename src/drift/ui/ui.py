@@ -50,6 +50,81 @@ def draw_car(surface, x, y, angle, name,
     return (wpts[2], wpts[3])
 
 
+def draw_wheel_debug(surface: pygame.Surface, car, offx: int = 0, offy: int = 0) -> None:
+    """Visualize per-wheel forces and angles for a car.
+
+    - Draws longitudinal (green/red) and lateral (blue) force arrows per wheel.
+    - Renders small text with slip angle and wheel angle near each wheel.
+    - offx/offy: camera offset to convert world->screen (used in chunked renderer).
+    """
+    if not hasattr(car, "wheel_debug"):
+        return
+    wheels = car.wheel_debug.get("wheels", [])
+
+    # Scale factors for arrow lengths
+    k_long = 0.06  # pixels per unit force
+    k_lat = 0.06
+    font = pygame.font.SysFont(None, 14)
+
+    for w in wheels:
+        wx, wy = w["world_pos"]
+        wl_ang = w["wheel_angle"]
+        Fl = w["F_long"]
+        Ft = w["F_lat"]
+        slip = w["slip"]
+
+        # Wheel forward axis in world
+        ca, sa = math.cos(car.angle + wl_ang), math.sin(car.angle + wl_ang)
+        # Build arrow endpoints
+        # Longitudinal: along wheel heading
+        ex_long = wx + ca * Fl * k_long
+        ey_long = wy + sa * Fl * k_long
+        # Lateral: perpendicular to wheel heading (to the left of wheel axis)
+        nx, ny = -sa, ca
+        ex_lat = wx + nx * Ft * k_lat
+        ey_lat = wy + ny * Ft * k_lat
+
+        # Convert to screen
+        sx, sy = int(wx - offx), int(wy - offy)
+        sxL, syL = int(ex_long - offx), int(ey_long - offy)
+        sxT, syT = int(ex_lat - offx), int(ey_lat - offy)
+
+        # Draw axes dot
+        pygame.draw.circle(surface, (240, 240, 255), (sx, sy), 2)
+        # Longitudinal arrow (green forward, red backward)
+        color_long = (80, 220, 100) if Fl >= 0 else (230, 80, 80)
+        pygame.draw.line(surface, color_long, (sx, sy), (sxL, syL), 2)
+        # Lateral arrow (blue)
+        pygame.draw.line(surface, (80, 120, 255), (sx, sy), (sxT, syT), 2)
+
+        # Text with values (rounded for readability)
+        txt = f"ang={math.degrees(wl_ang):.0f}° slip={math.degrees(slip):.0f}°\nFx={Fl:.0f} Fy={Ft:.0f}"
+        # Render multiline: split lines
+        lines = txt.split("\n")
+        ty = sy - 22
+        for i, line in enumerate(lines):
+            ts = font.render(line, True, (230, 230, 245))
+            surface.blit(ts, (sx + 6, ty + i * 12))
+
+    # Draw body-level forces (rolling, aero, brake) from car center
+    body_forces = car.wheel_debug.get("body_forces")
+    if body_forces:
+        cx, cy = int(car.x - offx), int(car.y - offy)
+        k_body = 0.06
+        roll = body_forces.get("rolling", (0.0, 0.0))
+        drag = body_forces.get("aero_drag", (0.0, 0.0))
+        brk  = body_forces.get("brake", (0.0, 0.0))
+
+        def draw_vec(vec, color):
+            ex = int(cx + vec[0] * k_body)
+            ey = int(cy + vec[1] * k_body)
+            pygame.draw.line(surface, color, (cx, cy), (ex, ey), 2)
+
+        draw_vec(roll, (200, 180, 80))   # rolling resistance: amber
+        draw_vec(drag, (180, 80, 220))   # aero drag: purple
+        draw_vec(brk,  (240, 80, 80))    # brake drag: red
+
+
 def draw_fps(surface, font, fps: float, x: int = None, y: int = 10):
     """Draw FPS counter at specified position (defaults to top-right)."""
     if x is None:
