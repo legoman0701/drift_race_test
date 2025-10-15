@@ -9,7 +9,7 @@ Top-down drift racing game built with **pygame-ce**, featuring:
   - **Engine sounds**: RPM + throttle-based volume and load mixing
   - **Turbo sounds**: Spool, blow-off valve, gear shifts
 - **Track chunking** for very large maps (12k+ resolution support)
-- **Camera zoom/pan** and quality-of-life settings
+- **Camera zoom/pan** and quality-of-life settingse Drift Car Racing — AI & Multiplayer
 
 ---
 
