@@ -84,6 +84,12 @@ Top-down drift racing game built with **pygame-ce**, featuring:
 
 ## Changelog
 
+### oct 17 2025
+- v0.7.8 : add of debug mode
+
+### oct 16 2025
+- v0.7.7 : new audio and turbo system
+
 ### oct 15 2025
 - v0.7.6: physics update & ae86 new assets
 
