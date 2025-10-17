@@ -9,6 +9,8 @@ from drift.core.helpers import clamp, rand_code
 from drift.core.inputs import get_name_input, get_code_input
 from drift.net.communication import connect_to_relay, recv_jsons
 
+# Cache font to avoid recreating it every frame (massive performance killer)
+_car_name_font_cache = {}
 
 def draw_car(surface, x, y, angle, name,
              color_body=const.COLOR_BODY_DEFAULT,
@@ -42,13 +44,21 @@ def draw_car(surface, x, y, angle, name,
 
     if name:
         scale = getattr(const, "UI_SCALE", 1.0)
-        font = pygame.font.SysFont(None, max(1, int(22 * scale)))
+        font_size = max(1, int(22 * scale))
+        # Use cached font to avoid expensive font creation every frame
+        if font_size not in _car_name_font_cache:
+            _car_name_font_cache[font_size] = pygame.font.SysFont(None, font_size)
+        font = _car_name_font_cache[font_size]
         text = font.render(name, True, (230, 230, 255))
         surface.blit(text, (int(x - text.get_width() / 2), int(y - int(40 * scale))))
 
     # Return rear-wheel edge points for tire mark drawing by callers (indices 2 and 3)
     return (wpts[2], wpts[3])
 
+# Cache debug font to avoid recreating it every frame
+_debug_font_cache = None
+# Cache HUD fonts to avoid recreating them every frame
+_hud_font_cache = {}
 
 def draw_wheel_debug(surface: pygame.Surface, car, offx: int = 0, offy: int = 0) -> None:
     """Visualize per-wheel forces and angles for a car.
@@ -57,6 +67,7 @@ def draw_wheel_debug(surface: pygame.Surface, car, offx: int = 0, offy: int = 0)
     - Renders small text with slip angle and wheel angle near each wheel.
     - offx/offy: camera offset to convert world->screen (used in chunked renderer).
     """
+    global _debug_font_cache
     if not hasattr(car, "wheel_debug"):
         return
     wheels = car.wheel_debug.get("wheels", [])
@@ -64,7 +75,10 @@ def draw_wheel_debug(surface: pygame.Surface, car, offx: int = 0, offy: int = 0)
     # Scale factors for arrow lengths
     k_long = 0.06  # pixels per unit force
     k_lat = 0.06
-    font = pygame.font.SysFont(None, 14)
+    # Use cached font to avoid expensive font creation every frame
+    if _debug_font_cache is None:
+        _debug_font_cache = pygame.font.SysFont(None, 14)
+    font = _debug_font_cache
 
     for w in wheels:
         wx, wy = w["world_pos"]
@@ -293,6 +307,13 @@ def handle_game_events(screen, ev, stage, substage, remotes, ai_cars, sock, code
 
     return ev, stage, substage, remotes, sock, code, my_car, error_msg
 
+def _get_cached_hud_font(font_small: pygame.font.Font, scale: float) -> pygame.font.Font:
+    """Get or create a cached scaled font for HUD elements."""
+    font_size = max(1, int(font_small.get_height() * scale))
+    if font_size not in _hud_font_cache:
+        _hud_font_cache[font_size] = pygame.font.SysFont(None, font_size)
+    return _hud_font_cache[font_size]
+
 def draw_controls_hud(ui_surf: pygame.Surface,
                       font_small: pygame.font.Font,
                       st: float,
@@ -373,7 +394,7 @@ def draw_controls_hud(ui_surf: pygame.Surface,
             r_label = g_r + sc(10)
             lx = int(gcx + ca * r_label)
             ly = int(gcy + sa * r_label)
-            fs = pygame.font.SysFont(None, max(1, int(font_small.get_height() * s)))
+            fs = _get_cached_hud_font(font_small, s)
             ts = fs.render(str(k), True, const.GREY_200)
             ui_surf.blit(ts, (lx - ts.get_width() // 2, ly - ts.get_height() // 2))
 
@@ -386,7 +407,7 @@ def draw_controls_hud(ui_surf: pygame.Surface,
     pygame.draw.circle(ui_surf, (30, 30, 36), (gcx, gcy), sc(6))
 
     # gauge label
-    fs = pygame.font.SysFont(None, max(1, int(font_small.get_height() * s)))
+    fs = _get_cached_hud_font(font_small, s)
     lbl_rpm = fs.render("RPM", True, const.WHITE_240)
     ui_surf.blit(lbl_rpm, (gcx - lbl_rpm.get_width()//2, y + sc(6)))
     small = fs.render("x1000", True, const.GREY_180)
@@ -410,7 +431,7 @@ def draw_controls_hud(ui_surf: pygame.Surface,
     pygame.draw.circle(ui_surf, (30, 30, 36), (wcx, wcy), sc(8))
 
     # Labels
-    fs = pygame.font.SysFont(None, max(1, int(font_small.get_height() * s)))
+    fs = _get_cached_hud_font(font_small, s)
     lbl = fs.render("STEER", True, const.WHITE_240)
     ui_surf.blit(lbl, (wcx - lbl.get_width()//2, y + hud_h - sc(18)))
 
@@ -429,7 +450,7 @@ def draw_controls_hud(ui_surf: pygame.Surface,
         fg_w = int(bar_w * clamp(-th, 0.0, 1.0))
         pygame.draw.rect(ui_surf, (255, 160, 60), (bar_x + bar_w - fg_w, th_y, fg_w, bar_h), border_radius=sc(4))
     th_pct = int(th * 100) if th >= 0 else int(th * 100)
-    fs = pygame.font.SysFont(None, max(1, int(font_small.get_height() * s)))
+    fs = _get_cached_hud_font(font_small, s)
     lbl_th = fs.render(f"THR {th_pct:+d}%", True, const.WHITE_240)
     ui_surf.blit(lbl_th, (bar_x, th_y - sc(18)))
 
