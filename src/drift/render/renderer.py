@@ -169,7 +169,7 @@ class WorldRenderer:
                      car_sprites_list=my_car_sprites,
                      lights_on=lights_on)
             # Per-wheel debug overlay for local car
-            draw_wheel_debug(world_surf, my_car, offx, offy)
+            if const.DEBUG: draw_wheel_debug(world_surf, my_car, offx, offy)
 
             # Remotes (draw + their tire marks)
             if draw_remotes:
@@ -231,7 +231,7 @@ class WorldRenderer:
                  car_sprites_list=my_car_sprites,
                  lights_on=lights_on)
         # Per-wheel debug overlay for local car
-        draw_wheel_debug(world_surf, my_car, 0, 0)
+        if const.DEBUG: draw_wheel_debug(world_surf, my_car, 0, 0)
 
         # 6) Remotes (draw + drift marks accumulation)
         if stage == "playing" and draw_remotes:
