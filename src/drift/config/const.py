@@ -7,6 +7,8 @@ RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
 # 1.0 = original size, 1.5 = 150% (50% bigger)
 UI_SCALE = 1
 
+DEBUG = False
+
 # World dimensions
 MAP_NUM = 1
 WINDOW_WIDTH, WINDOW_HEIGHT = 1000, 700
@@ -50,6 +52,7 @@ RESET_KEY = pygame.K_r
 HOST_KEY = pygame.K_h
 JOIN_KEY = pygame.K_j
 CHANGE_CAR_KEY = pygame.K_c
+DEBUG_TOGGLE_KEY = pygame.K_F3
 
 # car
 CAR_LEN = 38.0
@@ -80,7 +83,7 @@ KEY_REPEAT_DELAY = 250
 KEY_REPEAT_INTERVAL = 35
 MIN_NAME_LENGTH = 3
 MAX_NAME_LENGTH = 12
-PROFANITY_SET = {"NIGGER", "NIGGA", "NIGA"}
+PROFANITY_SET = {"ON VA EVITER"}
 
 VIEW_ANGLE = 70 * math.pi / 180.0  # radians
 

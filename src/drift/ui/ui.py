@@ -126,9 +126,16 @@ def draw_wheel_debug(surface: pygame.Surface, car, offx: int = 0, offy: int = 0)
 
 
 def draw_fps(surface, font, fps: float, x: int = None, y: int = 10):
-    """Draw FPS counter at specified position (defaults to top-right)."""
+    """Draw FPS counter and debug status at specified position (defaults to top-right)."""
     if x is None:
         x = const.WINDOW_WIDTH - 70  # Default to top-right with margin
+    
+    # Debug status indicator (to the left of FPS)
+    debug_status = "True" if const.DEBUG else "False"
+    debug_color = (120, 255, 120) if const.DEBUG else (255, 120, 120)  # Green if True, Red if False
+    debug_text = font.render(f"Debug: {debug_status}", True, debug_color)
+    debug_x = x - debug_text.get_width() - 40  # Position to the left of FPS with spacing
+    surface.blit(debug_text, (debug_x, y))
     
     # Choose color based on FPS value
     if fps >= 50:
