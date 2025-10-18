@@ -41,6 +41,10 @@ htmlcov/
 *.swp
 *.swo
 
+# --- Installer logs ---
+*.iss
+installer/
+
 # --- Type checkers / linters ---
 .mypy_cache/
 .pytype/

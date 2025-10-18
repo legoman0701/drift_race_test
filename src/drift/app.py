@@ -415,6 +415,10 @@ def main():
                 current_index = available_types.index(my_car.car_type)
                 next_index = (current_index + 1) % len(available_types)
                 my_car.car_type = available_types[next_index]
+            if ev.type == pygame.KEYDOWN and ev.key == const.DEBUG_TOGGLE_KEY:
+                # Toggle debug mode
+                const.DEBUG = not const.DEBUG
+                print(f"Debug mode {'enabled' if const.DEBUG else 'disabled'}")
             if ev.type == pygame.KEYDOWN and ev.key == pygame.K_n:
                 if I_AM_HOST and stage == "playing":
                     # Randomly assign car type for AI cars
@@ -489,7 +493,7 @@ def main():
                 controls = None
         if controls is None:
             controls = read_inputs(joysticks, my_car, cam, cursor_follow_mode, ai_path_mode)
-        my_car.step(controls, dt, remotes_with_ai_for_player, world_size)
+        my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG)
         # Update engine audio based on RPM and throttle with enhanced drift characteristics
         try:
             if engine_sound is not None and audio_controller is not None and audio_initialized:
@@ -531,7 +535,7 @@ def main():
         # Step AIs (each AI sees other AIs + network remotes + the player)
         if I_AM_HOST:
             for ai in ai_cars:
-                ai.step(ai_algorithme(path_poly, ai), dt, remotes_with_ai_for_ais, world_size)
+                ai.step(ai_algorithme(path_poly, ai), dt, remotes_with_ai_for_ais, world_size, compute_debug=const.DEBUG)
         cam.update(my_car, world_size)
 
         # Draw game world via renderer

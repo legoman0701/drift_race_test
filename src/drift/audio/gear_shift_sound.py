@@ -212,7 +212,7 @@ class GearShiftSound:
             selected_sound.set_volume(volume*0.02)
             selected_sound.play()
             
-            print(f"Gear shift: {old_gear} -> {new_gear}, RPM: {rpm:.0f}, Volume: {volume:.2f}")
+            # print(f"Gear shift: {old_gear} -> {new_gear}, RPM: {rpm:.0f}, Volume: {volume:.2f}")
             
         except Exception as e:
             print(f"Error playing gear shift sound: {e}")
@@ -244,7 +244,7 @@ class GearShiftSound:
             self.bov_sound.set_volume(final_volume)
             self.bov_sound.play()
             
-            print(f"Powershift BOV: Throttle: {throttle:.2f}, RPM: {rpm:.0f}, Volume: {final_volume:.2f}")
+            # print(f"Powershift BOV: Throttle: {throttle:.2f}, RPM: {rpm:.0f}, Volume: {final_volume:.2f}")
             
         except Exception as e:
             print(f"Error playing powershift BOV sound: {e}")

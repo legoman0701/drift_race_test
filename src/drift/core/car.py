@@ -59,7 +59,7 @@ class Car:
             "wheels": []  # list of dicts per wheel
         }
 
-    def step(self, inputs, dt, players, bounds):
+    def step(self, inputs, dt, players, bounds, compute_debug=False):
         # Inputs
         throttle_input = clamp(inputs.get("th", 0.0), -1.0, 1.0)
         steering_input = clamp(inputs.get("st", 0.0), -1.0, 1.0)
@@ -93,7 +93,7 @@ class Car:
         total_force_body_x = 0.0
         total_force_body_y = 0.0
         total_torque_z = 0.0
-        wheel_debug_list = []
+        wheel_debug_list = [] if compute_debug else None
 
         for index, (wx_local, wy_local) in enumerate(wheel_local_positions):
             # Velocity at wheel contact in body frame: v + omega x r
@@ -127,22 +127,23 @@ class Car:
             # Torque about center (2D cross: r x F = x*Fy - y*Fx)
             total_torque_z += wx_local * force_body_y - wy_local * force_body_x
 
-            # Prepare debug info (world position, wheel angle, forces, slip)
-            # World position of wheel
-            rx = wx_local * forward_x + wy_local * right_x
-            ry = wx_local * forward_y + wy_local * right_y
-            wheel_world_pos = (self.x + rx, self.y + ry)
-            slip_angle = math.atan2(wheel_speed_lat, max(0.1, abs(wheel_speed_long)))
-            wheel_debug_list.append({
-                "index": index,
-                "local_pos": (wx_local, wy_local),
-                "world_pos": wheel_world_pos,
-                "wheel_angle": local_wheel_angle,
-                "v_wheel": (wheel_speed_long, wheel_speed_lat),
-                "F_long": longitudinal_force,
-                "F_lat": lateral_force,
-                "slip": slip_angle,
-            })
+            # Prepare debug info (world position, wheel angle, forces, slip) - only if requested
+            if compute_debug:
+                # World position of wheel
+                rx = wx_local * forward_x + wy_local * right_x
+                ry = wx_local * forward_y + wy_local * right_y
+                wheel_world_pos = (self.x + rx, self.y + ry)
+                slip_angle = math.atan2(wheel_speed_lat, max(0.1, abs(wheel_speed_long)))
+                wheel_debug_list.append({
+                    "index": index,
+                    "local_pos": (wx_local, wy_local),
+                    "world_pos": wheel_world_pos,
+                    "wheel_angle": local_wheel_angle,
+                    "v_wheel": (wheel_speed_long, wheel_speed_lat),
+                    "F_long": longitudinal_force,
+                    "F_lat": lateral_force,
+                    "slip": slip_angle,
+                })
 
         # Convert total body forces to world frame
         total_force_world_x = total_force_body_x * forward_x + total_force_body_y * right_x
@@ -184,13 +185,14 @@ class Car:
         self.v_angle += angular_accel * dt
         self.angle   += self.v_angle * dt
 
-        # Save wheel debug for renderer (including body-level forces)
-        self.wheel_debug["wheels"] = wheel_debug_list
-        self.wheel_debug["body_forces"] = {
-            "rolling": (rolling_x, rolling_y),
-            "aero_drag": (drag_x, drag_y),
-            "brake": (brake_x, brake_y),
-        }
+        # Save wheel debug for renderer (including body-level forces) - only if computed
+        if compute_debug:
+            self.wheel_debug["wheels"] = wheel_debug_list
+            self.wheel_debug["body_forces"] = {
+                "rolling": (rolling_x, rolling_y),
+                "aero_drag": (drag_x, drag_y),
+                "brake": (brake_x, brake_y),
+            }
         self._handle_track_bounds(dt, bounds)
 
         # OBB vs OBB collisions with other cars (players dict contains x,y,a)
