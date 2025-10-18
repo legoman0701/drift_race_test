@@ -9,15 +9,21 @@ def recv_jsons(sock: socket.socket):
     while True:
         try:
             data = sock.recv(8192)
-            if not data:
-                break
+            if not data: break
             try:
+                # Decode and parse the JSON from this datagram
                 msgs.append(json.loads(data.decode("utf-8")))
-            except Exception:
-                pass
-        except BlockingIOError:
+            except json.JSONDecodeError as e:
+                print(f"JSON decode error: {e}, data: {data[:200]}")  # Debug: show what failed to parse
+            except UnicodeDecodeError as e:
+                print(f"Unicode decode error: {e}, raw data: {data[:200]}")  # Debug: show encoding issue
+            except Exception as e:
+                print(f"Unexpected error parsing message: {e}")  # Debug: catch other issues
+        except BlockingIOError as e:
+            # print(f"blocking io error: {e}")  # Debug: socket-level error
             break
-        except Exception:
+        except Exception as e:
+            print(f"Socket recv error: {e}")  # Debug: socket-level error
             break
     return msgs
 
