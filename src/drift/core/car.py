@@ -108,10 +108,6 @@ class Car:
             wheel_speed_long = wheel_speed_x_body * cwa + wheel_speed_y_body * swa
             wheel_speed_lat  = -wheel_speed_x_body * swa + wheel_speed_y_body * cwa
             
-            has_broken_grip = False
-            if abs(wheel_speed_lat) > 5.0 and abs(wheel_speed_long) > 5.0:
-                has_broken_grip = True
-
             # Longitudinal force: engine power ONLY on rear wheels (RWD)
             # Front wheels (index 0, 1) have no engine power
             # Rear wheels (index 2, 3) get full engine power
@@ -120,7 +116,7 @@ class Car:
             else:  # Front wheels
                 longitudinal_force = 0.0
             
-            lateral_force = -wheel_speed_lat * (CORNERING_STIFFNESS*5 if has_broken_grip else CORNERING_STIFFNESS)
+            lateral_force = -wheel_speed_lat * CORNERING_STIFFNESS * clamp(1-self.drift_ratio, 0.5, 1) * 5
             lateral_force = clamp(lateral_force, -LATERAL_FORCE_MAX, LATERAL_FORCE_MAX)
 
             # Back to body frame (rotate by wheel angle)
