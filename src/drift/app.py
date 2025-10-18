@@ -242,7 +242,7 @@ def main():
     chunk_map = ChunkedMap(root=f"assets/track/map{const.MAP_NUM}/chunks", tile_size=1024)
 
     stage1 = "lobby" # lobby | game | error
-    stage2 = "" # new_game | settings
+    stage2 = "" # new_game | join_game | settings
     stage3 = "" # key_binds
     error_msg = ""
     remotes = {}
@@ -387,9 +387,9 @@ def main():
         except Exception: return "game", "", None, None, {}
 
     buttons = [
-    btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.3, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, lambda: leave_room(sock, code, my_id, remotes)),
-    btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.6, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, switch_cursor_follow_mode),
-    btn.Button("AI Path Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.72, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, switch_ai_path_mode),
+    btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, lambda: leave_room(sock, code, my_id, remotes)),
+    btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, switch_cursor_follow_mode),
+    btn.Button("AI Path Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.65, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, switch_ai_path_mode),
     ]
 
     while True:
@@ -533,6 +533,7 @@ def main():
 
         # Prepare remotes view for AIs: include network remotes + all AIs + the local player (so AIs can detect collisions with player)
         remotes_with_ai_for_ais = dict(remotes)
+        
         if I_AM_HOST:
             # add local player under a distinct key so AIs see it
             remotes_with_ai_for_ais[f"PLAYER-{my_id}"] = {"x": my_car.x, "y": my_car.y, "a": my_car.angle, "drift_ratio": my_car.drift_ratio, "name": my_car.name}

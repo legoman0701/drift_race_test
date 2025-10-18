@@ -29,7 +29,7 @@ MASS = 5  # effective mass-like divisor used previously
 BRAKE_COEFF = 600.0  # braking strength (N/kg) opposing wheel long. speed in wheel frame
 CORNERING_STIFFNESS = 1  # lateral force per unit lateral speed (wheel frame)
 LATERAL_FORCE_MAX = 2000.0  # clamp for lateral force magnitude (visual + stability)
-ANGULAR_DAMP = 2.0  # simple yaw damping
+ANGULAR_DAMP = 25.0  # simple yaw damping (increased to prevent unwanted rotation)
 INERTIA_Z = MASS * (CAR_LEN**2 + CAR_WID**2) / 12.0  # rough box inertia
 
 # New: rolling resistance and aerodynamic drag
@@ -112,8 +112,14 @@ class Car:
             if abs(wheel_speed_lat) > 5.0 and abs(wheel_speed_long) > 5.0:
                 has_broken_grip = True
 
-            # Longitudinal force: engine on rear + braking opposing wheel-long velocity
-            longitudinal_force = throttle_input * ENGINE_ACC
+            # Longitudinal force: engine power ONLY on rear wheels (RWD)
+            # Front wheels (index 0, 1) have no engine power
+            # Rear wheels (index 2, 3) get full engine power
+            if index in (2, 3):  # Rear wheels only
+                longitudinal_force = throttle_input * ENGINE_ACC
+            else:  # Front wheels
+                longitudinal_force = 0.0
+            
             lateral_force = -wheel_speed_lat * (CORNERING_STIFFNESS*5 if has_broken_grip else CORNERING_STIFFNESS)
             lateral_force = clamp(lateral_force, -LATERAL_FORCE_MAX, LATERAL_FORCE_MAX)
 
@@ -183,6 +189,14 @@ class Car:
         # Integrate yaw (angular) motion with simple damping
         angular_accel = (total_torque_z - ANGULAR_DAMP * self.v_angle) / max(1e-4, INERTIA_Z)
         self.v_angle += angular_accel * dt
+        # print(angular_accel * dt)
+        
+        # Apply deadzone to angular velocity to prevent drift from numerical errors
+        # When rotating very slowly, snap to zero
+        if abs(self.v_angle) < 0.01:  # deadzone threshold (radians/sec)
+            self.v_angle = 0.0
+
+        
         self.angle   += self.v_angle * dt
 
         # Save wheel debug for renderer (including body-level forces) - only if computed
