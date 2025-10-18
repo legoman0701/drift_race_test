@@ -7,7 +7,10 @@ RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
 # 1.0 = original size, 1.5 = 150% (50% bigger)
 UI_SCALE = 1
 
+# Modes
 DEBUG = False
+CURSOR_FOLLOW = False
+AI_PATH_FOLLOW = False
 
 # World dimensions
 MAP_NUM = 1
@@ -28,7 +31,7 @@ GREY_200 = (200, 200, 200)
 WHITE_240 = (240, 240, 240)
 WHITE = (255, 255, 255)
 RED = (200, 0, 0)
-GREEN = (0, 200, 0)
+GREEN = (50, 200, 50)
 BLUE = (0, 0, 200)
 NAVY_BLUE = (5, 15, 28)
 
@@ -66,14 +69,15 @@ GLOW_RADIUS = 10  # soft round glow around the car
 # visual const
 TOP_LINE_Y = 30
 BOTTOM_LINE_Y = WINDOW_HEIGHT - 20
-BTN_WIDTH, BTN_HEIGHT = 300, 75
+BTN_WIDTH, BTN_HEIGHT = 300, 60
+TITLE_Y = 3
+NAVBAR_Y = 10
+RELAY_Y = WINDOW_HEIGHT - 16
+
+# font sizes (fonts will be created after pygame.init() in app.py)
 FONT_SMALL_SIZE = 18
 FONT_MEDIUM_SIZE = 26
 FONT_BIG_SIZE = 40
-TITLE_Y = 3
-TIP1_Y = 8
-TIP2_Y = 8
-RELAY_Y = WINDOW_HEIGHT - 16
 
 # username & room code
 ROOM_ALPHABET = string.ascii_uppercase + string.digits

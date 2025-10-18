@@ -1,16 +1,26 @@
 # global
 import math, time, json, pygame
-from typing import Optional
 
 # local
 import drift.config.const as const
 from drift.core.car import CAR_LEN, CAR_WID
 from drift.core.helpers import clamp, rand_code
-from drift.core.inputs import get_name_input, get_code_input
+from drift.core.inputs import read_inputs  # Removed get_name_input, get_code_input (old system)
 from drift.net.communication import connect_to_relay, recv_jsons
+from drift.core.rpm import calc_engine_rpm
+from drift.ui.draw_stage import (
+    draw_lobby, draw_new_game, draw_join_game, draw_settings, draw_game, draw_error,
+    handle_new_game_click, handle_new_game_keypress, host_new_game,
+    handle_join_game_click, handle_join_game_keypress, join_new_game,
+    get_game_setup, reset_game_setup
+)
 
 # Cache font to avoid recreating it every frame (massive performance killer)
 _car_name_font_cache = {}
+# Cache for new game UI rects (for event handling)
+_new_game_rects_cache = None
+# Cache for join game UI rects (for event handling)
+_join_game_rects_cache = None
 
 def draw_car(surface, x, y, angle, name,
              color_body=const.COLOR_BODY_DEFAULT,
@@ -139,151 +149,137 @@ def draw_wheel_debug(surface: pygame.Surface, car, offx: int = 0, offy: int = 0)
         draw_vec(brk,  (240, 80, 80))    # brake drag: red
 
 
-def draw_fps(surface, font, fps: float, x: int = None, y: int = 10):
-    """Draw FPS counter and debug status at specified position (defaults to top-right)."""
-    if x is None:
-        x = const.WINDOW_WIDTH - 70  # Default to top-right with margin
-    
-    # Debug status indicator (to the left of FPS)
+def draw_header(surface, font_big, font_small, title_str: str, fps: float):
+    # Draw header background
+    pygame.draw.rect(surface, const.TRACK_BORDER_COLOR, (0, 0, const.WINDOW_WIDTH, const.TOP_LINE_Y))
+    pygame.draw.line(surface, const.WHITE, (0, const.TOP_LINE_Y), (const.WINDOW_WIDTH, const.TOP_LINE_Y))
+    # draw a header title centered at the top of the screen
+    title = font_big.render(title_str, True, const.WHITE_240)
+    surface.blit(title, (const.WINDOW_WIDTH // 2 - title.get_width() // 2, const.TITLE_Y))
+    # Draw debug status
     debug_status = "True" if const.DEBUG else "False"
     debug_color = (120, 255, 120) if const.DEBUG else (255, 120, 120)  # Green if True, Red if False
-    debug_text = font.render(f"Debug: {debug_status}", True, debug_color)
-    debug_x = x - debug_text.get_width() - 40  # Position to the left of FPS with spacing
-    surface.blit(debug_text, (debug_x, y))
+    debug_text = font_small.render(f"Debug: {debug_status}", True, debug_color)
+    debug_x = const.WINDOW_WIDTH*0.8 - debug_text.get_width()  # Position to the left of FPS with spacing
+    surface.blit(debug_text, (debug_x, const.NAVBAR_Y))
+    # Draw FPS counter next to debug status
+    if fps >= 50: color = (120, 255, 120)  # Green for good FPS
+    elif fps >= 30: color = (255, 255, 120)  # Yellow for moderate FPS
+    else: color = (255, 120, 120)  # Red for low FPS
+    fps_text = font_small.render(f"FPS: {fps:.1f}", True, color)
+    surface.blit(fps_text, (const.WINDOW_WIDTH*0.9 - fps_text.get_width(), const.NAVBAR_Y))
+
+def draw_footer(surface: str, font_small):
+    # Draw footer background
+    pygame.draw.rect(surface, const.TRACK_BORDER_COLOR, (0, const.BOTTOM_LINE_Y, const.WINDOW_WIDTH, const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y))
+    pygame.draw.line(surface, const.WHITE, (0, const.BOTTOM_LINE_Y), (const.WINDOW_WIDTH, const.BOTTOM_LINE_Y))
+    # draw a footer title centered at the bottom of the screen
+    relay = font_small.render(f"Relay: {const.RELAY_PUBLIC_ENDPOINT}", True, const.GREY_180)
+    surface.blit(relay, (const.WINDOW_WIDTH // 2 - relay.get_width() // 2, const.BOTTOM_LINE_Y + 5))
+
+def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size, buttons, 
+                  error_msg, my_car, cam, joysticks, font_big, font_medium, font_small,
+                  ai_path_mode_controls, engine_state, fps, dt):
+    """Draw UI elements based on current stage levels (stage1, stage2, stage3).
     
-    # Choose color based on FPS value
-    if fps >= 50:
-        color = (120, 255, 120)  # Green for good FPS
-    elif fps >= 30:
-        color = (255, 255, 120)  # Yellow for moderate FPS
-    else:
-        color = (255, 120, 120)  # Red for low FPS
+    Stage levels:
+    - stage1: lobby | game | error
+    - stage2: settings | new_game | join_game
+    - stage3: key_binds
+    """
+    global _new_game_rects_cache, _join_game_rects_cache
+
+    button_results = []
+    new_game_rects = None  # For click detection
+    join_game_rects = None  # For click detection
     
-    fps_text = font.render(f"FPS: {fps:.1f}", True, color)
-    surface.blit(fps_text, (x, y))
-
-
-def draw_track_ui(screen):
-    pygame.draw.rect(screen, const.TRACK_BORDER_COLOR, (0, 0, const.WINDOW_WIDTH, const.TOP_LINE_Y))
-    pygame.draw.rect(screen, const.TRACK_BORDER_COLOR, (0, const.BOTTOM_LINE_Y, const.WINDOW_WIDTH, const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y))
-    pygame.draw.line(screen, const.WHITE, (0, const.TOP_LINE_Y), (const.WINDOW_WIDTH, const.TOP_LINE_Y))
-    pygame.draw.line(screen, const.WHITE, (0, const.BOTTOM_LINE_Y), (const.WINDOW_WIDTH, const.BOTTOM_LINE_Y))
-
-
-def draw_menu(screen, font_big, font_medium):
-    title = font_big.render("Menu", True, const.WHITE_240)
-    screen.blit(title, (const.WINDOW_WIDTH // 2 - title.get_width() // 2, 7))
-    tip1 = font_medium.render("H : Host room", True, const.GREY_200)
-    tip2 = font_medium.render("J : Join room", True, const.GREY_200)
-    screen.blit(tip1, (int(const.WINDOW_WIDTH * 0.3 - tip1.get_width() // 2), 13))
-    screen.blit(tip2, (int(const.WINDOW_WIDTH * 0.7 - tip2.get_width() // 2), 13))
-
-
-def handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, code, sock, error_msg, is_host_flag_ref):
-    if ev.key == const.HOST_KEY:  # Host room
-        my_name = get_name_input(screen, font_big, font_small, "host")
-        code = rand_code()
-        try:
-            sock = connect_to_relay()
-            join_pkt = {"t": "create", "code": code, "name": my_name, "id": my_id}
-            sock.send(json.dumps(join_pkt).encode("utf-8"))
-            # wait briefly for server confirmation
-            join_ok_received = False
-            timeout = time.time() + 1.0
-            while time.time() < timeout:
-                for msg in recv_jsons(sock):
-                    if msg.get("t") == "join_ok":
-                        join_ok_received = True
-                        break
-                    if msg.get("t") == "error":
-                        raise Exception(msg.get("msg", "relay error"))
-                if join_ok_received:
-                    break
-                time.sleep(0.02)
-            if not join_ok_received:
-                # Relay didn't confirm; fall back to offline mode
-                try:
-                    sock.close()
-                except Exception:
-                    pass
-                sock = None
-                code = "Offline"
-                stage = "playing"
-                is_host_flag_ref[0] = True  # offline single-player acts as host
+    # Stage 1: Main stages
+    if stage1 == "lobby":
+        if stage2 == "settings":
+            if stage3 == "key_binds":
+                draw_header(ui_surf, font_big, font_small, "Key Bindings", fps)
             else:
-                stage = "playing"
-                is_host_flag_ref[0] = True
-        except Exception:
-            # Relay unreachable; fall back to offline mode
-            try:
-                if sock:
-                    sock.close()
-            except Exception:
-                pass
-            sock = None
-            code = "Offline"
-            stage = "playing"
-            is_host_flag_ref[0] = True
-    elif ev.key == const.JOIN_KEY:  # Join room
-        my_name = get_name_input(screen, font_big, font_small, "join")
-        jcode = get_code_input(screen, font_big, font_small)
-        try:
-            sock = connect_to_relay()
-            code = jcode.upper()
-            join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id}
-            sock.send(json.dumps(join_pkt).encode("utf-8"))
-            join_ok_received = False
-            timeout = time.time() + 1.0
-            while time.time() < timeout:
-                for msg in recv_jsons(sock):
-                    if msg.get("t") == "join_ok":
-                        join_ok_received = True
-                        break
-                    if msg.get("t") == "error":
-                        raise Exception(msg.get("msg", "relay error"))
-                if join_ok_received:
-                    break
-                time.sleep(0.02)
-            if not join_ok_received:
-                # Relay didn't confirm; fall back to offline
-                try:
-                    sock.close()
-                except Exception:
-                    pass
-                sock = None
-                code = "Offline"
-                stage = "playing"
-                # Join offline: treat as single-player (not host for net features)
-                is_host_flag_ref[0] = False
-            else:
-                stage = "playing"
-                is_host_flag_ref[0] = False
-        except Exception:
-            # Relay unreachable; fall back to offline
-            try:
-                if sock:
-                    sock.close()
-            except Exception:
-                pass
-            sock = None
-            code = "Offline"
-            stage = "playing"
-            is_host_flag_ref[0] = False
+                world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons)
+                draw_header(ui_surf, font_big, font_small, "Settings", fps)
+        elif stage2 == "new_game": 
+            new_game_rects = draw_new_game(ui_surf, font_big, font_medium)
+            draw_header(ui_surf, font_big, font_small, "Host Game", fps)
+            _new_game_rects_cache = new_game_rects  # Cache for event handling
+            _join_game_rects_cache = None  # Clear join game cache
+        elif stage2 == "join_game":
+            # Join game page doesn't need header/footer - it's a full page
+            join_game_rects = draw_join_game(ui_surf, font_big, font_medium)
+            draw_header(ui_surf, font_big, font_small, "Join Game", fps)
+            _join_game_rects_cache = join_game_rects  # Cache for event handling
+            _new_game_rects_cache = None  # Clear new game cache
+        else:
+            draw_lobby()
+            draw_header(ui_surf, font_big, font_small, "Lobby", fps)
+            _new_game_rects_cache = None  # Clear cache when not in new_game
+            _join_game_rects_cache = None  # Clear cache when not in join_game
+        draw_footer(ui_surf, font_small)
 
-    return stage, my_name, code, sock, error_msg
+    elif stage1 == "game":
+        _new_game_rects_cache = None  # Clear cache when in game
+        _join_game_rects_cache = None  # Clear cache when in game
+        if stage2 == "settings": 
+            draw_header(ui_surf, font_big, font_small, "Settings", fps)
+            world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons)
+        else:
+            draw_header(ui_surf, font_big, font_small, "In Game", fps)
+            draw_game(ui_surf, code, font_small)
+            draw_controls_hud(ui_surf, ai_path_mode_controls, joysticks, my_car, cam, font_small, dt, engine_state, 7000)
+        draw_footer(ui_surf, font_small)
 
-def handle_game_events(screen, ev, stage, substage, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref):
+    elif stage1 == "error":
+        _new_game_rects_cache = None  # Clear cache when in error
+        _join_game_rects_cache = None  # Clear cache when in error
+        draw_header(ui_surf, font_big, font_small, "Error", fps)
+        draw_error(ui_surf, error_msg, font_small)
+        draw_footer(ui_surf, font_small)
+    
+    return world_surf, button_results, new_game_rects, join_game_rects
+
+
+
+# OLD SYSTEM - DEPRECATED - Use new draw_new_game/host_new_game system instead
+# def handle_menu_events(screen, font_big, font_small, ev, stage1, stage2, my_name, my_id, code, sock, is_host_flag_ref):
+#     ... (old code removed)
+# return stage1, stage2, my_name, code, sock
+
+def handle_game_events(screen, ev, stage1, stage2, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref, new_game_rects=None):
+    """Handle game events including new game UI interactions."""
+    global _new_game_rects_cache
+    
     if ev.type == pygame.KEYDOWN:
-        if stage == "menu":
-            stage, my_name, code, sock, error_msg = handle_menu_events(screen, font_big, font_small, ev, stage, my_name, my_id, code, sock, error_msg, is_host_flag_ref)
-            try:
-                if stage == "playing" and my_car is not None:
-                    my_car.name = my_name
-            except NameError: pass
+        if stage1 == "lobby":
+            if stage2 == "" and ev.key == const.HOST_KEY:  # Host room - open new game UI
+                stage2 = "new_game"
+                reset_game_setup()  # Reset to defaults when opening
+            elif stage2 == "" and ev.key == const.JOIN_KEY:  # Join room - open join game UI
+                stage2 = "join_game"
+            
+            # Handle keyboard input in new_game UI
+            elif stage2 == "new_game":
+                handle_new_game_keypress(ev)
+                
+                # ESC to go back to lobby
+                if ev.key == const.ESCAPE_KEY:
+                    stage2 = ""
+                    reset_game_setup()
+
+            elif stage2 == "join_game":
+                handle_join_game_keypress(ev)
+
+                # ESC to go back to lobby
+                if ev.key == const.ESCAPE_KEY:
+                    stage2 = ""
+                    reset_game_setup()
 
         # error
-        elif stage == "error" and ev.key == const.RESET_KEY:
-            stage = "menu"
+        elif stage1 == "error" and ev.key == const.RESET_KEY:
+            stage1 = "lobby"
+            stage2 = ""
             error_msg = ""
             remotes.clear()
             ai_cars.clear()
@@ -302,10 +298,42 @@ def handle_game_events(screen, ev, stage, substage, remotes, ai_cars, sock, code
             my_car = car.Car(spawnx, spawny, my_name, is_ai=False, car_type="ae86")
         
         # settings
-        if ev.key == const.ESCAPE_KEY and substage == "" and (stage == "playing" or stage == "menu"): substage = "settings" # open settings
-        elif ev.key == const.ESCAPE_KEY and substage == "settings": substage = "" # close settings
+        if ev.key == const.ESCAPE_KEY and stage2 == "" and (stage1 == "game" or stage1 == "lobby"): 
+            stage2 = "settings" # open settings
+        elif ev.key == const.ESCAPE_KEY and stage2 == "settings": 
+            stage2 = "" # close settings
+    
+    # Handle mouse clicks in new_game UI
+    elif ev.type == pygame.MOUSEBUTTONDOWN:
+        if stage1 == "lobby" and stage2 == "new_game" and _new_game_rects_cache:
+            action = handle_new_game_click(ev.pos, _new_game_rects_cache)
+            
+            if action == "host_game":
+                # Get game setup and start hosting
+                setup = get_game_setup()
+                if setup["username"]:  # Only proceed if username is entered
+                    stage1, my_name, code, sock, is_host = host_new_game(my_id)
+                    is_host_flag_ref[0] = is_host
+                    stage2 = ""  # Close new_game UI
+                    
+                    # Update car with new name and selected car type
+                    my_car.name = my_name
+                    my_car.car_type = setup["selected_car"]
+        elif stage1 == "lobby" and stage2 == "join_game" and _join_game_rects_cache:
+            action = handle_join_game_click(ev.pos, _join_game_rects_cache)
 
-    return ev, stage, substage, remotes, sock, code, my_car, error_msg
+            if action == "join_game":
+                # Get game setup and start joining
+                setup = get_game_setup()
+                if setup["username"]:  # Only proceed if username is entered
+                    stage1, my_name, code, sock, is_host = join_new_game(my_id)
+                    stage2 = ""  # Close new_game UI
+                    
+                    # Update car with new name and selected car type
+                    my_car.name = my_name
+                    my_car.car_type = setup["selected_car"]
+
+    return ev, stage1, stage2, remotes, sock, code, my_car, error_msg
 
 def _get_cached_hud_font(font_small: pygame.font.Font, scale: float) -> pygame.font.Font:
     """Get or create a cached scaled font for HUD elements."""
@@ -314,13 +342,7 @@ def _get_cached_hud_font(font_small: pygame.font.Font, scale: float) -> pygame.f
         _hud_font_cache[font_size] = pygame.font.SysFont(None, font_size)
     return _hud_font_cache[font_size]
 
-def draw_controls_hud(ui_surf: pygame.Surface,
-                      font_small: pygame.font.Font,
-                      st: float,
-                      th: float,
-                      br: float,
-                      rpm: Optional[float] = None,
-                      rpm_redline: float = 7000.0) -> None:
+def draw_controls_hud(ui_surf: pygame.Surface, ai_path_mode_controls, joysticks, my_car, cam, font_small, dt, engine_state, rpm_redline: float = 7000.0) -> None:
     """Draw bottom-right HUD with RPM gauge, steering wheel, throttle and brake bars.
 
     Parameters
@@ -330,6 +352,32 @@ def draw_controls_hud(ui_surf: pygame.Surface,
     - rpm: optional engine RPM; if None, a simple estimate is derived from throttle
     - rpm_redline: maximum RPM for gauge scaling
     """
+
+    # HUD: steering wheel + throttle/brake % bars (bottom-right)
+    if const.AI_PATH_FOLLOW and ai_path_mode_controls is not None: 
+        inp = ai_path_mode_controls
+    else: 
+        inp = read_inputs(joysticks, my_car, cam, const.CURSOR_FOLLOW, const.AI_PATH_FOLLOW)
+
+    th = clamp(inp.get("th", 0.0), -1.0, 1.0)
+    br = clamp(inp.get("br", 0.0), 0.0, 1.0)
+    st = clamp(inp.get("st", 0.0), -1.0, 1.0)
+    
+    # Engine RPM estimation: uses speed, drift state, throttle and smoothing
+    speed_units = math.hypot(my_car.vx, my_car.vy)
+    # Persist transient engine state externally (gear, last rpm)
+    prev_rpm = engine_state.get("last_rpm")
+    rpm = calc_engine_rpm(
+        speed_units=speed_units,
+        drift_ratio=my_car.drift_ratio,
+        throttle=th,
+        prev_rpm=prev_rpm,
+        dt=dt,
+        params=None,
+        _state=engine_state,
+    )
+    engine_state["last_rpm"] = rpm
+
     # Apply UI scaling
     s = getattr(const, "UI_SCALE", 1.0)
     def sc(v: float) -> int:
@@ -465,8 +513,4 @@ def draw_controls_hud(ui_surf: pygame.Surface,
     # Optional thin border around HUD
     pygame.draw.rect(ui_surf, (80, 88, 100), (x, y, hud_w, hud_h), max(1, sc(1)))
 
-def blur_surface(surface, world_size, scale_factor=0.1):
-    scaled_size = (max(1, int(world_size[0] * scale_factor)), max(1, int(world_size[1] * scale_factor)))
-    small_surface = pygame.transform.smoothscale(surface, scaled_size) # scale down the surface
-    blurred_surface = pygame.transform.smoothscale(small_surface, world_size) # scale back to original size
-    return blurred_surface
+

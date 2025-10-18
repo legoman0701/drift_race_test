@@ -1,6 +1,7 @@
 import math, pygame
 from typing import List, Tuple, Optional, Dict
 from drift.core.helpers import clamp
+import drift.config.const as const
 
 
 def ai_algorithme(
@@ -16,7 +17,7 @@ def ai_algorithme(
     return (controls, surface).
     """
     # Optional debug drawing when a surface is provided
-    if ai_path_mode and surface is not None:
+    if ai_path_mode and const.DEBUG and surface is not None:
         surface.fill((0, 0, 0, 0))
         if path_poly:
             pygame.draw.polygon(surface, (255, 0, 0), path_poly, 3)
@@ -90,7 +91,7 @@ def ai_algorithme(
             angle_diff = ((angle_to_point - car_angle + math.pi) % (2 * math.pi)) - math.pi
             angle_deg = math.degrees(angle_diff)
 
-            if ai_path_mode and surface is not None:
+            if ai_path_mode and const.DEBUG and surface is not None:
                 pygame.draw.circle(surface, (0, 255, 0), (int(cx), int(cy)), 6)
                 pygame.draw.line(surface, (0, 255, 0), (int(px), int(py)), (int(cx), int(cy)), 2)
                 hx, hy = px + math.cos(car_angle) * 40, py + math.sin(car_angle) * 40

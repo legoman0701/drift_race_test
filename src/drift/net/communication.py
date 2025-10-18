@@ -38,7 +38,7 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
         t = msg.get("t")
         if t == "join_ok":
             pass
-        elif t == "world":
+        elif t == "world": # Placeholder for receiving authoritative world state from server
             players = msg.get("players", {}) or {}
             POS_SMOOTHING_MULTIPLIER = 300.0
             ANGLE_SMOOTHING_MULTIPLIER = 300.0

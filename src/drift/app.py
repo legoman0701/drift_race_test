@@ -5,13 +5,17 @@
 # global imports
 import pygame, json, time, random, sys, math, uuid, argparse, threading
 # local imports
-import drift.config.const as const, drift.render.camera as camera, drift.core.car as car, drift.ui.button as btn, drift.ai.path_finder as path_finder
+import drift.config.const as const
+import drift.render.camera as camera
+import drift.core.car as car
+import drift.ui.button as btn
+import drift.ai.path_finder as path_finder
 from drift.render.renderer import WorldRenderer
 from drift.core.helpers import clamp, rand_name
 from drift.ai.ai import ai_algorithme
 from drift.core.inputs import read_inputs
 from drift.net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, recv_jsons
-from drift.ui.ui import draw_track_ui, handle_game_events, draw_controls_hud, blur_surface, draw_fps
+from drift.ui.ui import handle_game_events, draw_stage_ui
 from drift.core.rpm import calc_engine_rpm
 from drift.audio.engine_audio import EngineAudio
 from drift.render.map_chunks import ChunkedMap
@@ -150,8 +154,6 @@ RELAY_PUBLIC_ENDPOINT = const.RELAY_PUBLIC_ENDPOINT
 # True : client creates a room, False : joining
 I_AM_HOST = False
 
-ai_path_mode = False
-cursor_follow_mode = False
 flags = const.FLAGS
 
 # ======= MAIN LOOP =======
@@ -166,6 +168,12 @@ def main():
 
     pygame.init()
     pygame.joystick.init()
+    
+    # Create fonts after pygame.init()
+    font_small = pygame.font.SysFont(None, const.FONT_SMALL_SIZE)
+    font_medium = pygame.font.SysFont(None, const.FONT_MEDIUM_SIZE)
+    font_big = pygame.font.SysFont(None, const.FONT_BIG_SIZE)
+    
     # Audio init with fallback configurations for low-end devices
     audio_configs = [
         # High quality (try first)
@@ -199,12 +207,9 @@ def main():
     if not audio_initialized:
         print("Warning: All audio configurations failed - audio will be disabled")
 
-    pygame.display.set_caption("Drift Race v0.7")
+    pygame.display.set_caption("Drift Race v0.7.9")
     screen = pygame.display.set_mode((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
     clock = pygame.time.Clock()
-    font_small = pygame.font.SysFont(None, const.FONT_SMALL_SIZE)
-    font_medium = pygame.font.SysFont(None, const.FONT_MEDIUM_SIZE)
-    font_big = pygame.font.SysFont(None, const.FONT_BIG_SIZE)
 
     # Load car sprites dynamically based on car types
     def load_car_sprites(car_type):
@@ -236,8 +241,9 @@ def main():
     track_image = pygame.image.load(f"assets/track/map{const.MAP_NUM}/main.png").convert()
     chunk_map = ChunkedMap(root=f"assets/track/map{const.MAP_NUM}/chunks", tile_size=1024)
 
-    stage = "menu" # menu | playing | error
-    substage = "" # "" | settings
+    stage1 = "lobby" # lobby | game | error
+    stage2 = "" # new_game | settings
+    stage3 = "" # key_binds
     error_msg = ""
     remotes = {}
     ai_cars = []
@@ -297,7 +303,7 @@ def main():
                     break
                 time.sleep(0.02)
             if join_ok_received:
-                stage = "playing"
+                stage1 = "game"
                 I_AM_HOST = True  # set host flag for CLI host mode
             else:
                 raise Exception("no join_ok")
@@ -305,7 +311,7 @@ def main():
             # Offline fallback
             sock = None
             code = "Offline"
-            stage = "playing"
+            stage1 = "game"
             I_AM_HOST = True
     elif args.mode == "join" and args.code and args.name:
         my_name = args.name
@@ -330,7 +336,7 @@ def main():
                     break
                 time.sleep(0.02)
             if join_ok_received:
-                stage = "playing"
+                stage1 = "game"
                 I_AM_HOST = False  # set host flag for CLI join mode
             else:
                 raise Exception("no join_ok")
@@ -338,7 +344,7 @@ def main():
             # Offline fallback
             sock = None
             code = "Offline"
-            stage = "playing"
+            stage1 = "game"
             I_AM_HOST = False
     
     # Renderer handles track, cars, and drift marks
@@ -354,7 +360,6 @@ def main():
     host_ref = [I_AM_HOST]
 
     def leave_room(sock, code, my_id, remotes):
-        global ai_path_mode, cursor_follow_mode
         if sock and code:
             try:
                 sock.send(json.dumps({"t": "bye", "code": code, "id": my_id}).encode("utf-8"))
@@ -363,25 +368,23 @@ def main():
                 pass
         remotes.clear()
         ai_cars.clear()
-        ai_path_mode = False
-        cursor_follow_mode = False
-        return "menu", "", None, None, remotes # stage, substage sock, code, remotes
+        const.AI_PATH_FOLLOW = False
+        const.CURSOR_FOLLOW = False
+        return "lobby", "", None, None, remotes # stage, substage sock, code, remotes
         
     def switch_cursor_follow_mode():
-        global cursor_follow_mode, ai_path_mode
-        cursor_follow_mode = not cursor_follow_mode
-        if cursor_follow_mode: ai_path_mode = False
+        const.CURSOR_FOLLOW = not const.CURSOR_FOLLOW
+        if const.CURSOR_FOLLOW: const.AI_PATH_FOLLOW = False
         # stage, substage sock, code, remotes
-        try: return "playing", "", sock, code, remotes
-        except Exception: return "playing", "", None, None, {}
+        try: return "game", "", sock, code, remotes
+        except Exception: return "game", "", None, None, {}
 
     def switch_ai_path_mode():
-        global ai_path_mode, cursor_follow_mode
-        ai_path_mode = not ai_path_mode
-        if ai_path_mode: cursor_follow_mode = False
+        const.AI_PATH_FOLLOW = not const.AI_PATH_FOLLOW
+        if const.AI_PATH_FOLLOW: const.CURSOR_FOLLOW = False
         # stage, substage sock, code, remotes
-        try: return "playing", "", sock, code, remotes
-        except Exception: return "playing", "", None, None, {}
+        try: return "game", "", sock, code, remotes
+        except Exception: return "game", "", None, None, {}
 
     buttons = [
     btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.3, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, lambda: leave_room(sock, code, my_id, remotes)),
@@ -392,6 +395,9 @@ def main():
     while True:
         dt = clock.tick(const.FPS) / 1000.0
         #dt = min(dt, 1 / const.FPS)  # Cap dt to avoid large jumps
+
+        # ======== EVENT HANDLING ========
+
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
                 if sock and code:
@@ -420,7 +426,7 @@ def main():
                 const.DEBUG = not const.DEBUG
                 print(f"Debug mode {'enabled' if const.DEBUG else 'disabled'}")
             if ev.type == pygame.KEYDOWN and ev.key == pygame.K_n:
-                if I_AM_HOST and stage == "playing":
+                if I_AM_HOST and stage1 == "game":
                     # Randomly assign car type for AI cars
                     ai_car_type = random.choice(["ae86", "m5"])
                     ai_cars.append(
@@ -448,7 +454,7 @@ def main():
                 cam.offset[0] -= ev.rel[0] / cam.zoom
                 cam.offset[1] -= ev.rel[1] / cam.zoom
 
-            ev, stage, substage, remotes, sock, code, my_car, error_msg = handle_game_events(screen, ev, stage, substage, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref)
+            ev, stage1, stage2, remotes, sock, code, my_car, error_msg = handle_game_events(screen, ev, stage1, stage2, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref)
             I_AM_HOST = host_ref[0]
 
         if sock:
@@ -473,8 +479,10 @@ def main():
             if now - last_ping >= 1.0 / const.PING_HZ:
                 last_ping = now
                 send_ping(sock, code)
+
+        # ======== FRAME UPDATE ========
         
-        world_size = renderer.get_world_size(stage)
+        world_size = renderer.get_world_size(stage1)
 
         # Prepare remotes view for the player: include network remotes + AI cars (so player can collide with AIs)
         remotes_with_ai_for_player = dict(remotes)
@@ -486,13 +494,13 @@ def main():
         # Update player car using remotes that include AIs
         # If AI path mode is enabled and a path is available, let the AI drive the player
         controls = None
-        if ai_path_mode and path_poly:
+        if const.AI_PATH_FOLLOW and path_poly:
             try:
                 controls, ai_debug_surface = ai_algorithme(path_poly, my_car, ai_path_mode=True, surface=pygame.Surface((track_image.get_width(), track_image.get_height()), pygame.SRCALPHA), font_small=font_small)
             except Exception:
                 controls = None
         if controls is None:
-            controls = read_inputs(joysticks, my_car, cam, cursor_follow_mode, ai_path_mode)
+            controls = read_inputs(joysticks, my_car, cam, const.CURSOR_FOLLOW, const.AI_PATH_FOLLOW)
         my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG)
         # Update engine audio based on RPM and throttle with enhanced drift characteristics
         try:
@@ -538,124 +546,41 @@ def main():
                 ai.step(ai_algorithme(path_poly, ai), dt, remotes_with_ai_for_ais, world_size, compute_debug=const.DEBUG)
         cam.update(my_car, world_size)
 
-        # Draw game world via renderer
-        world_surf, resized, is_viewport = renderer.render_world(
-            cam=cam,
-            stage=stage,
-            my_car=my_car,
-            ai_cars=ai_cars,
-            remotes=remotes,
-            lights_on=lights_on,
-            car_sprites_cache=car_sprites_cache,
-        )
+        # ======== RENDERING ========
 
+        # draw track, drift marks and cars (online & local)
+        world_surf, resized, is_viewport = renderer.render_world(cam, stage1, my_car, ai_cars, remotes, lights_on, car_sprites_cache)
         if resized and not is_viewport:
             path_poly = path_finder.discover_track(f"assets/track/map{const.MAP_NUM}/main.png")
 
-        # Use nearest-neighbor scaling for crisp pixels when zooming in chunk mode
+        # draw camera view (scaled or classic)
         if is_viewport: final_surf = pygame.transform.scale(world_surf, (const.WINDOW_WIDTH, const.WINDOW_HEIGHT))  # chunk mode
         else: final_surf = cam.apply(world_surf)  # classic mode
-        
+
+        # draw ui
         ui_surf = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), pygame.SRCALPHA)
         ui_surf.fill((0,0,0,0)) # transparent surface
+        fps = clock.get_fps()
+        world_surf, button_results, new_game_rects, join_game_rects = draw_stage_ui(
+            ui_surf, stage1, stage2, stage3, code, world_surf, world_size, 
+            buttons, error_msg, my_car, cam, joysticks, font_big, font_medium, font_small,
+            controls, engine_state, fps, dt
+        )
         
-        draw_track_ui(ui_surf)
-        # world drawing is now handled by renderer
-        
-        if stage == "menu":
-            cam.zoom = 1
-            if substage != "settings": 
-                title = font_big.render("Menu", True, const.WHITE_240)
-                ui_surf.blit(title, (const.WINDOW_WIDTH//2 - title.get_width()//2, const.TITLE_Y))
-            tip1 = font_medium.render("H : Host room", True, const.GREY_200)
-            tip2 = font_medium.render("J : Join room", True, const.GREY_200)
-            relay = font_small.render(f"Relay: {RELAY_PUBLIC_ENDPOINT}", True, const.GREY_180)
-            ui_surf.blit(tip1, (int(const.WINDOW_WIDTH*.3 - tip1.get_width()//2), const.TIP1_Y))
-            ui_surf.blit(tip2, (int(const.WINDOW_WIDTH*.7 - tip2.get_width()//2), const.TIP2_Y))
-            ui_surf.blit(relay, (const.WINDOW_WIDTH//2 - relay.get_width()//2, const.RELAY_Y))
-
-        if stage == "playing":
-            # title, room code, relay
-            if substage != "settings": 
-                title = font_big.render("In Game", True, const.WHITE_240)
-                ui_surf.blit(title, (const.WINDOW_WIDTH//2 - title.get_width()//2, const.TITLE_Y))
-            room_label = code if code else "Offline"
-            hud = font_small.render(f"Room: {room_label}", True, const.GREY_180)
-            ui_surf.blit(hud, (10, const.RELAY_Y))
-
-            # HUD: steering wheel + throttle/brake % bars (bottom-right)
-            if ai_path_mode and 'controls' in locals() and controls is not None: inp = controls
-            else: inp = read_inputs(joysticks, my_car, cam, cursor_follow_mode, ai_path_mode)
-
-            th = clamp(inp.get("th", 0.0), -1.0, 1.0)
-            br = clamp(inp.get("br", 0.0), 0.0, 1.0)
-            st = clamp(inp.get("st", 0.0), -1.0, 1.0)
-            
-            # Engine RPM estimation: uses speed, drift state, throttle and smoothing
-            speed_units = math.hypot(my_car.vx, my_car.vy)
-            # Persist transient engine state externally (gear, last rpm)
-            prev_rpm = engine_state.get("last_rpm")
-            rpm = calc_engine_rpm(
-                speed_units=speed_units,
-                drift_ratio=my_car.drift_ratio,
-                throttle=th,
-                prev_rpm=prev_rpm,
-                dt=dt,
-                params=None,
-                _state=engine_state,
-            )
-            engine_state["last_rpm"] = rpm
-
-            draw_controls_hud(ui_surf, font_small, st, th, br, rpm, 7000)
-
-        if stage == "error":
-            title = font_big.render("ERROR", True, (255,120,120))
-            ui_surf.blit(title, (const.WINDOW_WIDTH//2 - title.get_width()//2, const.WINDOW_HEIGHT//2 - 40))
-            msg = font_small.render(error_msg, True, (255,200,200))
-            ui_surf.blit(msg, (const.WINDOW_WIDTH//2 - msg.get_width()//2, const.WINDOW_HEIGHT//2))
-            tip = font_small.render("Press R to restart", True, const.GREY_200)
-            ui_surf.blit(tip, (const.WINDOW_WIDTH//2 - tip.get_width()//2, const.WINDOW_HEIGHT//2 + 40))
-
-        if substage == "settings":
-            title = font_big.render("Settings", True, const.WHITE_240)
-            ui_surf.blit(title, (const.WINDOW_WIDTH//2 - title.get_width()//2, const.TITLE_Y))
-            world_surf = blur_surface(world_surf, world_size)
-            for button in buttons:
-                try:
-                    if button.action == switch_cursor_follow_mode:
-                        if cursor_follow_mode:
-                            button.text = "Mouse Following : On"
-                            button.color = const.GREEN
-                        else:
-                            button.text = "Mouse Following : Off"
-                            button.color = const.RED
-                    if button.action == switch_ai_path_mode:
-                        if ai_path_mode:
-                            button.text = "AI Path Mode : On"
-                            button.color = const.GREEN
-                        else:
-                            button.text = "AI Path Mode : Off"
-                            button.color = const.RED
-                except Exception: pass
-                
-                res = button.draw(ui_surf)
-                # button.draw returns a 5-tuple: (stage, substage, sock, code, remotes)
-                if isinstance(res, tuple) and len(res) == 5:
-                    new_stage, new_substage, new_sock, new_code, new_remotes = res
-                    stage = new_stage
-                    substage = new_substage
-                    sock = new_sock
-                    code = new_code
-                    remotes = new_remotes
+        # Handle button results from settings menu
+        for res in button_results:
+            if isinstance(res, tuple) and len(res) == 5:
+                new_stage, new_substage, new_sock, new_code, new_remotes = res
+                stage1 = new_stage
+                stage2 = new_substage
+                sock = new_sock
+                code = new_code
+                remotes = new_remotes
 
         screen.blit(final_surf, (0,0)) # world surface (cars, ai, map...)
         screen.blit(ui_surf, (0,0)) # top and bottom borders
         
-        # Draw FPS counter
-        current_fps = clock.get_fps()
-        draw_fps(screen, font_small, current_fps)
-        
-        if ai_path_mode and stage == "playing":
+        if const.AI_PATH_FOLLOW and stage1 == "game":
             try:
                 top_right_pos = cam.x-(const.WINDOW_WIDTH/2)/cam.zoom, cam.y-(const.WINDOW_HEIGHT/2)/cam.zoom
                 camera_rect = pygame.Rect(top_right_pos[0],

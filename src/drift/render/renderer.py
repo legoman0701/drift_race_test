@@ -40,7 +40,7 @@ class WorldRenderer:
         return resized
 
     def _draw_track(self, world_surf: pygame.Surface, cam, stage: str) -> None:
-        if stage != "playing":
+        if stage != "game":
             world_surf.fill(const.GREY_20)
             return
         # Draw only the visible track region into the world surface
@@ -66,8 +66,8 @@ class WorldRenderer:
             if ai_car.drift_ratio > 0.5 and ai_car.drift_points_old:
                 pygame.draw.line(self.tire_mark, const.TIRE_MARK_SMOKE, ai_car.drift_points[0], ai_car.drift_points_old[0], 3)
                 pygame.draw.line(self.tire_mark, const.TIRE_MARK_SMOKE, ai_car.drift_points[1], ai_car.drift_points_old[1], 3)
-        # Remote players only when playing
-        if stage == "playing":
+        # Remote players only when on game stage
+        if stage == "game":
             for pid, d in remotes.items():
                 # draw_car returns rear tire points as (p2, p3)
                 # Drift point accumulation happens after car drawing below to avoid duplication.
@@ -115,7 +115,7 @@ class WorldRenderer:
         """
         Size used by physics/camera clamping.
         """
-        if stage != "playing":
+        if stage != "game":
             return (const.WINDOW_WIDTH, const.WINDOW_HEIGHT)
         if self.chunked_map and hasattr(self.chunked_map, "get_world_size"):
             return self.chunked_map.get_world_size()  # use finite dimensions of the chunked map
@@ -140,8 +140,8 @@ class WorldRenderer:
         - is_viewport == True  : chunked path (already a viewport-sized surface to blit/scale).
         """
 
-        # -------- Chunked path --------
-        if stage == "playing" and self.chunked_map is not None:
+        # game stage (draw chunk map)
+        if stage == "game" and self.chunked_map is not None:
             # Viewport-sized canvas
             vw, vh = int(const.WINDOW_WIDTH / cam.zoom), int(const.WINDOW_HEIGHT / cam.zoom)
             world_surf = pygame.Surface((vw, vh), self.flags)
@@ -199,7 +199,7 @@ class WorldRenderer:
             return world_surf, resized, True
         
         # -------- Classic path --------
-        if stage != "playing":
+        if stage != "game":
             world_size = (const.WINDOW_WIDTH, const.WINDOW_HEIGHT)
         else:
             world_size = (self.track_image.get_width(), self.track_image.get_height())
@@ -207,10 +207,14 @@ class WorldRenderer:
         world_surf = pygame.Surface(world_size, self.flags)
         resized = self._ensure_tire_mark_size(world_size)
 
-        # 1) Track
+        # 1) Draw the background track image
         self._draw_track(world_surf, cam, stage)
 
-        # 2) AIs
+        # 2) Tire Marks
+        self._update_tire_marks(my_car, ai_cars, remotes, stage)
+        self._blit_visible_tire_marks(world_surf, cam)
+
+        # 3) Draw all local AI-controlled cars
         for ai_car in ai_cars:
             car_sprites = car_sprites_cache.get(ai_car.car_type, car_sprites_cache.get("ae86", []))
             draw_car(world_surf, ai_car.x, ai_car.y, ai_car.angle, ai_car.name,
@@ -218,13 +222,7 @@ class WorldRenderer:
                      car_sprites_list=car_sprites,
                      lights_on=lights_on)
 
-        # 3) Tire marks accumulation
-        self._update_tire_marks(my_car, ai_cars, remotes, stage)
-
-        # 4) Blit visible marks
-        self._blit_visible_tire_marks(world_surf, cam)
-
-        # 5) Player
+        # 4) Player Car
         my_car_sprites = car_sprites_cache.get(my_car.car_type, car_sprites_cache.get("ae86", []))
         draw_car(world_surf, my_car.x, my_car.y, my_car.angle, my_car.name,
                  color_body=const.COLOR_MY_CAR,
@@ -233,8 +231,8 @@ class WorldRenderer:
         # Per-wheel debug overlay for local car
         if const.DEBUG: draw_wheel_debug(world_surf, my_car, 0, 0)
 
-        # 6) Remotes (draw + drift marks accumulation)
-        if stage == "playing" and draw_remotes:
+        # 5) Draw network/online players' cars
+        if stage == "game" and draw_remotes:
             for pid, d in remotes.items():
                 remote_car_sprites = car_sprites_cache.get(d.get("car_type", "ae86"), car_sprites_cache.get("ae86", []))
                 drift_pts = draw_car(world_surf, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
