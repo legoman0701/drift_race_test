@@ -12,7 +12,7 @@ from drift.ui.draw_stage import (
     draw_lobby, draw_new_game, draw_join_game, draw_settings, draw_game, draw_error,
     handle_new_game_click, handle_new_game_keypress, host_new_game,
     handle_join_game_click, handle_join_game_keypress, join_new_game,
-    get_game_setup, reset_game_setup
+    get_game_setup, reset_game_setup, set_error_message, clear_error_message
 )
 
 # Cache font to avoid recreating it every frame (massive performance killer)
@@ -148,7 +148,6 @@ def draw_wheel_debug(surface: pygame.Surface, car, offx: int = 0, offy: int = 0)
         draw_vec(drag, (180, 80, 220))   # aero drag: purple
         draw_vec(brk,  (240, 80, 80))    # brake drag: red
 
-
 def draw_header(surface, font_big, font_small, title_str: str, fps: float):
     # Draw header background
     pygame.draw.rect(surface, const.TRACK_BORDER_COLOR, (0, 0, const.WINDOW_WIDTH, const.TOP_LINE_Y))
@@ -169,13 +168,17 @@ def draw_header(surface, font_big, font_small, title_str: str, fps: float):
     fps_text = font_small.render(f"FPS: {fps:.1f}", True, color)
     surface.blit(fps_text, (const.WINDOW_WIDTH*0.9 - fps_text.get_width(), const.NAVBAR_Y))
 
-def draw_footer(surface: str, font_small):
+def draw_footer(surface: str, font_small, code=None):
     # Draw footer background
     pygame.draw.rect(surface, const.TRACK_BORDER_COLOR, (0, const.BOTTOM_LINE_Y, const.WINDOW_WIDTH, const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y))
     pygame.draw.line(surface, const.WHITE, (0, const.BOTTOM_LINE_Y), (const.WINDOW_WIDTH, const.BOTTOM_LINE_Y))
     # draw a footer title centered at the bottom of the screen
     relay = font_small.render(f"Relay: {const.RELAY_PUBLIC_ENDPOINT}", True, const.GREY_180)
     surface.blit(relay, (const.WINDOW_WIDTH // 2 - relay.get_width() // 2, const.BOTTOM_LINE_Y + 5))
+    # Draw room code on the left side if provided
+    room_label = code if code else "Offline"
+    code_text = font_small.render(f"Room Code: {room_label}", True, const.WHITE_240)
+    surface.blit(code_text, (10, const.BOTTOM_LINE_Y + 5))
 
 def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size, buttons, 
                   error_msg, my_car, cam, joysticks, font_big, font_medium, font_small,
@@ -227,7 +230,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
             world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons)
         else:
             draw_header(ui_surf, font_big, font_small, "In Game", fps)
-            draw_game(ui_surf, code, font_small)
+            # draw_game(ui_surf, code, font_small)
             draw_controls_hud(ui_surf, ai_path_mode_controls, joysticks, my_car, cam, font_small, dt, engine_state, 7000)
         draw_footer(ui_surf, font_small)
 
@@ -240,44 +243,58 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
     
     return world_surf, button_results, new_game_rects, join_game_rects
 
-
-
-# OLD SYSTEM - DEPRECATED - Use new draw_new_game/host_new_game system instead
-# def handle_menu_events(screen, font_big, font_small, ev, stage1, stage2, my_name, my_id, code, sock, is_host_flag_ref):
-#     ... (old code removed)
-# return stage1, stage2, my_name, code, sock
-
 def handle_game_events(screen, ev, stage1, stage2, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref, new_game_rects=None):
     """Handle game events including new game UI interactions."""
     global _new_game_rects_cache
     
-    if ev.type == pygame.KEYDOWN:
-        if stage1 == "lobby":
-            if stage2 == "" and ev.key == const.HOST_KEY:  # Host room - open new game UI
-                stage2 = "new_game"
+    if ev.type == pygame.KEYDOWN: # press a key
+        if stage1 == "lobby": # in lobby
+            if stage2 == "" and ev.key == const.HOST_KEY:  # h
+                stage2 = "new_game" # host a room - open new game UI
                 reset_game_setup()  # Reset to defaults when opening
-            elif stage2 == "" and ev.key == const.JOIN_KEY:  # Join room - open join game UI
-                stage2 = "join_game"
-            
-            # Handle keyboard input in new_game UI
-            elif stage2 == "new_game":
+            elif stage2 == "" and ev.key == const.JOIN_KEY:  # j
+                stage2 = "join_game" # join a room - open join game UI
+                reset_game_setup()  # Reset to defaults when opening
+            elif stage2 == "new_game": # in new_game UI
                 handle_new_game_keypress(ev)
-                
-                # ESC to go back to lobby
-                if ev.key == const.ESCAPE_KEY:
-                    stage2 = ""
+                if ev.key == const.ESCAPE_KEY: # esc
+                    stage2 = "" # go back to lobby
                     reset_game_setup()
-
-            elif stage2 == "join_game":
+                if ev.key == pygame.K_RETURN or ev.key == pygame.K_KP_ENTER:
+                    setup = get_game_setup()
+                    if setup["username"]:  # Only proceed if username is entered
+                        stage1, my_name, code, sock, is_host = host_new_game(my_id)
+                        is_host_flag_ref[0] = is_host
+                        stage2 = "" # Close new_game UI
+                        my_car.name = my_name # update car with new name
+                        my_car.car_type = setup["selected_car"] # update car selected car type
+                    else:
+                        set_error_message("username missing")
+            elif stage2 == "join_game": # in join_game UI
                 handle_join_game_keypress(ev)
-
-                # ESC to go back to lobby
-                if ev.key == const.ESCAPE_KEY:
+                if ev.key == const.ESCAPE_KEY: # esc to go back to lobby
                     stage2 = ""
                     reset_game_setup()
-
-        # error
-        elif stage1 == "error" and ev.key == const.RESET_KEY:
+                if ev.key == pygame.K_RETURN or ev.key == pygame.K_KP_ENTER:
+                    setup = get_game_setup()
+                    if not setup["username"]:
+                        set_error_message("username missing")
+                    elif not setup["room_code"]:
+                        set_error_message("room code missing")
+                    elif len(setup["room_code"]) < 6:
+                        set_error_message("room code too short")
+                    else: # Only proceed if username is entered
+                        clear_error_message()
+                        stage1, my_name, code, sock, is_host = join_new_game(my_id)
+                        stage2 = "" # Close new_game UI
+                        my_car.name = my_name # update car with new name
+                        my_car.car_type = setup["selected_car"] # update car selected car type
+        elif stage1 == "game": # in game
+            if stage2 == "" and ev.key == const.ESCAPE_KEY: 
+                stage2 = "settings" # open settings
+            elif stage2 == "settings": 
+                stage2 = "" # close settings
+        elif stage1 == "error" and ev.key == const.RESET_KEY: # r to reset from error
             stage1 = "lobby"
             stage2 = ""
             error_msg = ""
@@ -296,12 +313,6 @@ def handle_game_events(screen, ev, stage1, stage2, remotes, ai_cars, sock, code,
             spawny = random.randint(const.TRACK_MARGIN + 120, const.WINDOW_HEIGHT - const.TRACK_MARGIN - 120)
             import drift.core.car as car
             my_car = car.Car(spawnx, spawny, my_name, is_ai=False, car_type="ae86")
-        
-        # settings
-        if ev.key == const.ESCAPE_KEY and stage2 == "" and (stage1 == "game" or stage1 == "lobby"): 
-            stage2 = "settings" # open settings
-        elif ev.key == const.ESCAPE_KEY and stage2 == "settings": 
-            stage2 = "" # close settings
     
     # Handle mouse clicks in new_game UI
     elif ev.type == pygame.MOUSEBUTTONDOWN:

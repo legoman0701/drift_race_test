@@ -12,6 +12,7 @@ _game_setup = {
     "selected_mode": "beta",  # Default mode
     "room_code": "",  # For join game
     "code_active": False,  # For join game code input
+    "error_message": None,  # For displaying errors
 }
 
 def draw_lobby():         
@@ -107,6 +108,12 @@ def draw_new_game(ui_surf, font_big, font_medium):
     ui_surf.blit(host_text, (host_btn_rect.centerx - host_text.get_width() // 2, 
                               host_btn_rect.centery - host_text.get_height() // 2))
     
+    # Error message area
+    y += btn_height + 20
+    if _game_setup["error_message"]:
+        error_surf = font_medium.render(_game_setup["error_message"], True, (255, 100, 100))
+        ui_surf.blit(error_surf, (center_x - error_surf.get_width() // 2, y))
+    
     # Store rects for click detection (returned for event handling)
     return {
         "username_box": input_box_rect,
@@ -160,9 +167,7 @@ def handle_join_game_click(click_pos, rects):
 def handle_new_game_keypress(event):
     """Handle keyboard input for username field."""
     if _game_setup["username_active"]:
-        if event.key == pygame.K_RETURN:
-            _game_setup["username_active"] = False
-        elif event.key == pygame.K_BACKSPACE:
+        if event.key == pygame.K_BACKSPACE:
             _game_setup["username"] = _game_setup["username"][:-1]
         elif event.key == pygame.K_ESCAPE:
             _game_setup["username_active"] = False
@@ -175,7 +180,8 @@ def handle_new_game_keypress(event):
 def handle_join_game_keypress(event):
     """Handle keyboard input for username and code fields in join game."""
     if _game_setup["username_active"]:
-        if event.key == pygame.K_RETURN:
+        if event.key == pygame.K_TAB:
+            _game_setup["code_active"] = True
             _game_setup["username_active"] = False
         elif event.key == pygame.K_BACKSPACE:
             _game_setup["username"] = _game_setup["username"][:-1]
@@ -187,8 +193,9 @@ def handle_join_game_keypress(event):
                 if len(_game_setup["username"]) < const.MAX_NAME_LENGTH:
                     _game_setup["username"] += event.unicode
     elif _game_setup["code_active"]:
-        if event.key == pygame.K_RETURN:
+        if event.key == pygame.K_TAB:
             _game_setup["code_active"] = False
+            _game_setup["username_active"] = True
         elif event.key == pygame.K_BACKSPACE:
             _game_setup["room_code"] = _game_setup["room_code"][:-1]
         elif event.key == pygame.K_ESCAPE:
@@ -203,15 +210,24 @@ def get_game_setup():
     """Get current game setup configuration."""
     return _game_setup.copy()
 
+def set_error_message(message):
+    """Set an error message to display in the UI."""
+    _game_setup["error_message"] = message
+
+def clear_error_message():
+    """Clear the error message."""
+    _game_setup["error_message"] = None
+
 def reset_game_setup():
     """Reset game setup to defaults."""
     _game_setup["username"] = ""
-    _game_setup["username_active"] = False
+    _game_setup["username_active"] = True
     _game_setup["selected_car"] = "ae86"
     _game_setup["selected_track"] = "track1"
     _game_setup["selected_mode"] = "beta"
     _game_setup["room_code"] = ""
     _game_setup["code_active"] = False
+    _game_setup["error_message"] = None
 
 def host_new_game(my_id):
     """
@@ -427,6 +443,12 @@ def draw_join_game(ui_surf, font_big, font_medium):
     ui_surf.blit(join_text, (join_btn_rect.centerx - join_text.get_width() // 2, 
                               join_btn_rect.centery - join_text.get_height() // 2))
     
+    # Error message area
+    y += btn_height + 10
+    if _game_setup["error_message"]:
+        error_surf = font_medium.render(_game_setup["error_message"], True, (255, 100, 100))
+        ui_surf.blit(error_surf, (center_x - error_surf.get_width() // 2, y))
+    
     # Store rects for click detection (returned for event handling)
     return {
         "username_box": input_box_rect,
@@ -470,9 +492,7 @@ def draw_settings(ui_surf, world_surf, world_size, buttons):
     return world_surf, button_results
 
 def draw_game(ui_surf, code, font_small):
-    room_label = code if code else "Offline"
-    hud = font_small.render(f"Room: {room_label}", True, const.GREY_180)
-    ui_surf.blit(hud, (10, const.RELAY_Y))
+    pass
 
 def draw_error(ui_surf, error_msg, font_small):
     msg = font_small.render(error_msg, True, (255,200,200))

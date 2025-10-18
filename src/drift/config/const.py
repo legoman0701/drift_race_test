@@ -77,7 +77,7 @@ RELAY_Y = WINDOW_HEIGHT - 16
 # font sizes (fonts will be created after pygame.init() in app.py)
 FONT_SMALL_SIZE = 18
 FONT_MEDIUM_SIZE = 26
-FONT_BIG_SIZE = 40
+FONT_BIG_SIZE = 36
 
 # username & room code
 ROOM_ALPHABET = string.ascii_uppercase + string.digits
