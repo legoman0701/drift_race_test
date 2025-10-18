@@ -25,7 +25,7 @@ See the [project website](https://nmax0.github.io/drift-site/index.html) for:
 
 ## Changelog
 
-Full changelog available at: [https://nmax0.github.io/drift-site/changelog.html](https://nmax0.github.io/drift-site/changelog.html)
+Full changelog available at: [Changelog](https://nmax0.github.io/drift-site/changelog.html)
 
 ---
 
