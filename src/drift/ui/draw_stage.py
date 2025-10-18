@@ -1,7 +1,8 @@
-import pygame
+import pygame, json, time
 import drift.config.const as const
 from drift.ui.ui_helpers import blur_surface
 from drift.core.helpers import rand_code
+from drift.net.communication import connect_to_relay, recv_jsons
 
 # Game setup state (shared across new_game and join_game UI)
 _game_setup = {
@@ -203,7 +204,7 @@ def handle_join_game_keypress(event):
         else:
             # Add character if printable and within length limit (room codes are typically short)
             if event.unicode and event.unicode.isprintable():
-                if len(_game_setup["room_code"]) < 6:  # Room codes are usually short
+                if len(_game_setup["room_code"]) < 4:  # Room codes are usually short
                     _game_setup["room_code"] += event.unicode.upper()  # Convert to uppercase
 
 def get_game_setup():
@@ -232,16 +233,14 @@ def reset_game_setup():
 def host_new_game(my_id):
     """
     Host a new game with the configured settings.
-    Returns: (stage1, my_name, code, sock, is_host) tuple
+    Returns: (stage1, my_name, code, sock, is_host, host_name) tuple
     """
-    import time
-    import json
-    from drift.net.communication import connect_to_relay, recv_jsons
     
     my_name = _game_setup["username"] or "Player"
     code = rand_code()
     sock = None
     is_host = True
+    host_name = my_name  # When hosting, you are the host
     
     try:
         sock = connect_to_relay()
@@ -263,6 +262,8 @@ def host_new_game(my_id):
             for msg in recv_jsons(sock):
                 if msg.get("t") == "join_ok":
                     join_ok_received = True
+                    # Extract host_name from relay response (should be our name)
+                    host_name = msg.get("host_name", my_name)
                     break
                 if msg.get("t") == "error":
                     raise Exception(msg.get("msg", "relay error"))
@@ -292,27 +293,25 @@ def host_new_game(my_id):
         code = "Offline"
         is_host = True
     
-    return ("game", my_name, code, sock, is_host)
+    return ("game", my_name, code, sock, is_host, host_name)
 
 def join_new_game(my_id):
     """
     Join an existing game with the configured settings.
-    Returns: (stage1, my_name, code, sock, is_host) tuple
-    """
-    import time
-    import json
-    from drift.net.communication import connect_to_relay, recv_jsons
-    
+    Returns: (stage1, my_name, code, sock, is_host, host_name) tuple
+    """    
     my_name = _game_setup["username"] or "Player"
     code = _game_setup["room_code"].upper() if _game_setup["room_code"] else ""
     sock = None
     is_host = False
+    host_name = "Host"  # Default if not received
+    error = None
     
-    if not code:
-        # No code provided, fallback to offline
+    # Special bypass code to access offline mode
+    if code == "-_--_-":
         code = "Offline"
         is_host = False
-        return ("game", my_name, code, sock, is_host)
+        return ("game", my_name, code, sock, is_host, host_name, error)
     
     try:
         sock = connect_to_relay()
@@ -332,9 +331,12 @@ def join_new_game(my_id):
             for msg in recv_jsons(sock):
                 if msg.get("t") == "join_ok":
                     join_ok_received = True
+                    # Extract host_name from relay response
+                    host_name = msg.get("host_name", "Host")
                     break
                 if msg.get("t") == "error":
-                    raise Exception(msg.get("msg", "relay error"))
+                    error = msg.get("msg", "relay error")
+                    raise Exception(error)
             if join_ok_received:
                 break
             time.sleep(0.02)
@@ -350,18 +352,24 @@ def join_new_game(my_id):
             is_host = False
         
     except Exception as e:
-        # Relay unreachable; fall back to offline mode
-        print(f"Failed to join game: {e}")
+        # Handle specific error cases
+        error = str(e)
+        print(f"Failed to join game: {error}")
         try:
             if sock:
                 sock.close()
         except Exception:
             pass
         sock = None
+        
+        # If room not found, return error instead of falling back to offline
+        if "room_not_found" in error:
+            return ("lobby", my_name, "", None, False, "Host", error)
+        # For other errors (relay unreachable, etc), fall back to offline mode
         code = "Offline"
         is_host = False
-    
-    return ("game", my_name, code, sock, is_host)
+
+    return ("game", my_name, code, sock, is_host, host_name, error)
 
 def draw_join_game(ui_surf, font_big, font_medium):
     """Draw join game screen with username input, car selection, and code input.

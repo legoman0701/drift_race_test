@@ -76,10 +76,11 @@ def loop():
 
         # Receive packet
         try:
-            data, addr = sock.recvfrom(4096)
+            data, addr = sock.recvfrom(8192)
         except socket.timeout:
             continue
-        except Exception:
+        except Exception as e:
+            print(f"Error receiving packet: {e}")
             continue
 
         # Parse JSON
@@ -99,12 +100,12 @@ def loop():
                 sendto_json(sock, addr, {"t":"error","msg":"missing_code_or_id"}); continue
             if code in rooms:
                 sendto_json(sock, addr, {"t":"error","msg":"room_already_exists"}); continue
-            room = {"clients": {}, "states": {}, "host_addr": addr, "host_id": pid, "last_broadcast": 0.0, "dirty": True}
+            room = {"clients": {}, "states": {}, "host_addr": addr, "host_id": pid, "host_name": name, "last_broadcast": 0.0, "dirty": True}
             rooms[code] = room
             room["clients"][addr] = {"id": pid, "name": name, "last": now}
             room["states"].setdefault(pid, {"x": 500, "y": 350, "a": 0.0, "vx": 0.0, "vy": 0.0, "name": name, "drift_ratio": 0.0})
             room["dirty"] = True
-            sendto_json(sock, addr, {"t":"join_ok", "code": code})
+            sendto_json(sock, addr, {"t":"join_ok", "code": code, "host_name": name})
             broadcast_world(sock, code, room)
 
         elif mtype == "join": # player wants to join an existing room
@@ -119,7 +120,9 @@ def loop():
             room["clients"][addr] = {"id": pid, "name": name, "last": now}
             room["states"].setdefault(pid, {"x": 500, "y": 350, "a": 0.0, "vx": 0.0, "vy": 0.0, "name": name, "drift_ratio": 0.0})
             room["dirty"] = True
-            sendto_json(sock, addr, {"t":"join_ok", "code": code})
+            # Send host_name from room data
+            host_name = room.get("host_name", "no_host")
+            sendto_json(sock, addr, {"t":"join_ok", "code": code, "host_name": host_name})
             broadcast_world(sock, code, room)
 
         elif mtype == "state": # get player's physic car status (trigger broadcoast)

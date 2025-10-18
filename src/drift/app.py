@@ -255,11 +255,12 @@ def main():
     sock = None
     last_state_send = 0.0
     last_ping = 0.0
+    host_name = None  # Will be set when hosting or joining
 
     lights_on = True
 
-    spawnx = random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200)
-    spawny = random.randint(const.TRACK_MARGIN + 120, const.WINDOW_HEIGHT - const.TRACK_MARGIN - 120)
+    spawnx = const.WINDOW_WIDTH // 2
+    spawny = const.WINDOW_HEIGHT // 2
     my_car = car.Car(spawnx, spawny, my_name, is_ai=False, car_type="ae86")
     # Local player's engine state (avoid mutating Car which may use __slots__)
     engine_state = {"gear": 0, "last_rpm": None}
@@ -454,7 +455,7 @@ def main():
                 cam.offset[0] -= ev.rel[0] / cam.zoom
                 cam.offset[1] -= ev.rel[1] / cam.zoom
 
-            ev, stage1, stage2, remotes, sock, code, my_car, error_msg = handle_game_events(screen, ev, stage1, stage2, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref)
+            ev, stage1, stage2, remotes, sock, code, my_car, error_msg, host_name = handle_game_events(screen, ev, stage1, stage2, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name)
             I_AM_HOST = host_ref[0]
 
         if sock:
@@ -565,7 +566,7 @@ def main():
         world_surf, button_results, new_game_rects, join_game_rects = draw_stage_ui(
             ui_surf, stage1, stage2, stage3, code, world_surf, world_size, 
             buttons, error_msg, my_car, cam, joysticks, font_big, font_medium, font_small,
-            controls, engine_state, fps, dt
+            controls, engine_state, fps, dt, host_name
         )
         
         # Handle button results from settings menu
