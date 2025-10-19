@@ -95,16 +95,16 @@ VIEW_ANGLE = 70 * math.pi / 180.0  # radians
 CAR_SPRITES = {
     "ae86": {
         "paths": [
-            "assets/cars/AE86/Shadow_Map/Image{i:04}.png",
-            "assets/cars/AE86/Diffuse/Image{i:04}.png", 
-            "assets/cars/AE86/Light_Spray/{i:04}.png"
+            "cars/AE86/Shadow_Map/Image{i:04}.png",
+            "cars/AE86/Diffuse/Image{i:04}.png", 
+            "cars/AE86/Light_Spray/{i:04}.png"
         ]
     },
     "m5": {
         "paths": [
-            "assets/cars/M5/Shadow_Map/Image{i:04}.png",
-            "assets/cars/M5/Diffuse/Image{i:04}.png",
-            "assets/cars/M5/Light_Spray/{i:04}.png"
+            "cars/M5/Shadow_Map/Image{i:04}.png",
+            "cars/M5/Diffuse/Image{i:04}.png",
+            "cars/M5/Light_Spray/{i:04}.png"
         ]
     }
 }

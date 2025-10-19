@@ -15,15 +15,16 @@ ENV/
 .env
 .env.*
 
-# packages
+# compilation
 packages/
 build/
 dist/
+*.spec  # PyInstaller
+*.cmd
 pip-wheel-metadata/
 *.egg-info/
 .eggs/
 *.egg
-*.spec  # PyInstaller
 
 # tests
 test.py

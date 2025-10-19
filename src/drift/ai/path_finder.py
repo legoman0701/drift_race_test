@@ -176,6 +176,7 @@ def discover_track_visual(map_path, start_pos=(1000, 450), start_angle=0, sample
 
 
 if __name__ == "__main__":
+    from tools.paths import asset_path
     # Run visual version when called directly
-    polygon = discover_track_visual("assets/track/map1/main.png")
+    polygon = discover_track_visual(asset_path("track", "map1", "main.png"))
     print(f"Discovered track polygon with {len(polygon)} points")

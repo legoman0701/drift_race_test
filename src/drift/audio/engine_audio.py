@@ -14,6 +14,7 @@ Uses authentic BeamNG load calculation and gain mixing with EQ filtering.
 """
 
 import pygame, json, re, os, math
+from tools.paths import asset_path
 # turbo import
 try: from drift.audio.turbo_sound import TurboSound, MultiTrackTurboSound  # type: ignore
 except Exception:  # pragma: no cover
@@ -87,7 +88,7 @@ def resolve_audio_path(json_path: str, car_folder: str = None) -> str:
     
     # If no car folder specified, default to AE86
     if car_folder is None:
-        car_folder = "assets/cars/AE86/sound/"
+        car_folder = asset_path("cars", "AE86", "sound")
     
     # Convert BeamNG path format to our asset structure
     if json_path.startswith("art/sound/"):
@@ -221,14 +222,14 @@ class EngineAudio:
     - Optional turbo spool and blow-off valve sounds
     """
 
-    def __init__(self, intake_json: str = "assets/cars/AE86/sound/blends/4_alt_int.sfxBlend2D.json", 
-                 jbeam_file: str = "assets/cars/AE86/sound/pessima_engine.jbeam",
-                 engine_json: str = "assets/cars/AE86/sound/blends/4_alt_exh.sfxBlend2D.json",
+    def __init__(self, intake_json: str = None, 
+                 jbeam_file: str = None,
+                 engine_json: str = None,
                  # --- Master volumes ---
                  engine_master_volume: float = 0.2,
                  turbo_master_volume: float = 0.4,
                  # --- Turbo parameters ---
-                 turbo_wav: str = "assets/cars/AE86/sound/turbo_03.wav",
+                 turbo_wav: str = None,
                  turbo_min_pitch: float = 0.5,
                  turbo_max_pitch: float = 4,
                  turbo_volume: float = 0.5,
@@ -242,7 +243,7 @@ class EngineAudio:
                  turbo_min_speed: float = 1.0,  # Minimum speed multiplier for multi-track
                  turbo_max_speed: float = 5.0,  # Maximum speed multiplier for multi-track
                  # --- Blow-off valve (BOV) parameters ---
-                 bov_wav: str = "assets/cars/AE86/sound/turbo_bov.wav",
+                 bov_wav: str = None,
                  bov_volume: float = 0.7,
                  bov_min_spool: float = 0.25,   # minimum internal spool to allow BOV
                  bov_min_throttle_drop: float = 0.35,  # required drop between last throttle and current
@@ -270,6 +271,18 @@ class EngineAudio:
         engine_json : str
             Path to engine sound blend file (4_alt_exh.sfxBlend2D.json)
         """
+        
+        # Set default paths if not provided
+        if intake_json is None:
+            intake_json = asset_path("cars", "AE86", "sound", "blends", "4_alt_int.sfxBlend2D.json")
+        if jbeam_file is None:
+            jbeam_file = asset_path("cars", "AE86", "sound", "pessima_engine.jbeam")
+        if engine_json is None:
+            engine_json = asset_path("cars", "AE86", "sound", "blends", "4_alt_exh.sfxBlend2D.json")
+        if turbo_wav is None:
+            turbo_wav = asset_path("cars", "AE86", "sound", "turbo_03.wav")
+        if bov_wav is None:
+            bov_wav = asset_path("cars", "AE86", "sound", "turbo_bov.wav")
         
         # Load sound samples for intake and engine
         intake_data = json.load(open(intake_json))
@@ -316,7 +329,7 @@ class EngineAudio:
             print(f"Increased mixer channels from {current_channels} to {total_sounds + 8}")
         
         # Detect car folder from JSON file paths for path resolution
-        car_folder = "assets/cars/AE86/sound/"
+        car_folder = asset_path("cars", "AE86", "sound")
         
         # Initialize intake sound layers
         self.intake_off = []
