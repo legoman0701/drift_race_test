@@ -14,7 +14,7 @@ ENGINE_ACC      = 450.0
 #ROLLING         = 1.6
 STEER_SENS      = 1/50
 # Added for debug wheel kinematics (not used to alter dynamics)
-MAX_STEER_ANGLE = math.radians(25.0)  # visual front wheel steering angle
+MAX_STEER_ANGLE = math.radians(60.0)  # visual front wheel steering angle
 # simple wheel placement relative to body center (x: forward, y: right)
 WHEEL_X_OFF = CAR_LEN * 0.35
 WHEEL_Y_OFF = CAR_WID * 0.45
@@ -116,7 +116,7 @@ class Car:
             else:  # Front wheels
                 longitudinal_force = 0.0
             
-            lateral_force = -wheel_speed_lat * CORNERING_STIFFNESS * clamp(1-self.drift_ratio, 0.5, 1) * 5
+            lateral_force = -wheel_speed_lat * (CORNERING_STIFFNESS * clamp(1-self.drift_ratio, 0.5, 1) * 5)* clamp(1-longitudinal_force/5, 0, 1)
             lateral_force = clamp(lateral_force, -LATERAL_FORCE_MAX, LATERAL_FORCE_MAX)
 
             # Back to body frame (rotate by wheel angle)
