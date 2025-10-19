@@ -6,6 +6,7 @@
 import pygame, sys, math, pickle, os, numpy as np
 
 # local imports (only what's needed for local play)
+from tools.paths import asset_path
 import drift.config.const as const, drift.render.camera as camera, drift.core.car as car
 from drift.core.helpers import clamp, rand_name
 from drift.ui.ui import draw_track_ui, draw_controls_hud
@@ -777,8 +778,8 @@ def main():
     pygame.joystick.init()
 
     # Load image before setting the display; convert after display is initialized
-    track_image = pygame.image.load(f"assets/track/map{const.MAP_NUM}/main.png")
-    track_mask_img = pygame.image.load(f"assets/track/map{const.MAP_NUM}/ring.png")
+    track_image = pygame.image.load(asset_path("track", f"map{const.MAP_NUM}", "main.png"))
+    track_mask_img = pygame.image.load(asset_path("track", f"map{const.MAP_NUM}", "ring.png"))
     scaled_track = pygame.transform.scale_by(track_image, (0.5, 0.5))
 
     pygame.display.set_caption("Drift Race - AI Training with Neural Network")

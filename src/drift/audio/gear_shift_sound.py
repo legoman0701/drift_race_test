@@ -5,6 +5,7 @@ Provides rough, aggressive gear shift sounds for drift racing.
 
 import pygame, time, threading
 from typing import List
+from tools.paths import asset_path
 
 
 class GearShiftSound:
@@ -20,7 +21,7 @@ class GearShiftSound:
                  # BOV parameters for powershifting
                  powershift_bov_volume: float = 0.05,
                  powershift_throttle_threshold: float = 0.6,
-                 bov_sample_path: str = "assets/cars/AE86/sound/turbo_bov.wav"):
+                 bov_sample_path: str = None):
         """
         Initialize gear shift sound system.
         
@@ -44,6 +45,8 @@ class GearShiftSound:
         
         # Load BOV sound for powershifting
         self.bov_sound = None
+        if bov_sample_path is None:
+            bov_sample_path = asset_path("cars", "AE86", "sound", "turbo_bov.wav")
         try:
             self.bov_sound = pygame.mixer.Sound(bov_sample_path)
             print(f"Loaded powershift BOV sound: {bov_sample_path}")
@@ -53,9 +56,9 @@ class GearShiftSound:
         # Load default gear shift samples if none provided
         if gear_shift_samples is None:
             gear_shift_samples = [
-                "assets/cars/AE86/sound/gear_shift_1.wav",
-                "assets/cars/AE86/sound/gear_shift_2.wav", 
-                "assets/cars/AE86/sound/gear_shift_3.wav"
+                asset_path("cars", "AE86", "sound", "gear_shift_1.wav"),
+                asset_path("cars", "AE86", "sound", "gear_shift_2.wav"), 
+                asset_path("cars", "AE86", "sound", "gear_shift_3.wav")
             ]
         
         self.shift_sounds = []

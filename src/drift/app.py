@@ -5,6 +5,7 @@
 # global imports
 import pygame, json, time, random, sys, math, uuid, argparse, threading
 # local imports
+from tools.paths import asset_path
 import drift.config.const as const
 import drift.render.camera as camera
 import drift.core.car as car
@@ -222,7 +223,7 @@ def main():
             sprite_list = []
             for i in range(64):
                 try:
-                    img = pygame.image.load(path_template.format(i=i)).convert_alpha()
+                    img = pygame.image.load(asset_path(path_template.format(i=i))).convert_alpha()
                     sprite_list.append(img)
                 except Exception as e:
                     print(f"Warning: Could not load {path_template.format(i=i)}: {e}")
@@ -238,8 +239,8 @@ def main():
     for car_type in const.CAR_SPRITES.keys():
         car_sprites_cache[car_type] = load_car_sprites(car_type)
         
-    track_image = pygame.image.load(f"assets/track/map{const.MAP_NUM}/main.png").convert()
-    chunk_map = ChunkedMap(root=f"assets/track/map{const.MAP_NUM}/chunks", tile_size=1024)
+    track_image = pygame.image.load(asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
+    chunk_map = ChunkedMap(root=asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=1024)
 
     stage1 = "lobby" # lobby | game | error
     stage2 = "" # new_game | join_game | settings
@@ -553,7 +554,7 @@ def main():
         # draw track, drift marks and cars (online & local)
         world_surf, resized, is_viewport = renderer.render_world(cam, stage1, my_car, ai_cars, remotes, lights_on, car_sprites_cache)
         if resized and not is_viewport:
-            path_poly = path_finder.discover_track(f"assets/track/map{const.MAP_NUM}/main.png")
+            path_poly = path_finder.discover_track(asset_path("track", f"map{const.MAP_NUM}", "main.png"))
 
         # draw camera view (scaled or classic)
         if is_viewport: final_surf = pygame.transform.scale(world_surf, (const.WINDOW_WIDTH, const.WINDOW_HEIGHT))  # chunk mode

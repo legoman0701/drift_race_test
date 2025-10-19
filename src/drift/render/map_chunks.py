@@ -1,6 +1,7 @@
 import pygame
 from typing import Dict, Tuple, Optional, Iterable
 import os, drift.config.const as const
+from tools.paths import asset_path
 
 class ChunkedMap:
     """
@@ -9,9 +10,11 @@ class ChunkedMap:
     - Missing tiles render as a flat color (background).
     """
     def __init__(self,
-                 root: str = f"assets/track/map{const.MAP_NUM}/chunks",
+                 root: str = None,
                  tile_size: int = 1024, # 1024x1024
                  default_color=(28, 28, 28)) -> None:
+        if root is None:
+            root = asset_path("track", f"map{const.MAP_NUM}", "chunks")
         self.root = root
         self.tile_size = tile_size
         self.default_color = default_color
