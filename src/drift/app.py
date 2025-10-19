@@ -207,7 +207,7 @@ def main():
     if not audio_initialized:
         print("Warning: All audio configurations failed - audio will be disabled")
 
-    pygame.display.set_caption("Drift Race v0.7.9")
+    pygame.display.set_caption("Drift Race v0.7.10")
     screen = pygame.display.set_mode((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
     clock = pygame.time.Clock()
 
@@ -259,8 +259,8 @@ def main():
 
     lights_on = True
 
-    spawnx = const.WINDOW_WIDTH // 2
-    spawny = const.WINDOW_HEIGHT // 2
+    spawnx = random.uniform(const.WINDOW_WIDTH*0.3, const.WINDOW_WIDTH*0.7)
+    spawny = random.uniform(const.WINDOW_HEIGHT*0.3, const.WINDOW_HEIGHT*0.7)
     my_car = car.Car(spawnx, spawny, my_name, is_ai=False, car_type="ae86")
     # Local player's engine state (avoid mutating Car which may use __slots__)
     engine_state = {"gear": 0, "last_rpm": None}

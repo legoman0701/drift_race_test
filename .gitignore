@@ -16,6 +16,7 @@ ENV/
 .env.*
 
 # packages
+packages/
 build/
 dist/
 pip-wheel-metadata/

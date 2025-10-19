@@ -318,8 +318,8 @@ def handle_game_events(screen, ev, stage1, stage2, remotes, ai_cars, sock, code,
                 sock = None
             code = None
             import random
-            spawnx = random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200)
-            spawny = random.randint(const.TRACK_MARGIN + 120, const.WINDOW_HEIGHT - const.TRACK_MARGIN - 120)
+            spawnx = random.uniform(const.WINDOW_WIDTH*0.3, const.WINDOW_WIDTH*0.7)
+            spawny = random.uniform(const.WINDOW_HEIGHT*0.3, const.WINDOW_HEIGHT*0.7)
             import drift.core.car as car
             my_car = car.Car(spawnx, spawny, my_name, is_ai=False, car_type="ae86")
     
