@@ -9,7 +9,7 @@ import pygame, sys, math, pickle, os, numpy as np
 from tools.paths import asset_path
 import drift.config.const as const, drift.render.camera as camera, drift.core.car as car
 from drift.core.helpers import clamp, rand_name
-from drift.ui.ui import draw_track_ui, draw_controls_hud
+#from drift.ui.ui import draw_track_ui, draw_controls_hud
 from drift.render.map_chunks import ChunkedMap
 
 # ======= CONFIGURATION =======
@@ -418,9 +418,9 @@ class AITrainingEnv:
         self.output_filters = []
         for _ in range(num_cars):
             car_filters = {
-                'throttle': LowPassFilter(alpha=0.6),  # Less smoothing for throttle (more responsive)
-                'steering': LowPassFilter(alpha=0.4),  # More smoothing for steering (reduce oscillation)
-                'brake': LowPassFilter(alpha=0.7)      # Less smoothing for brake (quick response needed)
+                'throttle': LowPassFilter(alpha=0.8),  # Less smoothing for throttle (more responsive)
+                'steering': LowPassFilter(alpha=0.8),  # More smoothing for steering (reduce oscillation)
+                'brake': LowPassFilter(alpha=0.8)      # Less smoothing for brake (quick response needed)
             }
             self.output_filters.append(car_filters)
         

@@ -6,11 +6,11 @@ Test script to run the best trained AI network
 import pygame, sys, math, numpy as np, pickle, os
 
 # Import from our main AI environment
-from drift.ai.ai_env import AITrainingEnv, NeuralNetwork, create_black_mask, draw_cars_fast, raycast_black_mask
+from ai_env import AITrainingEnv, NeuralNetwork, create_black_mask, draw_cars_fast, raycast_black_mask
 import drift.config.const as const
 from tools.paths import asset_path
 
-def load_best_network(filename="ai_models/final_generation_221.pkl"):
+def load_best_network(filename="ai_models\generation_530.pkl"):
     """Load the best trained network"""
     if os.path.exists(filename):
         with open(filename, 'rb') as f:

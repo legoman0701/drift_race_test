@@ -114,7 +114,7 @@ class Car:
             if index in (2, 3):  # Rear wheels only
                 longitudinal_force = throttle_input * ENGINE_ACC
             else:  # Front wheels
-                longitudinal_force = 0.0
+                longitudinal_force = throttle_input * ENGINE_ACC
             
             lateral_force = -wheel_speed_lat * (CORNERING_STIFFNESS * clamp(1-self.drift_ratio, 0.5, 1) * 5)* clamp(1-longitudinal_force/5, 0, 1)
             lateral_force = clamp(lateral_force, -LATERAL_FORCE_MAX, LATERAL_FORCE_MAX)
