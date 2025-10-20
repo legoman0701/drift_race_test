@@ -14,7 +14,7 @@ ENGINE_ACC      = 450.0
 #ROLLING         = 1.6
 STEER_SENS      = 1/50
 # Added for debug wheel kinematics (not used to alter dynamics)
-MAX_STEER_ANGLE = math.radians(60.0)  # visual front wheel steering angle
+MAX_STEER_ANGLE = math.radians(30.0)  # visual front wheel steering angle
 # simple wheel placement relative to body center (x: forward, y: right)
 WHEEL_X_OFF = CAR_LEN * 0.35
 WHEEL_Y_OFF = CAR_WID * 0.45
@@ -27,10 +27,10 @@ WALL_RESTITUTION = 0.3
 # Simple physics constants
 MASS = 5  # effective mass-like divisor used previously
 BRAKE_COEFF = 600.0  # braking strength (N/kg) opposing wheel long. speed in wheel frame
-CORNERING_STIFFNESS = 1  # lateral force per unit lateral speed (wheel frame)
+CORNERING_STIFFNESS = 2  # lateral force per unit lateral speed (wheel frame)
 LATERAL_FORCE_MAX = 2000.0  # clamp for lateral force magnitude (visual + stability)
 ANGULAR_DAMP = 25.0  # simple yaw damping (increased to prevent unwanted rotation)
-INERTIA_Z = MASS * (CAR_LEN**2 + CAR_WID**2) / 12.0  # rough box inertia
+INERTIA_Z = MASS * (CAR_LEN**2 + CAR_WID**2) / 6.0  # rough box inertia
 
 # New: rolling resistance and aerodynamic drag
 GRAVITY = 9.81
@@ -114,9 +114,11 @@ class Car:
             if index in (2, 3):  # Rear wheels only
                 longitudinal_force = throttle_input * ENGINE_ACC
             else:  # Front wheels
-                longitudinal_force = throttle_input * ENGINE_ACC
+                longitudinal_force = 0
+                
             
-            lateral_force = -wheel_speed_lat * (CORNERING_STIFFNESS * clamp(1-self.drift_ratio, 0.5, 1) * 5)* clamp(1-longitudinal_force/5, 0, 1)
+            wheel_aoa = abs(math.atan2(wheel_speed_lat, max(0.1, abs(wheel_speed_long))))
+            lateral_force = -wheel_speed_lat * (CORNERING_STIFFNESS * clamp(math.radians(20)-wheel_aoa, 0.2, 1) * 5)
             lateral_force = clamp(lateral_force, -LATERAL_FORCE_MAX, LATERAL_FORCE_MAX)
 
             # Back to body frame (rotate by wheel angle)
