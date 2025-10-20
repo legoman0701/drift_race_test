@@ -157,25 +157,127 @@ I_AM_HOST = False
 
 flags = const.FLAGS
 
-# ======= MAIN LOOP =======
-  
-def main():
-    global I_AM_HOST  # ensure all references/assignments in this function use the module global
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=["host", "join"])
-    parser.add_argument("--code")
-    parser.add_argument("--name")
-    args, unknown = parser.parse_known_args()
+# ======= LOADING SCREEN =======
 
-    pygame.init()
-    pygame.joystick.init()
+def draw_loading_screen(screen, progress, total_steps, current_task="Loading..."):
+    """Draw a loading screen with circular progress bar from 7π/4 to π/4"""
+    screen.fill((20, 20, 30))  # Dark background
     
-    # Create fonts after pygame.init()
-    font_small = pygame.font.SysFont(None, const.FONT_SMALL_SIZE)
-    font_medium = pygame.font.SysFont(None, const.FONT_MEDIUM_SIZE)
-    font_big = pygame.font.SysFont(None, const.FONT_BIG_SIZE)
+    # Create fonts for loading screen
+    title_font = pygame.font.SysFont(None, 72)
+    task_font = pygame.font.SysFont(None, 36)
     
-    # Audio init with fallback configurations for low-end devices
+    # Calculate center
+    center_x = const.WINDOW_WIDTH // 2
+    center_y = const.WINDOW_HEIGHT // 2
+    
+    # Draw title
+    title_text = title_font.render("Drift Race v0.7.10", True, (255, 255, 255))
+    title_rect = title_text.get_rect(center=(center_x, center_y - 100))
+    screen.blit(title_text, title_rect)
+    
+    # Draw current task
+    task_text = task_font.render(current_task, True, (200, 200, 200))
+    task_rect = task_text.get_rect(center=(center_x, center_y + 80))
+    screen.blit(task_text, task_rect)
+    
+    # Draw circular progress bar
+    radius = 50
+    thickness = 8
+    
+    # Background circle (darker)
+    pygame.draw.circle(screen, (60, 60, 80), (center_x, center_y), radius, thickness)
+    
+    # Calculate progress angle
+    # From 7π/4 (315°) to π/4 (45°) = 90° total sweep
+    # 7π/4 = -π/4 in standard position
+    start_angle = -5*math.pi / 4  # 7π/4 in standard position
+    end_angle = math.pi / 4     # π/4
+    total_sweep = end_angle - start_angle  # π/2 radians (90°)
+    
+    if total_steps > 0:
+        progress_ratio = min(progress / total_steps, 1.0)
+        
+        # Draw progress arc
+        if progress_ratio > 0:
+            # Create points for the arc
+            arc_points = []
+            num_segments = max(1, int(progress_ratio * 50))  # More segments for smoother arc
+            
+            for i in range(num_segments + 1):
+                angle = start_angle + (total_sweep * progress_ratio * i / num_segments)
+                x = center_x + (radius - thickness // 2) * math.cos(angle)
+                y = center_y + (radius - thickness // 2) * math.sin(angle)
+                arc_points.append((x, y))
+            
+            # Draw the progress arc as a thick line
+            if len(arc_points) > 1:
+                for i in range(len(arc_points) - 1):
+                    pygame.draw.line(screen, (100, 200, 255), arc_points[i], arc_points[i + 1], thickness)
+    
+    # Draw percentage text
+    percentage = int((progress / max(total_steps, 1)) * 100)
+    percent_text = task_font.render(f"{percentage}%", True, (255, 255, 255))
+    percent_rect = percent_text.get_rect(center=(center_x, center_y))
+    screen.blit(percent_text, percent_rect)
+    
+    pygame.display.flip()
+
+def load_assets_with_progress(screen, clock):
+    """Load all game assets with progress tracking"""
+    
+    # Define loading steps
+    loading_steps = [
+        ("Initializing audio...", "audio"),
+        ("Loading car sprites...", "sprites"),
+        ("Loading track data...", "track"),
+        ("Initializing systems...", "systems"),
+        ("Finalizing...", "final")
+    ]
+    
+    total_steps = len(loading_steps)
+    loaded_data = {}
+    
+    for step, (task_name, step_key) in enumerate(loading_steps):
+        # Update loading screen
+        draw_loading_screen(screen, step, total_steps, task_name)
+        clock.tick(60)  # Maintain smooth animation
+        
+        # Handle pygame events to prevent "not responding"
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit(0)
+        
+        # Perform actual loading
+        if step_key == "audio":
+            loaded_data["audio_initialized"] = load_audio_system()
+            time.sleep(0.1)  # Small delay to show progress
+            
+        elif step_key == "sprites":
+            loaded_data["car_sprites_cache"] = load_all_car_sprites()
+            time.sleep(0.2)
+            
+        elif step_key == "track":
+            loaded_data["track_image"] = pygame.image.load(asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
+            loaded_data["chunk_map"] = ChunkedMap(root=asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=1024)
+            time.sleep(0.1)
+            
+        elif step_key == "systems":
+            loaded_data["path_poly"] = []  # Will be initialized later
+            time.sleep(0.1)
+            
+        elif step_key == "final":
+            time.sleep(0.1)
+    
+    # Show 100% completion briefly
+    draw_loading_screen(screen, total_steps, total_steps, "Complete!")
+    pygame.time.wait(500)
+    
+    return loaded_data
+
+def load_audio_system():
+    """Load audio system with fallback configurations"""
     audio_configs = [
         # High quality (try first)
         {"freq": 44100, "size": -16, "channels": 2, "buffer": 1024},
@@ -207,12 +309,11 @@ def main():
     
     if not audio_initialized:
         print("Warning: All audio configurations failed - audio will be disabled")
+    
+    return audio_initialized
 
-    pygame.display.set_caption("Drift Race v0.7.10")
-    screen = pygame.display.set_mode((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
-    clock = pygame.time.Clock()
-
-    # Load car sprites dynamically based on car types
+def load_all_car_sprites():
+    """Load sprites for all car types"""
     def load_car_sprites(car_type):
         """Load sprites for a specific car type."""
         if car_type not in const.CAR_SPRITES:
@@ -238,9 +339,39 @@ def main():
     car_sprites_cache = {}
     for car_type in const.CAR_SPRITES.keys():
         car_sprites_cache[car_type] = load_car_sprites(car_type)
-        
-    track_image = pygame.image.load(asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
-    chunk_map = ChunkedMap(root=asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=1024)
+    
+    return car_sprites_cache
+
+# ======= MAIN LOOP =======
+  
+def main():
+    global I_AM_HOST  # ensure all references/assignments in this function use the module global
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", choices=["host", "join"])
+    parser.add_argument("--code")
+    parser.add_argument("--name")
+    args, unknown = parser.parse_known_args()
+
+    pygame.init()
+    pygame.joystick.init()
+    
+    pygame.display.set_caption("Drift Race v0.7.10")
+    screen = pygame.display.set_mode((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
+    clock = pygame.time.Clock()
+    
+    # Show loading screen and load assets
+    loaded_assets = load_assets_with_progress(screen, clock)
+    
+    # Create fonts after pygame.init()
+    font_small = pygame.font.SysFont(None, const.FONT_SMALL_SIZE)
+    font_medium = pygame.font.SysFont(None, const.FONT_MEDIUM_SIZE)
+    font_big = pygame.font.SysFont(None, const.FONT_BIG_SIZE)
+    
+    # Extract loaded assets
+    audio_initialized = loaded_assets["audio_initialized"]
+    car_sprites_cache = loaded_assets["car_sprites_cache"]
+    track_image = loaded_assets["track_image"]
+    chunk_map = loaded_assets["chunk_map"]
 
     stage1 = "lobby" # lobby | game | error
     stage2 = "" # new_game | join_game | settings
