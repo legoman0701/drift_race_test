@@ -3,8 +3,8 @@
 slice_map.py — cut a large map image into ix_iy.png tiles for the chunked renderer.
 
 Defaults match the project layout:
-- input  : assets/track/map1.png
-- outdir : assets/track/map1/chunks
+- input  : assets/track/map{x}/main.png
+- outdir : assets/track/map{x}/chunks
 - tile   : 1024
 - indexing: "zero" (top-left tile is 0_0, as the current game uses world coords >= 0)
 - prefix : ""  (renderer also accepts "Map1_" as prefix if you prefer)
@@ -12,13 +12,13 @@ Defaults match the project layout:
 USAGE EXAMPLES
 --------------
 # Basic (recommended for your current Map1.png):
-python slice_map.py --input assets/track/map1.png --outdir assets/track/map1/chunks --tile 1024 --indexing zero
+python tools/slice_map.py --input assets/track/map1/main.png --outdir assets/track/map1/chunks --tile 1024 --indexing zero
 
 # With file prefix (loader supports this too):
-python slice_map.py --prefix Map1_
+python tools/slice_map.py --prefix Map1_
 
 # Centered indexing (origin ~ image center; produces negative/positive indices):
-python slice_map.py --indexing center
+python tools/slice_map.py --indexing center
 
 Notes:
 - Edge tiles are padded to the tile size using --pad R,G,B (default 28,28,28).
