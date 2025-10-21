@@ -138,14 +138,15 @@ def draw_wheel_debug(surface: pygame.Surface, car, offx: int = 0, offy: int = 0)
         roll = body_forces.get("rolling", (0.0, 0.0))
         drag = body_forces.get("aero_drag", (0.0, 0.0))
         brk  = body_forces.get("brake", (0.0, 0.0))
+        drag_offset = body_forces.get("drag_center_world", (0.0, 0.0))
 
-        def draw_vec(vec, color):
-            ex = int(cx + vec[0] * k_body)
-            ey = int(cy + vec[1] * k_body)
-            pygame.draw.line(surface, color, (cx, cy), (ex, ey), 2)
+        def draw_vec(vec, color, o=(0, 0)):
+            ex = int(cx + vec[0] * k_body + o[0])
+            ey = int(cy + vec[1] * k_body + o[1])
+            pygame.draw.line(surface, color, (cx + o[0], cy + o[1]), (ex, ey), 2)
 
         draw_vec(roll, (200, 180, 80))   # rolling resistance: amber
-        draw_vec(drag, (180, 80, 220))   # aero drag: purple
+        draw_vec(drag, (180, 80, 220), drag_offset)   # aero drag: purple
         draw_vec(brk,  (240, 80, 80))    # brake drag: red
 
 def draw_header(surface, font_big, font_small, title_str: str, fps: float, host_username: str = None):
