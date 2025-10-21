@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# assets
+assets/git/
+assets/track/**/chunks/
+
 # venv
 .venv/
 venv/
