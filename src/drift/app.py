@@ -232,6 +232,7 @@ def load_assets_with_progress(screen, clock):
         ("Loading car sprites...", "sprites"),
         ("Loading track data...", "track"),
         ("Initializing systems...", "systems"),
+        ("Starting audio controller...", "audio_controller"),
         ("Finalizing...", "final")
     ]
     
@@ -267,6 +268,9 @@ def load_assets_with_progress(screen, clock):
             loaded_data["path_poly"] = []  # Will be initialized later
             time.sleep(0.1)
             
+        elif step_key == "audio_controller":
+            loaded_data["audio_controller"], loaded_data["engine_sound"] = load_audio_controller(loaded_data["audio_initialized"])
+
         elif step_key == "final":
             time.sleep(0.1)
     
@@ -342,6 +346,26 @@ def load_all_car_sprites():
     
     return car_sprites_cache
 
+def load_audio_controller(audio_initialized):
+    engine_sound = None
+    audio_controller = None
+    try:
+        if audio_initialized:
+            engine_sound = EngineAudio()
+            # Start with lower rate for better compatibility on low-end devices
+            initial_rate = 80.0  # Reduced from 120 Hz
+            audio_controller = AudioController(engine_sound, initial_rate)
+            audio_controller.start_audio_thread()
+            print("Threaded audio system initialized")
+        else:
+            print("Audio system disabled due to initialization failure")
+    except Exception as e:
+        print("Engine sound init failed:", e)
+        engine_sound = None
+        audio_controller = None
+
+    return engine_sound, audio_controller
+
 # ======= MAIN LOOP =======
   
 def main():
@@ -397,22 +421,6 @@ def main():
     # Local player's engine state (avoid mutating Car which may use __slots__)
     engine_state = {"gear": 0, "last_rpm": None}
     # Engine audio: 4A-GE Bluetop intake+exhaust layers
-    engine_sound = None
-    audio_controller = None
-    try:
-        if audio_initialized:
-            engine_sound = EngineAudio()
-            # Start with lower rate for better compatibility on low-end devices
-            initial_rate = 80.0  # Reduced from 120 Hz
-            audio_controller = AudioController(engine_sound, initial_rate)
-            audio_controller.start_audio_thread()
-            print("Threaded audio system initialized")
-        else:
-            print("Audio system disabled due to initialization failure")
-    except Exception as e:
-        print("Engine sound init failed:", e)
-        engine_sound = None
-        audio_controller = None
 
     if args.mode == "host" and args.code and args.name:
         my_name = args.name
