@@ -4,7 +4,12 @@ import json, os
 # world
 WINDOW_WIDTH, WINDOW_HEIGHT = 1000, 700
 TRACK_MARGIN = 40
-
+TRANSMITION_SETUP = "RWD"
+TRANSMITION_SETUP_DICT = {
+    "RWD": [2, 3], # rear wheels drive
+    "FWD": [0, 1], # front wheels drive
+    "AWD": [0, 1, 2, 3], # all wheels drive
+}
 # car
 CAR_LEN = 38.0
 CAR_WID  = 20.0
@@ -73,6 +78,7 @@ class Car:
         MASS = self.specs["performance"]["MASS"]
         BRAKE_COEFF = self.specs["performance"]["BRAKE_COEFF"]
         CORNERING_STIFFNESS = self.specs["performance"]["CORNERING_STIFFNESS"]
+        TRANSMITION_SETUP = self.specs["drivetrain"]["layout"]
 
         # Inputs
         throttle_input = clamp(inputs.get("th", 0.0), -1.0, 1.0)
@@ -125,7 +131,7 @@ class Car:
             # Longitudinal force: engine power ONLY on rear wheels (RWD)
             # Front wheels (index 0, 1) have no engine power
             # Rear wheels (index 2, 3) get full engine power
-            if index in (2, 3):  # Rear wheels only
+            if index in TRANSMITION_SETUP_DICT[TRANSMITION_SETUP]:  # Rear wheels only
                 longitudinal_force = throttle_input * ENGINE_ACC
             else:  # Front wheels
                 longitudinal_force = 0
