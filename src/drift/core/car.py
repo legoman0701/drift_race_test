@@ -38,9 +38,6 @@ ROLLING_RES_COEFF = 0.015  # typical car tire rolling resistance coefficient
 AERO_DRAG_COEFF = 0.005    # combined 0.5*rho*CdA scaling (tune to taste)
 BRAKE_DRAG_COEFF = 50.0    # body-level brake drag (opposes velocity)
 
-# New: offset of aerodynamic drag center relative to car center (negative = behind)
-DRAG_CENTER_OFFSET = -CAR_LEN * 0.20  # tune to get a gentle self-centering tendency
-
 def clamp(x, lo, hi):
     return lo if x < lo else hi if x > hi else x
 
@@ -159,8 +156,6 @@ class Car:
         # Rolling resistance, aerodynamic drag, and body-level braking (all oppose velocity)
         speed_world = math.hypot(self.vx, self.vy)
         rolling_x = rolling_y = drag_x = drag_y = brake_x = brake_y = 0.0
-        # world-space lever arm of drag center (default to zero)
-        r_world_x = r_world_y = 0.0
         if speed_world > 1e-4:
             # Rolling resistance ~ constant magnitude opposing motion
             Frr_mag = ROLLING_RES_COEFF * MASS * GRAVITY
@@ -181,21 +176,13 @@ class Car:
             total_force_world_x += rolling_x + drag_x + brake_x
             total_force_world_y += rolling_y + drag_y + brake_y
 
-            # Apply torque from aerodynamic drag applied slightly behind the car center
-            # offset in body frame (x forward, y right); negative x is behind
-            r_off_x_body, r_off_y_body = DRAG_CENTER_OFFSET, 0.0
-            r_world_x = r_off_x_body * forward_x + r_off_y_body * right_x
-            r_world_y = r_off_x_body * forward_y + r_off_y_body * right_y
-            # torque = r x F (2D): rx * Fy - ry * Fx
-            total_torque_z += r_world_x * drag_y - r_world_y * drag_x
-
         # Integrate linear motion
         accel_x = total_force_world_x / MASS
         accel_y = total_force_world_y / MASS
         self.vx += accel_x * dt
         self.vy += accel_y * dt
         self.x  += self.vx * dt
-        self.y  += (self.vy * dt) / math.sqrt(2)  # compensate for isometric view at 45deg
+        self.y  += (self.vy * dt) * math.sqrt(2)  # compensate for isometric view at 45deg
 
         # Integrate yaw (angular) motion with simple damping
         angular_accel = (total_torque_z - ANGULAR_DAMP * self.v_angle) / max(1e-4, INERTIA_Z)
@@ -212,16 +199,11 @@ class Car:
 
         # Save wheel debug for renderer (including body-level forces) - only if computed
         if compute_debug:
-            r_off_x_body, r_off_y_body = DRAG_CENTER_OFFSET, 0.0
-            r_world_x = r_off_x_body * forward_x + r_off_y_body * right_x
-            r_world_y = r_off_x_body * forward_y + r_off_y_body * right_y
-
             self.wheel_debug["wheels"] = wheel_debug_list
             self.wheel_debug["body_forces"] = {
                 "rolling": (rolling_x, rolling_y),
                 "aero_drag": (drag_x, drag_y),
                 "brake": (brake_x, brake_y),
-                "drag_center_world": (r_world_x, r_world_y),
             }
         self._handle_track_bounds(dt, bounds)
 
