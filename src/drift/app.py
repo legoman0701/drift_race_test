@@ -396,6 +396,8 @@ def main():
     car_sprites_cache = loaded_assets["car_sprites_cache"]
     track_image = loaded_assets["track_image"]
     chunk_map = loaded_assets["chunk_map"]
+    engine_sound = loaded_assets["engine_sound"]
+    audio_controller = loaded_assets["audio_controller"]
 
     stage1 = "lobby" # lobby | game | error
     stage2 = "" # new_game | join_game | settings
