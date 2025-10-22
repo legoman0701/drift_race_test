@@ -466,7 +466,7 @@ def draw_join_game(ui_surf, font_big, font_medium):
         "join_btn": join_btn_rect,
     }
 
-def draw_settings(ui_surf, world_surf, world_size, buttons):
+def draw_settings(ui_surf, world_surf, world_size, buttons, stage_path):
     if world_surf is not None: world_surf = blur_surface(world_surf, world_size)
     
     # Draw buttons and handle their state
@@ -493,7 +493,7 @@ def draw_settings(ui_surf, world_surf, world_size, buttons):
         except Exception: 
             pass
         
-        res = button.draw(ui_surf)
+        res = button.draw(ui_surf, stage_path)
         if res is not None:
             button_results.append(res)
 
