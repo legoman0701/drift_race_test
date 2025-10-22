@@ -513,6 +513,8 @@ def main():
         const.AI_PATH_FOLLOW = False
         const.CURSOR_FOLLOW = False
         return "lobby", "", None, None, remotes # stage, substage sock, code, remotes
+    
+    def hande_key_binds(): pass
         
     def switch_cursor_follow_mode():
         const.CURSOR_FOLLOW = not const.CURSOR_FOLLOW
@@ -528,10 +530,11 @@ def main():
         try: return "game", "", sock, code, remotes
         except Exception: return "game", "", None, None, {}
 
-    buttons = [
-    btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, lambda: leave_room(sock, code, my_id, remotes)),
-    btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, switch_cursor_follow_mode),
-    btn.Button("AI Path Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.65, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, switch_ai_path_mode),
+    settings_buttons = [ # to do : be able to use * like */settings for key binds
+    btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"]] ,lambda: leave_room(sock, code, my_id, remotes)),
+    btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, [["lobby", "settings"], ["game", "settings"]], hande_key_binds),
+    btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"]], switch_cursor_follow_mode),
+    btn.Button("AI Path Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.65, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"]], switch_ai_path_mode),
     ]
 
     while True:

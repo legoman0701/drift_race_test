@@ -205,7 +205,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
             if stage3 == "key_binds":
                 draw_header(ui_surf, font_big, font_small, "Key Bindings", fps)
             else:
-                world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons)
+                world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2])
                 draw_header(ui_surf, font_big, font_small, "Settings", fps)
         elif stage2 == "new_game": 
             new_game_rects = draw_new_game(ui_surf, font_big, font_medium)
@@ -230,7 +230,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
         _join_game_rects_cache = None  # Clear cache when in game
         if stage2 == "settings": 
             draw_header(ui_surf, font_big, font_small, "Settings", fps)
-            world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons)
+            world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2])
         else:
             draw_header(ui_surf, font_big, font_small, "In Game", fps, host_username=host_name)
             # draw_game(ui_surf, code, font_small)
