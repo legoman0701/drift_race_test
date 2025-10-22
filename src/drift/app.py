@@ -269,7 +269,7 @@ def load_assets_with_progress(screen, clock):
             time.sleep(0.1)
             
         elif step_key == "audio_controller":
-            loaded_data["audio_controller"], loaded_data["engine_sound"] = load_audio_controller(loaded_data["audio_initialized"])
+            loaded_data["engine_sound"], loaded_data["audio_controller"] = load_audio_controller(loaded_data["audio_initialized"])
 
         elif step_key == "final":
             time.sleep(0.1)
@@ -422,7 +422,6 @@ def main():
     my_car = car.Car(spawnx, spawny, my_name, is_ai=False, car_type="ae86")
     # Local player's engine state (avoid mutating Car which may use __slots__)
     engine_state = {"gear": 0, "last_rpm": None}
-    # Engine audio: 4A-GE Bluetop intake+exhaust layers
 
     if args.mode == "host" and args.code and args.name:
         my_name = args.name
