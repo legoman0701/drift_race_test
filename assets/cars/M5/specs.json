@@ -1,0 +1,23 @@
+{
+    "model": "M5",
+    "manufacturer": "BMW",
+    "type": "drift",
+    "year": 1983,
+    "engine": {
+        "sound": "assets/cars/M5/sound"
+    },
+    "dimensions": {
+        "CAR_LEN": 38.0,
+        "CAR_WID": 20.0
+    },
+    "performance": {
+        "ENGINE_ACC": 600.0,
+        "MASS": 7,
+        "BRAKE_COEFF": 800.0,
+        "CORNERING_STIFFNESS": 2
+    },
+    "drivetrain": {
+        "layout": "RWD",
+        "gear_ratios": [3.166, 1.481, 1.1, 0.8]
+    }
+}

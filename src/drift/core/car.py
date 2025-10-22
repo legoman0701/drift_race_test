@@ -1,4 +1,5 @@
 import math
+import json, os
 
 # world
 WINDOW_WIDTH, WINDOW_HEIGHT = 1000, 700
@@ -45,8 +46,7 @@ def clamp(x, lo, hi):
     return lo if x < lo else hi if x > hi else x
 
 class Car:
-    __slots__ = ("x", "y", "vx", "vy", "angle", "v_angle", "name", "drift_ratio", "is_ai", "drift_points", "drift_points_old", "car_type", "wheel_debug")
-    def __init__(self, x, y, name, is_ai=False, car_type="ae86"):
+    def __init__(self, x, y, name, is_ai=False, car_type="AE86"):
         self.x, self.y = float(x), float(y)
         self.vx, self.vy = 0.0, 0.0
         self.angle = 0.0
@@ -61,8 +61,19 @@ class Car:
         self.wheel_debug = {
             "wheels": []  # list of dicts per wheel
         }
+        
+        spec_path = f"assets/cars/{self.car_type}/specs.json"
+        with open(spec_path, "r", encoding="utf-8") as fh:
+            self.specs = json.load(fh)
+        
+    def step(self, inputs, dt, players, bounds, compute_debug=False):        
+        CAR_LEN = self.specs["dimensions"]["CAR_LEN"]
+        CAR_WID  = self.specs["dimensions"]["CAR_WID"]
+        ENGINE_ACC      = self.specs["performance"]["ENGINE_ACC"]
+        MASS = self.specs["performance"]["MASS"]
+        BRAKE_COEFF = self.specs["performance"]["BRAKE_COEFF"]
+        CORNERING_STIFFNESS = self.specs["performance"]["CORNERING_STIFFNESS"]
 
-    def step(self, inputs, dt, players, bounds, compute_debug=False):
         # Inputs
         throttle_input = clamp(inputs.get("th", 0.0), -1.0, 1.0)
         steering_input = clamp(inputs.get("st", 0.0), -1.0, 1.0)

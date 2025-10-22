@@ -33,7 +33,7 @@ def draw_car(surface, x, y, angle, name,
         show_angle = (-angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
         sprite_index = round(show_angle * 64) % 64
         sprite_size = (car_sprite[sprite_index].get_width(), car_sprite[sprite_index].get_height())
-        surface.blit(car_sprite[sprite_index], (int(x - sprite_size[0] / 2), int(y - sprite_size[1] / 2)))
+        surface.blit(car_sprite[sprite_index], (int(x - sprite_size[0] // 2), int(y - sprite_size[1] // 2)))
 
     # Draw oriented collision rectangle overlay
     ca, sa = math.cos(angle), math.sin(angle)
