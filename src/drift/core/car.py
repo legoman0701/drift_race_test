@@ -1,9 +1,15 @@
 import math
+import json, os
 
 # world
 WINDOW_WIDTH, WINDOW_HEIGHT = 1000, 700
 TRACK_MARGIN = 40
-
+TRANSMITION_SETUP = "RWD"
+TRANSMITION_SETUP_DICT = {
+    "RWD": [2, 3], # rear wheels drive
+    "FWD": [0, 1], # front wheels drive
+    "AWD": [0, 1, 2, 3], # all wheels drive
+}
 # car
 CAR_LEN = 38.0
 CAR_WID  = 20.0
@@ -38,15 +44,11 @@ ROLLING_RES_COEFF = 0.015  # typical car tire rolling resistance coefficient
 AERO_DRAG_COEFF = 0.005    # combined 0.5*rho*CdA scaling (tune to taste)
 BRAKE_DRAG_COEFF = 50.0    # body-level brake drag (opposes velocity)
 
-# New: offset of aerodynamic drag center relative to car center (negative = behind)
-DRAG_CENTER_OFFSET = -CAR_LEN * 0.20  # tune to get a gentle self-centering tendency
-
 def clamp(x, lo, hi):
     return lo if x < lo else hi if x > hi else x
 
 class Car:
-    __slots__ = ("x", "y", "vx", "vy", "angle", "v_angle", "name", "drift_ratio", "is_ai", "drift_points", "drift_points_old", "car_type", "wheel_debug")
-    def __init__(self, x, y, name, is_ai=False, car_type="ae86"):
+    def __init__(self, x, y, name, is_ai=False, car_type="AE86"):
         self.x, self.y = float(x), float(y)
         self.vx, self.vy = 0.0, 0.0
         self.angle = 0.0
@@ -61,8 +63,20 @@ class Car:
         self.wheel_debug = {
             "wheels": []  # list of dicts per wheel
         }
+        
+        spec_path = f"assets/cars/{self.car_type}/specs.json"
+        with open(spec_path, "r", encoding="utf-8") as fh:
+            self.specs = json.load(fh)
+        
+    def step(self, inputs, dt, players, bounds, compute_debug=False):        
+        CAR_LEN = self.specs["dimensions"]["CAR_LEN"]
+        CAR_WID  = self.specs["dimensions"]["CAR_WID"]
+        ENGINE_ACC      = self.specs["performance"]["ENGINE_ACC"]
+        MASS = self.specs["performance"]["MASS"]
+        BRAKE_COEFF = self.specs["performance"]["BRAKE_COEFF"]
+        CORNERING_STIFFNESS = self.specs["performance"]["CORNERING_STIFFNESS"]
+        TRANSMITION_SETUP = self.specs["drivetrain"]["layout"]
 
-    def step(self, inputs, dt, players, bounds, compute_debug=False):
         # Inputs
         throttle_input = clamp(inputs.get("th", 0.0), -1.0, 1.0)
         steering_input = clamp(inputs.get("st", 0.0), -1.0, 1.0)
@@ -114,7 +128,7 @@ class Car:
             # Longitudinal force: engine power ONLY on rear wheels (RWD)
             # Front wheels (index 0, 1) have no engine power
             # Rear wheels (index 2, 3) get full engine power
-            if index in (2, 3):  # Rear wheels only
+            if index in TRANSMITION_SETUP_DICT[TRANSMITION_SETUP]:  # Rear wheels only
                 longitudinal_force = throttle_input * ENGINE_ACC
             else:  # Front wheels
                 longitudinal_force = 0
@@ -159,8 +173,6 @@ class Car:
         # Rolling resistance, aerodynamic drag, and body-level braking (all oppose velocity)
         speed_world = math.hypot(self.vx, self.vy)
         rolling_x = rolling_y = drag_x = drag_y = brake_x = brake_y = 0.0
-        # world-space lever arm of drag center (default to zero)
-        r_world_x = r_world_y = 0.0
         if speed_world > 1e-4:
             # Rolling resistance ~ constant magnitude opposing motion
             Frr_mag = ROLLING_RES_COEFF * MASS * GRAVITY
@@ -181,21 +193,13 @@ class Car:
             total_force_world_x += rolling_x + drag_x + brake_x
             total_force_world_y += rolling_y + drag_y + brake_y
 
-            # Apply torque from aerodynamic drag applied slightly behind the car center
-            # offset in body frame (x forward, y right); negative x is behind
-            r_off_x_body, r_off_y_body = DRAG_CENTER_OFFSET, 0.0
-            r_world_x = r_off_x_body * forward_x + r_off_y_body * right_x
-            r_world_y = r_off_x_body * forward_y + r_off_y_body * right_y
-            # torque = r x F (2D): rx * Fy - ry * Fx
-            total_torque_z += r_world_x * drag_y - r_world_y * drag_x
-
         # Integrate linear motion
         accel_x = total_force_world_x / MASS
         accel_y = total_force_world_y / MASS
         self.vx += accel_x * dt
         self.vy += accel_y * dt
         self.x  += self.vx * dt
-        self.y  += (self.vy * dt) / math.sqrt(2)  # compensate for isometric view at 45deg
+        self.y  += (self.vy * dt) * math.sqrt(2)  # compensate for isometric view at 45deg
 
         # Integrate yaw (angular) motion with simple damping
         angular_accel = (total_torque_z - ANGULAR_DAMP * self.v_angle) / max(1e-4, INERTIA_Z)
@@ -212,16 +216,11 @@ class Car:
 
         # Save wheel debug for renderer (including body-level forces) - only if computed
         if compute_debug:
-            r_off_x_body, r_off_y_body = DRAG_CENTER_OFFSET, 0.0
-            r_world_x = r_off_x_body * forward_x + r_off_y_body * right_x
-            r_world_y = r_off_x_body * forward_y + r_off_y_body * right_y
-
             self.wheel_debug["wheels"] = wheel_debug_list
             self.wheel_debug["body_forces"] = {
                 "rolling": (rolling_x, rolling_y),
                 "aero_drag": (drag_x, drag_y),
                 "brake": (brake_x, brake_y),
-                "drag_center_world": (r_world_x, r_world_y),
             }
         self._handle_track_bounds(dt, bounds)
 

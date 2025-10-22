@@ -2,6 +2,7 @@ import pygame
 from typing import Dict, Tuple, Optional, Iterable
 import os, drift.config.const as const
 from tools.paths import asset_path
+from tools.slice_map import slice_map
 
 class ChunkedMap:
     """
@@ -19,6 +20,13 @@ class ChunkedMap:
         self.tile_size = tile_size
         self.default_color = default_color
         self._cache: Dict[Tuple[int, int], pygame.Surface] = {} # {(x, y): surface}
+        slice_map(input_path = f"assets/track/map{const.MAP_NUM}/main.png",
+            outdir = f"assets/track/map{const.MAP_NUM}/chunks",
+            tile = 1024,
+            indexing = "zero",
+            prefix = "",
+            pad_color = (28, 28, 28, 255),
+            force = False)
 
     def _load_tile(self, ix: int, iy: int) -> pygame.Surface:
         link = os.path.join(self.root, f"{ix}_{iy}.png") # ./assets/track/map{x}/chunks/

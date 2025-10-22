@@ -202,7 +202,7 @@ def draw_loading_screen(screen, progress, total_steps, current_task="Loading..."
         if progress_ratio > 0:
             # Create points for the arc
             arc_points = []
-            num_segments = max(1, int(progress_ratio * 200))  # More segments for smoother arc
+            num_segments = max(1, int(progress_ratio * 50))  # More segments for smoother arc
             
             for i in range(num_segments + 1):
                 angle = start_angle + (total_sweep * progress_ratio * i / num_segments)
@@ -232,7 +232,7 @@ def load_assets_with_progress(screen, clock):
         ("Loading car sprites...", "sprites"),
         ("Loading track data...", "track"),
         ("Initializing systems...", "systems"),
-        ("Starting engine audio...", "engine_audio"),
+        ("Starting audio controller...", "audio_controller"),
         ("Finalizing...", "final")
     ]
     
@@ -268,9 +268,8 @@ def load_assets_with_progress(screen, clock):
             loaded_data["path_poly"] = []  # Will be initialized later
             time.sleep(0.1)
             
-        elif step_key == "engine_audio":
-            loaded_data["engine_audio"], loaded_data["audio_controller"] = start_engine_audio_thread(loaded_data["audio_initialized"])
-            time.sleep(0.1)
+        elif step_key == "audio_controller":
+            loaded_data["engine_sound"], loaded_data["audio_controller"] = load_audio_controller(loaded_data["audio_initialized"])
 
         elif step_key == "final":
             time.sleep(0.1)
@@ -347,8 +346,7 @@ def load_all_car_sprites():
     
     return car_sprites_cache
 
-def start_engine_audio_thread(audio_initialized):
-    # Engine audio: 4A-GE Bluetop intake+exhaust layers
+def load_audio_controller(audio_initialized):
     engine_sound = None
     audio_controller = None
     try:
@@ -365,7 +363,9 @@ def start_engine_audio_thread(audio_initialized):
         print("Engine sound init failed:", e)
         engine_sound = None
         audio_controller = None
+
     return engine_sound, audio_controller
+
 # ======= MAIN LOOP =======
   
 def main():
@@ -396,7 +396,7 @@ def main():
     car_sprites_cache = loaded_assets["car_sprites_cache"]
     track_image = loaded_assets["track_image"]
     chunk_map = loaded_assets["chunk_map"]
-    engine_sound = loaded_assets["engine_audio"]
+    engine_sound = loaded_assets["engine_sound"]
     audio_controller = loaded_assets["audio_controller"]
 
     stage1 = "lobby" # lobby | game | error
@@ -709,7 +709,7 @@ def main():
         fps = clock.get_fps()
         world_surf, button_results, new_game_rects, join_game_rects = draw_stage_ui(
             ui_surf, stage1, stage2, stage3, code, world_surf, world_size, 
-            settings_buttons, error_msg, my_car, cam, joysticks, font_big, font_medium, font_small,
+            buttons, error_msg, my_car, cam, joysticks, font_big, font_medium, font_small,
             controls, engine_state, fps, dt, host_name
         )
         
