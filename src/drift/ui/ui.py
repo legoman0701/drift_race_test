@@ -276,7 +276,7 @@ def handle_game_events(screen, ev, stage1, stage2, remotes, ai_cars, sock, code,
                 if ev.key == const.ESCAPE_KEY: # esc
                     stage2 = "" # go back to lobby
                     reset_game_setup()
-                if ev.key == pygame.K_RETURN or ev.key == pygame.K_KP_ENTER:
+                if ev.key in const.RETURN_KEYS:
                     setup = get_game_setup()
                     if setup["username"]:  # Only proceed if username is entered
                         stage1, my_name, code, sock, is_host, host_name = host_new_game(my_id)
@@ -293,7 +293,7 @@ def handle_game_events(screen, ev, stage1, stage2, remotes, ai_cars, sock, code,
                 if ev.key == const.ESCAPE_KEY: # esc to go back to lobby
                     stage2 = ""
                     reset_game_setup()
-                if ev.key == pygame.K_RETURN or ev.key == pygame.K_KP_ENTER:
+                if ev.key in const.RETURN_KEYS:
                     setup = get_game_setup()
                     if not setup["username"]:
                         set_error_message("username missing")
