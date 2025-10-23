@@ -236,7 +236,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
             _join_game_rects_cache = join_game_rects  # Cache for event handling
             _new_game_rects_cache = None  # Clear new game cache
         else:
-            draw_lobby()
+            # draw_lobby()
             draw_header(ui_surf, font_big, font_small, "Lobby", fps, host_name)
             _new_game_rects_cache = None  # Clear cache when not in new_game
             _join_game_rects_cache = None  # Clear cache when not in join_game
@@ -256,7 +256,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
                 draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
         else:
             _key_binds_rects_cache = None  # Clear cache when not in settings
-            # draw_game(ui_surf, code, font_small)
+            # draw_game()
             draw_header(ui_surf, font_big, font_small, "In Game", fps, host_name)
             draw_controls_hud(ui_surf, ai_path_mode_controls, joysticks, my_car, cam, font_small, dt, engine_state, 7000)
         draw_footer(ui_surf, font_small, code)

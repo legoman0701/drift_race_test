@@ -161,7 +161,7 @@ flags = const.FLAGS
 
 def draw_loading_screen(screen, progress, total_steps, current_task="Loading..."):
     """Draw a loading screen with circular progress bar from 7π/4 to π/4"""
-    screen.fill((20, 20, 30))  # Dark background
+    screen.fill(const.GREY_20)  # Dark background
     
     # Create fonts for loading screen
     title_font = pygame.font.SysFont(None, 72)
@@ -515,7 +515,7 @@ def main():
         invalidate_ui_text_cache('room')  # Clear cached room code text
         return "lobby", "", None, None, remotes # stage, substage sock, code, remotes
     
-    def hande_key_binds():
+    def handle_key_binds():
         nonlocal stage3
         stage3 = "key_binds"
         
@@ -535,7 +535,7 @@ def main():
 
     settings_buttons = [ # to do : be able to use * like */settings for key binds
     btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"]] ,lambda: leave_room(sock, code, my_id, remotes)),
-    btn.Button("Key Binds", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, [["lobby", "settings"], ["game", "settings"]], hande_key_binds),
+    btn.Button("Key Binds", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, [["lobby", "settings"], ["game", "settings"]], handle_key_binds),
     btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"]], switch_cursor_follow_mode),
     btn.Button("AI Path Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.65, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"]], switch_ai_path_mode),
     ]
@@ -633,79 +633,93 @@ def main():
         
         world_size = renderer.get_world_size(stage1)
 
-        # Prepare remotes view for the player: include network remotes + AI cars (so player can collide with AIs)
-        remotes_with_ai_for_player = dict(remotes)
-        if I_AM_HOST:
-            for i, ai in enumerate(ai_cars, start=1):
-                key = f"AI-{i}"
-                remotes_with_ai_for_player[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "drift_ratio": ai.drift_ratio, "name": ai.name}
-
-        # Update player car using remotes that include AIs
-        # If AI path mode is enabled and a path is available, let the AI drive the player
-        controls = None
-        if const.AI_PATH_FOLLOW and path_poly:
-            try:
-                controls, ai_debug_surface = ai_algorithme(path_poly, my_car, ai_path_mode=True, surface=pygame.Surface((track_image.get_width(), track_image.get_height()), pygame.SRCALPHA), font_small=font_small)
-            except Exception:
-                controls = None
-        if controls is None:
-            controls = read_inputs(joysticks, my_car, cam, const.CURSOR_FOLLOW, const.AI_PATH_FOLLOW)
-        my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG)
-        # Update engine audio based on RPM and throttle with enhanced drift characteristics
-        try:
-            if engine_sound is not None and audio_controller is not None and audio_initialized:
-                speed_units = math.hypot(my_car.vx, my_car.vy)
-                th = clamp(controls.get("th", 0.0), -1.0, 1.0)
-                prev_rpm = engine_state.get("last_rpm")
-                rpm = calc_engine_rpm(
-                    speed_units=speed_units,
-                    drift_ratio=my_car.drift_ratio,
-                    throttle=th,
-                    prev_rpm=prev_rpm,
-                    dt=dt,
-                    params=None,
-                    _state=engine_state,
-                )
-                engine_state["last_rpm"] = rpm
-                # Get current gear from engine state for gear shift sounds
-                current_gear = engine_state.get("gear", 0)
-                # Thread-safe audio state update with gear and drift info
-                audio_controller.set_engine_state(
-                    rpm=rpm, 
-                    throttle=max(0.0, th),
-                    current_gear=current_gear,
-                    drift_ratio=my_car.drift_ratio
-                )
-        except Exception as e:
-            # Silently handle audio errors to prevent crashes on low-end devices
-            pass
-
-        # Prepare remotes view for AIs: include network remotes + all AIs + the local player (so AIs can detect collisions with player)
-        remotes_with_ai_for_ais = dict(remotes)
+        # Skip physics computations when in menus (new_game, join_game, key_binds)
+        # This saves CPU on low-end devices and improves battery life
+        skip_physics = stage2 in ["new_game", "join_game"] or stage3 == "key_binds"
         
-        if I_AM_HOST:
-            # add local player under a distinct key so AIs see it
-            remotes_with_ai_for_ais[f"PLAYER-{my_id}"] = {"x": my_car.x, "y": my_car.y, "a": my_car.angle, "drift_ratio": my_car.drift_ratio, "name": my_car.name}
-            for i, ai in enumerate(ai_cars, start=1):
-                key = f"AI-{i}"
-                remotes_with_ai_for_ais[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "drift_ratio": ai.drift_ratio, "name": ai.name}
+        if not skip_physics:
+            # Prepare remotes view for the player: include network remotes + AI cars (so player can collide with AIs)
+            remotes_with_ai_for_player = dict(remotes)
+            if I_AM_HOST:
+                for i, ai in enumerate(ai_cars, start=1):
+                    key = f"AI-{i}"
+                    remotes_with_ai_for_player[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "drift_ratio": ai.drift_ratio, "name": ai.name}
 
-        # Step AIs (each AI sees other AIs + network remotes + the player)
-        if I_AM_HOST:
-            for ai in ai_cars:
-                ai.step(ai_algorithme(path_poly, ai), dt, remotes_with_ai_for_ais, world_size, compute_debug=const.DEBUG)
-        cam.update(my_car, world_size)
+            # Update player car using remotes that include AIs
+            # If AI path mode is enabled and a path is available, let the AI drive the player
+            controls = None
+            if const.AI_PATH_FOLLOW and path_poly:
+                try:
+                    controls, ai_debug_surface = ai_algorithme(path_poly, my_car, ai_path_mode=True, surface=pygame.Surface((track_image.get_width(), track_image.get_height()), pygame.SRCALPHA), font_small=font_small)
+                except Exception:
+                    controls = None
+            if controls is None:
+                controls = read_inputs(joysticks, my_car, cam, const.CURSOR_FOLLOW, const.AI_PATH_FOLLOW)
+            my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG)
+            # Update engine audio based on RPM and throttle with enhanced drift characteristics
+            try:
+                if engine_sound is not None and audio_controller is not None and audio_initialized:
+                    speed_units = math.hypot(my_car.vx, my_car.vy)
+                    th = clamp(controls.get("th", 0.0), -1.0, 1.0)
+                    prev_rpm = engine_state.get("last_rpm")
+                    rpm = calc_engine_rpm(
+                        speed_units=speed_units,
+                        drift_ratio=my_car.drift_ratio,
+                        throttle=th,
+                        prev_rpm=prev_rpm,
+                        dt=dt,
+                        params=None,
+                        _state=engine_state,
+                    )
+                    engine_state["last_rpm"] = rpm
+                    # Get current gear from engine state for gear shift sounds
+                    current_gear = engine_state.get("gear", 0)
+                    # Thread-safe audio state update with gear and drift info
+                    audio_controller.set_engine_state(
+                        rpm=rpm, 
+                        throttle=max(0.0, th),
+                        current_gear=current_gear,
+                        drift_ratio=my_car.drift_ratio
+                    )
+            except Exception as e:
+                # Silently handle audio errors to prevent crashes on low-end devices
+                pass
+
+            # Prepare remotes view for AIs: include network remotes + all AIs + the local player (so AIs can detect collisions with player)
+            remotes_with_ai_for_ais = dict(remotes)
+            
+            if I_AM_HOST:
+                # add local player under a distinct key so AIs see it
+                remotes_with_ai_for_ais[f"PLAYER-{my_id}"] = {"x": my_car.x, "y": my_car.y, "a": my_car.angle, "drift_ratio": my_car.drift_ratio, "name": my_car.name}
+                for i, ai in enumerate(ai_cars, start=1):
+                    key = f"AI-{i}"
+                    remotes_with_ai_for_ais[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "drift_ratio": ai.drift_ratio, "name": ai.name}
+
+            # Step AIs (each AI sees other AIs + network remotes + the player)
+            if I_AM_HOST:
+                for ai in ai_cars:
+                    ai.step(ai_algorithme(path_poly, ai), dt, remotes_with_ai_for_ais, world_size, compute_debug=const.DEBUG)
+            cam.update(my_car, world_size)
+        else:
+            # In menus: set default controls to prevent undefined variable errors
+            controls = {"th": 0.0, "st": 0.0, "br": 0.0}
 
         # ======== RENDERING ========
 
-        # draw track, drift marks and cars (online & local)
-        world_surf, resized, is_viewport = renderer.render_world(cam, stage1, my_car, ai_cars, remotes, lights_on, car_sprites_cache)
-        if resized and not is_viewport:
-            path_poly = path_finder.discover_track(asset_path("track", f"map{const.MAP_NUM}", "main.png"))
+        if not skip_physics:
+            # draw track, drift marks and cars (online & local)
+            world_surf, resized, is_viewport = renderer.render_world(cam, stage1, my_car, ai_cars, remotes, lights_on, car_sprites_cache)
+            if resized and not is_viewport:
+                path_poly = path_finder.discover_track(asset_path("track", f"map{const.MAP_NUM}", "main.png"))
 
-        # draw camera view (scaled or classic)
-        if is_viewport: final_surf = pygame.transform.scale(world_surf, (const.WINDOW_WIDTH, const.WINDOW_HEIGHT))  # chunk mode
-        else: final_surf = cam.apply(world_surf)  # classic mode
+            # draw camera view (scaled or classic)
+            if is_viewport: final_surf = pygame.transform.scale(world_surf, (const.WINDOW_WIDTH, const.WINDOW_HEIGHT))  # chunk mode
+            else: final_surf = cam.apply(world_surf)  # classic mode
+        else:
+            # blank world surface for lobby, settings, key binds
+            world_surf = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
+            world_surf.fill(const.GREY_20)
+            final_surf = world_surf
 
         # draw ui
         ui_surf = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), pygame.SRCALPHA)

@@ -1,6 +1,6 @@
 import pygame, json, time
 import drift.config.const as const
-from drift.ui.ui_helpers import blur_surface, invalidate_ui_text_cache, get_cached_text
+from drift.ui.ui_helpers import invalidate_ui_text_cache, get_cached_text
 from drift.core.helpers import rand_code
 from drift.net.communication import connect_to_relay, recv_jsons
 
@@ -25,7 +25,7 @@ _key_binds_state = {
 def draw_lobby():         
     pass
 
-def draw_game(ui_surf, code, font_small):
+def draw_game():
     pass
 
 def draw_error(ui_surf, error_msg, font_small):
@@ -38,9 +38,6 @@ def draw_error(ui_surf, error_msg, font_small):
 def draw_new_game(ui_surf, font_big, font_medium):
     """Draw new game setup screen with username input, car/track/mode selection.
     This creates a clean new page with solid background color."""
-    
-    # Fill background with solid color (dark background)
-    ui_surf.fill((20, 20, 30))
     
     # Button dimensions
     btn_width = const.BTN_WIDTH
@@ -141,6 +138,101 @@ def draw_new_game(ui_surf, font_big, font_medium):
         "host_btn": host_btn_rect,
     }
 
+def draw_join_game(ui_surf, font_big, font_medium):
+    """Draw join game screen with username input, car selection, and code input.
+    This creates a clean new page with solid background color."""
+    
+    # Fill background with solid color (dark background)
+    ui_surf.fill(const.GREY_20)
+    
+    # Button dimensions
+    btn_width = const.BTN_WIDTH
+    btn_height = const.BTN_HEIGHT
+    center_x = const.WINDOW_WIDTH // 2
+    
+    y_start = const.WINDOW_HEIGHT * 0.1
+    spacing = btn_height + 30
+    
+    # Username section
+    y = y_start
+    label = font_medium.render("Username", True, const.WHITE_240)
+    ui_surf.blit(label, (center_x - label.get_width() // 2, y))
+    
+    # Username input box
+    input_box_rect = pygame.Rect(center_x - btn_width // 2, y + 35, btn_width, btn_height)
+    input_color = (100, 200, 100) if _game_setup["username_active"] else (80, 80, 90)
+    pygame.draw.rect(ui_surf, input_color, input_box_rect, 2)
+    
+    # Username text (only show if username exists, no placeholder)
+    if _game_setup["username"]:
+        username_surf = font_medium.render(_game_setup["username"], True, const.WHITE_240)
+        ui_surf.blit(username_surf, (input_box_rect.centerx - username_surf.get_width() // 2, 
+                                      input_box_rect.centery - username_surf.get_height() // 2))
+    
+    # Car selection section
+    y += spacing + 35
+    label = font_medium.render("Car", True, const.WHITE_240)
+    ui_surf.blit(label, (center_x - label.get_width() // 2, y))
+    
+    # Car buttons
+    car_spacing = 30
+    car_btn_width = (btn_width - car_spacing) // 2
+    car1_rect = pygame.Rect(center_x - btn_width // 2, y + 35, car_btn_width, btn_height)
+    car2_rect = pygame.Rect(center_x - btn_width // 2 + car_btn_width + car_spacing, y + 35, car_btn_width, btn_height)
+    
+    car1_color = const.GREEN if _game_setup["selected_car"] == "ae86" else (80, 80, 90)
+    car2_color = const.GREEN if _game_setup["selected_car"] == "m5" else (80, 80, 90)
+    
+    pygame.draw.rect(ui_surf, car1_color, car1_rect, 2)
+    pygame.draw.rect(ui_surf, car2_color, car2_rect, 2)
+    
+    car1_text = font_medium.render("ae86", True, const.WHITE_240)
+    car2_text = font_medium.render("m5", True, const.WHITE_240)
+    ui_surf.blit(car1_text, (car1_rect.centerx - car1_text.get_width() // 2, 
+                              car1_rect.centery - car1_text.get_height() // 2))
+    ui_surf.blit(car2_text, (car2_rect.centerx - car2_text.get_width() // 2, 
+                              car2_rect.centery - car2_text.get_height() // 2))
+    
+    # Code section
+    y += spacing + 35
+    label = font_medium.render("Room Code", True, const.WHITE_240)
+    ui_surf.blit(label, (center_x - label.get_width() // 2, y))
+    
+    # Code input box
+    code_box_rect = pygame.Rect(center_x - btn_width // 2, y + 35, btn_width, btn_height)
+    code_color = (100, 200, 100) if _game_setup.get("code_active", False) else (80, 80, 90)
+    pygame.draw.rect(ui_surf, code_color, code_box_rect, 2)
+    
+    # Code text (only show if code exists, no placeholder)
+    if _game_setup.get("room_code", ""):
+        code_surf = font_medium.render(_game_setup["room_code"], True, const.WHITE_240)
+        ui_surf.blit(code_surf, (code_box_rect.centerx - code_surf.get_width() // 2, 
+                                  code_box_rect.centery - code_surf.get_height() // 2))
+    
+    # Join Game button
+    y += spacing + 50
+    join_btn_rect = pygame.Rect(center_x - btn_width // 2, y, btn_width, btn_height)
+    pygame.draw.rect(ui_surf, const.GREEN, join_btn_rect)
+    
+    join_text = font_big.render("Join", True, const.WHITE_240)
+    ui_surf.blit(join_text, (join_btn_rect.centerx - join_text.get_width() // 2, 
+                              join_btn_rect.centery - join_text.get_height() // 2))
+    
+    # Error message area
+    y += btn_height + 10
+    if _game_setup["error_message"]:
+        error_surf = font_medium.render(_game_setup["error_message"], True, (255, 100, 100))
+        ui_surf.blit(error_surf, (center_x - error_surf.get_width() // 2, y))
+    
+    # Store rects for click detection (returned for event handling)
+    return {
+        "username_box": input_box_rect,
+        "car1_btn": car1_rect,
+        "car2_btn": car2_rect,
+        "code_box": code_box_rect,
+        "join_btn": join_btn_rect,
+    }
+
 def handle_new_game_click(click_pos, rects):
     """Handle mouse clicks on new game UI elements."""
     if rects["username_box"].collidepoint(click_pos):
@@ -227,14 +319,6 @@ def get_game_setup():
     """Get current game setup configuration."""
     return _game_setup.copy()
 
-def set_error_message(message):
-    """Set an error message to display in the UI."""
-    _game_setup["error_message"] = message
-
-def clear_error_message():
-    """Clear the error message."""
-    _game_setup["error_message"] = None
-
 def reset_game_setup():
     """Reset game setup to defaults."""
     _game_setup["username"] = ""
@@ -244,6 +328,14 @@ def reset_game_setup():
     _game_setup["selected_mode"] = "beta"
     _game_setup["room_code"] = ""
     _game_setup["code_active"] = False
+    _game_setup["error_message"] = None
+
+def set_error_message(message):
+    """Set an error message to display in the UI."""
+    _game_setup["error_message"] = message
+
+def clear_error_message():
+    """Clear the error message."""
     _game_setup["error_message"] = None
 
 def host_new_game(my_id):
@@ -391,104 +483,7 @@ def join_new_game(my_id):
     invalidate_ui_text_cache('room')
     return ("game", my_name, code, sock, is_host, host_name, error)
 
-def draw_join_game(ui_surf, font_big, font_medium):
-    """Draw join game screen with username input, car selection, and code input.
-    This creates a clean new page with solid background color."""
-    
-    # Fill background with solid color (dark background)
-    ui_surf.fill((20, 20, 30))
-    
-    # Button dimensions
-    btn_width = const.BTN_WIDTH
-    btn_height = const.BTN_HEIGHT
-    center_x = const.WINDOW_WIDTH // 2
-    
-    y_start = const.WINDOW_HEIGHT * 0.1
-    spacing = btn_height + 30
-    
-    # Username section
-    y = y_start
-    label = font_medium.render("Username", True, const.WHITE_240)
-    ui_surf.blit(label, (center_x - label.get_width() // 2, y))
-    
-    # Username input box
-    input_box_rect = pygame.Rect(center_x - btn_width // 2, y + 35, btn_width, btn_height)
-    input_color = (100, 200, 100) if _game_setup["username_active"] else (80, 80, 90)
-    pygame.draw.rect(ui_surf, input_color, input_box_rect, 2)
-    
-    # Username text (only show if username exists, no placeholder)
-    if _game_setup["username"]:
-        username_surf = font_medium.render(_game_setup["username"], True, const.WHITE_240)
-        ui_surf.blit(username_surf, (input_box_rect.centerx - username_surf.get_width() // 2, 
-                                      input_box_rect.centery - username_surf.get_height() // 2))
-    
-    # Car selection section
-    y += spacing + 35
-    label = font_medium.render("Car", True, const.WHITE_240)
-    ui_surf.blit(label, (center_x - label.get_width() // 2, y))
-    
-    # Car buttons
-    car_spacing = 30
-    car_btn_width = (btn_width - car_spacing) // 2
-    car1_rect = pygame.Rect(center_x - btn_width // 2, y + 35, car_btn_width, btn_height)
-    car2_rect = pygame.Rect(center_x - btn_width // 2 + car_btn_width + car_spacing, y + 35, car_btn_width, btn_height)
-    
-    car1_color = const.GREEN if _game_setup["selected_car"] == "ae86" else (80, 80, 90)
-    car2_color = const.GREEN if _game_setup["selected_car"] == "m5" else (80, 80, 90)
-    
-    pygame.draw.rect(ui_surf, car1_color, car1_rect, 2)
-    pygame.draw.rect(ui_surf, car2_color, car2_rect, 2)
-    
-    car1_text = font_medium.render("ae86", True, const.WHITE_240)
-    car2_text = font_medium.render("m5", True, const.WHITE_240)
-    ui_surf.blit(car1_text, (car1_rect.centerx - car1_text.get_width() // 2, 
-                              car1_rect.centery - car1_text.get_height() // 2))
-    ui_surf.blit(car2_text, (car2_rect.centerx - car2_text.get_width() // 2, 
-                              car2_rect.centery - car2_text.get_height() // 2))
-    
-    # Code section
-    y += spacing + 35
-    label = font_medium.render("Room Code", True, const.WHITE_240)
-    ui_surf.blit(label, (center_x - label.get_width() // 2, y))
-    
-    # Code input box
-    code_box_rect = pygame.Rect(center_x - btn_width // 2, y + 35, btn_width, btn_height)
-    code_color = (100, 200, 100) if _game_setup.get("code_active", False) else (80, 80, 90)
-    pygame.draw.rect(ui_surf, code_color, code_box_rect, 2)
-    
-    # Code text (only show if code exists, no placeholder)
-    if _game_setup.get("room_code", ""):
-        code_surf = font_medium.render(_game_setup["room_code"], True, const.WHITE_240)
-        ui_surf.blit(code_surf, (code_box_rect.centerx - code_surf.get_width() // 2, 
-                                  code_box_rect.centery - code_surf.get_height() // 2))
-    
-    # Join Game button
-    y += spacing + 50
-    join_btn_rect = pygame.Rect(center_x - btn_width // 2, y, btn_width, btn_height)
-    pygame.draw.rect(ui_surf, const.GREEN, join_btn_rect)
-    
-    join_text = font_big.render("Join", True, const.WHITE_240)
-    ui_surf.blit(join_text, (join_btn_rect.centerx - join_text.get_width() // 2, 
-                              join_btn_rect.centery - join_text.get_height() // 2))
-    
-    # Error message area
-    y += btn_height + 10
-    if _game_setup["error_message"]:
-        error_surf = font_medium.render(_game_setup["error_message"], True, (255, 100, 100))
-        ui_surf.blit(error_surf, (center_x - error_surf.get_width() // 2, y))
-    
-    # Store rects for click detection (returned for event handling)
-    return {
-        "username_box": input_box_rect,
-        "car1_btn": car1_rect,
-        "car2_btn": car2_rect,
-        "code_box": code_box_rect,
-        "join_btn": join_btn_rect,
-    }
-
-def draw_settings(ui_surf, world_surf, world_size, buttons, stage_path):
-    if world_surf is not None: world_surf = blur_surface(world_surf, world_size)
-    
+def draw_settings(ui_surf, world_surf, world_size, buttons, stage_path):    
     # Draw buttons and handle their state
     button_results = []
     for button in buttons:
