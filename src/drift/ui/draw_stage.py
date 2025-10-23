@@ -548,8 +548,8 @@ def draw_key_binds(ui_surf, font_small):
     
     # Calculate vertical spacing to distribute button rows evenly
     # Leave margin at top and bottom
-    top_margin = const.WINDOW_HEIGHT * 0.15
-    bottom_margin = const.WINDOW_HEIGHT * 0.1
+    top_margin = const.WINDOW_HEIGHT * 0.3
+    bottom_margin = const.WINDOW_HEIGHT * 0.3
     available_height = const.WINDOW_HEIGHT - top_margin - bottom_margin
     
     # Calculate number of rows (2 items per row)
