@@ -16,7 +16,7 @@ from drift.core.helpers import clamp, rand_name
 from drift.ai.ai import ai_algorithme
 from drift.core.inputs import read_inputs
 from drift.net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, recv_jsons
-from drift.ui.ui import handle_game_events, draw_stage_ui
+from drift.ui.ui import handle_game_events, draw_stage_ui, invalidate_ui_text_cache
 from drift.core.rpm import calc_engine_rpm
 from drift.audio.engine_audio import EngineAudio
 from drift.render.map_chunks import ChunkedMap
@@ -512,7 +512,10 @@ def main():
         ai_cars.clear()
         const.AI_PATH_FOLLOW = False
         const.CURSOR_FOLLOW = False
+        invalidate_ui_text_cache('room')  # Clear cached room code text
         return "lobby", "", None, None, remotes # stage, substage sock, code, remotes
+    
+    def hande_key_binds(): pass
         
     def switch_cursor_follow_mode():
         const.CURSOR_FOLLOW = not const.CURSOR_FOLLOW
@@ -528,10 +531,11 @@ def main():
         try: return "game", "", sock, code, remotes
         except Exception: return "game", "", None, None, {}
 
-    buttons = [
-    btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, lambda: leave_room(sock, code, my_id, remotes)),
-    btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, switch_cursor_follow_mode),
-    btn.Button("AI Path Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.65, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, switch_ai_path_mode),
+    settings_buttons = [ # to do : be able to use * like */settings for key binds
+    btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"]] ,lambda: leave_room(sock, code, my_id, remotes)),
+    btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, [["lobby", "settings"], ["game", "settings"]], hande_key_binds),
+    btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"]], switch_cursor_follow_mode),
+    btn.Button("AI Path Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.65, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"]], switch_ai_path_mode),
     ]
 
     while True:
@@ -566,6 +570,7 @@ def main():
             if ev.type == pygame.KEYDOWN and ev.key == const.DEBUG_TOGGLE_KEY:
                 # Toggle debug mode
                 const.DEBUG = not const.DEBUG
+                invalidate_ui_text_cache('debug')  # Clear cached debug text
                 print(f"Debug mode {'enabled' if const.DEBUG else 'disabled'}")
             if ev.type == pygame.KEYDOWN and ev.key == pygame.K_n:
                 if I_AM_HOST and stage1 == "game":
@@ -706,7 +711,7 @@ def main():
         fps = clock.get_fps()
         world_surf, button_results, new_game_rects, join_game_rects = draw_stage_ui(
             ui_surf, stage1, stage2, stage3, code, world_surf, world_size, 
-            buttons, error_msg, my_car, cam, joysticks, font_big, font_medium, font_small,
+            settings_buttons, error_msg, my_car, cam, joysticks, font_big, font_medium, font_small,
             controls, engine_state, fps, dt, host_name
         )
         

@@ -8,6 +8,7 @@ from drift.core.helpers import clamp, rand_code
 from drift.core.inputs import read_inputs  # Removed get_name_input, get_code_input (old system)
 from drift.net.communication import connect_to_relay, recv_jsons
 from drift.core.rpm import calc_engine_rpm
+from drift.ui.ui_helpers import get_cached_text, invalidate_ui_text_cache
 from drift.ui.draw_stage import (
     draw_lobby, draw_new_game, draw_join_game, draw_settings, draw_game, draw_error,
     handle_new_game_click, handle_new_game_keypress, host_new_game,
@@ -33,7 +34,7 @@ def draw_car(surface, x, y, angle, name,
         show_angle = (-angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
         sprite_index = round(show_angle * 64) % 64
         sprite_size = (car_sprite[sprite_index].get_width(), car_sprite[sprite_index].get_height())
-        surface.blit(car_sprite[sprite_index], (int(x - sprite_size[0] / 2), int(y - sprite_size[1] / 2)))
+        surface.blit(car_sprite[sprite_index], (int(x - sprite_size[0] // 2), int(y - sprite_size[1] // 2)))
 
     # Draw oriented collision rectangle overlay
     ca, sa = math.cos(angle), math.sin(angle)
@@ -152,35 +153,47 @@ def draw_header(surface, font_big, font_small, title_str: str, fps: float, host_
     # Draw header background
     pygame.draw.rect(surface, const.TRACK_BORDER_COLOR, (0, 0, const.WINDOW_WIDTH, const.TOP_LINE_Y))
     pygame.draw.line(surface, const.WHITE, (0, const.TOP_LINE_Y), (const.WINDOW_WIDTH, const.TOP_LINE_Y))
-    # draw a header title centered at the top of the screen
-    title = font_big.render(title_str, True, const.WHITE_240)
+    
+    # CACHED: Page title - limited set of values (Lobby, In Game, Settings, etc.)
+    title = get_cached_text(font_big, title_str, const.WHITE_240)
     surface.blit(title, (const.WINDOW_WIDTH // 2 - title.get_width() // 2, const.TITLE_Y))
-    # Draw FPS counter next to debug status
-    if fps >= 50: color = (120, 255, 120)  # Green for good FPS
-    elif fps >= 30: color = (255, 255, 120)  # Yellow for moderate FPS
+    
+    # CACHED: FPS counter - cache rounded integer values to avoid rendering every unique float
+    fps_rounded = round(fps)
+    if fps_rounded >= 50: color = (120, 255, 120)  # Green for good FPS
+    elif fps_rounded >= 30: color = (255, 255, 120)  # Yellow for moderate FPS
     else: color = (255, 120, 120)  # Red for low FPS
-    fps_text = font_small.render(f"FPS: {fps:.1f}", True, color)
+    
+    fps_text = get_cached_text(font_small, f"FPS: {fps_rounded}", color,
+                                cache_key=(id(font_small), "fps", fps_rounded, color))
     surface.blit(fps_text, (const.WINDOW_WIDTH - fps_text.get_width() - 10, const.NAVBAR_Y))
-    # Draw debug status
+    
+    # CACHED: Debug status - only 2 possible values (True/False)
     debug_status = "True" if const.DEBUG else "False"
-    debug_color = (120, 255, 120) if const.DEBUG else (255, 120, 120)  # Green if True, Red if False
-    debug_text = font_small.render(f"Debug: {debug_status}", True, debug_color)
+    debug_color = (120, 255, 120) if const.DEBUG else (255, 120, 120)
+    debug_text = get_cached_text(font_small, f"Debug: {debug_status}", debug_color,
+                                  cache_key=(id(font_small), "debug", const.DEBUG))
     surface.blit(debug_text, (const.WINDOW_WIDTH*0.90 - debug_text.get_width() - 10, const.NAVBAR_Y))
-    # Draw host username if provided
+    
+    # CACHED: Host username - changes rarely, only when host changes
     if host_username:
-        host_text = font_small.render(f"Host: {host_username}", True, const.WHITE_240)
+        host_text = get_cached_text(font_small, f"Host: {host_username}", const.WHITE_240)
         surface.blit(host_text, (10, const.NAVBAR_Y))
 
 def draw_footer(surface: str, font_small, code=None):
     # Draw footer background
     pygame.draw.rect(surface, const.TRACK_BORDER_COLOR, (0, const.BOTTOM_LINE_Y, const.WINDOW_WIDTH, const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y))
     pygame.draw.line(surface, const.WHITE, (0, const.BOTTOM_LINE_Y), (const.WINDOW_WIDTH, const.BOTTOM_LINE_Y))
-    # draw a footer title centered at the bottom of the screen
-    relay = font_small.render(f"Relay: {const.RELAY_PUBLIC_ENDPOINT}", True, const.GREY_180)
+    
+    # CACHED: Relay endpoint - never changes during runtime
+    relay = get_cached_text(font_small, f"Relay: {const.RELAY_PUBLIC_ENDPOINT}", const.GREY_180,
+                            cache_key=(id(font_small), "relay", const.RELAY_PUBLIC_ENDPOINT))
     surface.blit(relay, (const.WINDOW_WIDTH // 2 - relay.get_width() // 2, const.BOTTOM_LINE_Y + 5))
-    # Draw room code on the left side if provided
+    
+    # CACHED: Room code - limited set of values, changes only when joining/leaving rooms
     room_label = code if code else "Offline"
-    code_text = font_small.render(f"Room Code: {room_label}", True, const.WHITE_240)
+    code_text = get_cached_text(font_small, f"Room Code: {room_label}", const.WHITE_240,
+                                 cache_key=(id(font_small), "room_code", room_label))
     surface.blit(code_text, (10, const.BOTTOM_LINE_Y + 5))
 
 def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size, buttons, 
@@ -205,7 +218,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
             if stage3 == "key_binds":
                 draw_header(ui_surf, font_big, font_small, "Key Bindings", fps)
             else:
-                world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons)
+                world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2])
                 draw_header(ui_surf, font_big, font_small, "Settings", fps)
         elif stage2 == "new_game": 
             new_game_rects = draw_new_game(ui_surf, font_big, font_medium)
@@ -230,7 +243,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
         _join_game_rects_cache = None  # Clear cache when in game
         if stage2 == "settings": 
             draw_header(ui_surf, font_big, font_small, "Settings", fps)
-            world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons)
+            world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2])
         else:
             draw_header(ui_surf, font_big, font_small, "In Game", fps, host_username=host_name)
             # draw_game(ui_surf, code, font_small)

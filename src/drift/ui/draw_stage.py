@@ -1,6 +1,6 @@
 import pygame, json, time
 import drift.config.const as const
-from drift.ui.ui_helpers import blur_surface
+from drift.ui.ui_helpers import blur_surface, invalidate_ui_text_cache
 from drift.core.helpers import rand_code
 from drift.net.communication import connect_to_relay, recv_jsons
 
@@ -293,6 +293,8 @@ def host_new_game(my_id):
         code = "Offline"
         is_host = True
     
+    # Invalidate UI text cache when room code changes
+    invalidate_ui_text_cache('room')
     return ("game", my_name, code, sock, is_host, host_name)
 
 def join_new_game(my_id):
@@ -369,6 +371,8 @@ def join_new_game(my_id):
         code = "Offline"
         is_host = False
 
+    # Invalidate UI text cache when room code changes
+    invalidate_ui_text_cache('room')
     return ("game", my_name, code, sock, is_host, host_name, error)
 
 def draw_join_game(ui_surf, font_big, font_medium):
@@ -466,7 +470,7 @@ def draw_join_game(ui_surf, font_big, font_medium):
         "join_btn": join_btn_rect,
     }
 
-def draw_settings(ui_surf, world_surf, world_size, buttons):
+def draw_settings(ui_surf, world_surf, world_size, buttons, stage_path):
     if world_surf is not None: world_surf = blur_surface(world_surf, world_size)
     
     # Draw buttons and handle their state
@@ -493,7 +497,7 @@ def draw_settings(ui_surf, world_surf, world_size, buttons):
         except Exception: 
             pass
         
-        res = button.draw(ui_surf)
+        res = button.draw(ui_surf, stage_path)
         if res is not None:
             button_results.append(res)
 
