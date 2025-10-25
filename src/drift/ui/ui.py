@@ -16,6 +16,7 @@ from drift.ui.draw_stage import (
     handle_key_binds_click, handle_key_binds_keypress,
     get_game_setup, reset_game_setup, set_error_message, clear_error_message
 )
+from drift.config.settings import settings_manager
 
 # Cache font to avoid recreating it every frame (massive performance killer)
 _car_name_font_cache = {}
@@ -222,7 +223,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
             if stage3 == "key_binds":
                 draw_header(ui_surf, font_big, font_small, "Key Bindings", fps, host_name)
             else:
-                world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2])
+                world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
                 draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
         elif stage2 == "new_game": 
             new_game_rects = draw_new_game(ui_surf, font_big, font_medium)
@@ -252,7 +253,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
                 draw_header(ui_surf, font_big, font_small, "Key Bindings", fps, host_name)
             else:
                 _key_binds_rects_cache = None  # Clear cache when not in key_binds
-                world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2])
+                world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
                 draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
         else:
             _key_binds_rects_cache = None  # Clear cache when not in settings
@@ -385,6 +386,11 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, remotes, ai_cars, soc
                     my_car.car_type = setup["selected_car"]
         elif stage1 == "game" and stage2 == "settings" and stage3 == "key_binds" and _key_binds_rects_cache:
             handle_key_binds_click(ev.pos, _key_binds_rects_cache)
+    
+    # Handle slider events in settings menu (all event types)
+    if ((stage1 == "game" and stage2 == "settings" and stage3 == "") or 
+        (stage1 == "lobby" and stage2 == "settings" and stage3 == "")):
+        settings_manager.handle_slider_events(ev)
 
     return ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name
 

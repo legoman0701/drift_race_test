@@ -63,9 +63,7 @@ CAR_LEN = 38.0
 CAR_WID = 20.0
 TIRE_MARK_SMOKE = (255, 255, 255, 100)  # tire mark color at first step (smoke)
 TIRE_MARK_GROUND = (220, 220, 220, 220)  # tire mark color at second step on the ground
-HEADLIGHT_LEN = 150
-HEADLIGHT_FOV = 25  # degrees per headlight cone (narrow beams)
-GLOW_RADIUS = 10  # soft round glow around the car
+STEER_BIAS = 1.0  # how much the car automatically steers into the drift 
 
 # visual const
 TOP_LINE_Y = 30

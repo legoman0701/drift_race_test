@@ -1,5 +1,6 @@
 import math
 import json, os
+import drift.config.const as const
 
 # world
 WINDOW_WIDTH, WINDOW_HEIGHT = 1000, 700
@@ -42,7 +43,7 @@ INERTIA_Z = MASS * (CAR_LEN**2 + CAR_WID**2) / 6.0  # rough box inertia
 GRAVITY = 9.81
 ROLLING_RES_COEFF = 0.015  # typical car tire rolling resistance coefficient
 AERO_DRAG_COEFF = 0.005    # combined 0.5*rho*CdA scaling (tune to taste)
-BRAKE_DRAG_COEFF = 50.0    # body-level brake drag (opposes velocity)
+BRAKE_DRAG_COEFF = 800.0    # body-level brake drag (opposes velocity)
 
 def clamp(x, lo, hi):
     return lo if x < lo else hi if x > hi else x
@@ -104,7 +105,18 @@ class Car:
             ( -WHEEL_X_OFF, +WHEEL_Y_OFF),  # Rear Left (RL)
             ( -WHEEL_X_OFF, -WHEEL_Y_OFF),  # Rear Right (RR)
         ]
-        wheel_steer_angle = steering_input * MAX_STEER_ANGLE
+
+        wheel_steer_angle = 0
+        if vel_dir_f > 0:
+            wheel_steer_angle = -drift_angle*0.8* (const.STEER_BIAS if TRANSMITION_SETUP == "RWD" else 0.0)
+
+        if TRANSMITION_SETUP == "RWD":
+            wheel_steer_angle += (steering_input * MAX_STEER_ANGLE)/clamp(speed_norm/100, 1.0, 5.0)
+        else:
+            wheel_steer_angle += steering_input * MAX_STEER_ANGLE
+
+        #temporaly disabled its less realistic but feels better
+        #wheel_steer_angle = clamp(wheel_steer_angle, -MAX_STEER_ANGLE, MAX_STEER_ANGLE)
 
         # Accumulators for net forces/torque (body frame)
         total_force_body_x = 0.0
@@ -129,13 +141,17 @@ class Car:
             # Front wheels (index 0, 1) have no engine power
             # Rear wheels (index 2, 3) get full engine power
             if index in TRANSMITION_SETUP_DICT[TRANSMITION_SETUP]:  # Rear wheels only
-                longitudinal_force = throttle_input * ENGINE_ACC
+                longitudinal_force = throttle_input * ENGINE_ACC / (2.0 if TRANSMITION_SETUP == "AWD" else 1.0)
             else:  # Front wheels
                 longitudinal_force = 0
-                
-            
-            wheel_aoa = abs(math.atan2(wheel_speed_lat, max(0.1, abs(wheel_speed_long))))
-            lateral_force = -wheel_speed_lat * (CORNERING_STIFFNESS * clamp(math.radians(20)-wheel_aoa, 0.2, 1) * 5)
+
+
+            lat_grip = (100-abs(wheel_speed_lat))/(100-20)
+            long_grip = (100-abs(longitudinal_force))/(100-20)
+
+            has_grip = clamp(clamp(lat_grip, 0.0, 1.0) * clamp(long_grip, 0.0, 1.0), 0.1, 1.0)
+
+            lateral_force = -wheel_speed_lat * CORNERING_STIFFNESS*5 * has_grip
             lateral_force = clamp(lateral_force, -LATERAL_FORCE_MAX, LATERAL_FORCE_MAX)
 
             # Back to body frame (rotate by wheel angle)
