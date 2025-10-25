@@ -45,12 +45,13 @@ HEADLIGHT_COLOR = (200, 200, 200)
 FLAGS = pygame.HWSURFACE | pygame.DOUBLEBUF
 
 # key binds
+RETURN_KEYS = [pygame.K_RETURN, pygame.K_KP_ENTER]
+ESCAPE_KEY = pygame.K_ESCAPE # open settings / pause menu
 UP_KEY = [pygame.K_UP, pygame.K_z] # accelerate
 DOWN_KEY = [pygame.K_DOWN, pygame.K_s] # reverse
 LEFT_KEY = [pygame.K_LEFT, pygame.K_q] # steer left
 RIGHT_KEY = [pygame.K_RIGHT, pygame.K_d] # steer right
 BRAKE_KEY = pygame.K_SPACE # handbrake
-ESCAPE_KEY = pygame.K_ESCAPE # open settings / pause menu
 RESET_KEY = pygame.K_r # reset car position
 HOST_KEY = pygame.K_h # host game
 JOIN_KEY = pygame.K_j # join game
