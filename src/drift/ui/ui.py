@@ -201,7 +201,7 @@ def draw_footer(surface: str, font_small, code=None):
 
 def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size, buttons, 
                   error_msg, my_car, cam, joysticks, font_big, font_medium, font_small,
-                  ai_path_mode_controls, engine_state, fps, dt, host_name=None):
+                  ai_path_mode_controls, engine_state, fps, dt, host_name=None, car_sprites_cache=None):
     """Draw UI elements based on current stage levels (stage1, stage2, stage3).
     
     Stage levels:
@@ -225,13 +225,13 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
                 world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2])
                 draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
         elif stage2 == "new_game": 
-            new_game_rects = draw_new_game(ui_surf, font_big, font_medium)
+            new_game_rects = draw_new_game(ui_surf, font_big, font_medium, car_sprites_cache, dt)
             draw_header(ui_surf, font_big, font_small, "Host Game", fps, host_name)
             _new_game_rects_cache = new_game_rects  # Cache for event handling
             _join_game_rects_cache = None  # Clear join game cache
         elif stage2 == "join_game":
             # Join game page doesn't need header/footer - it's a full page
-            join_game_rects = draw_join_game(ui_surf, font_big, font_medium)
+            join_game_rects = draw_join_game(ui_surf, font_big, font_medium, car_sprites_cache, dt)
             draw_header(ui_surf, font_big, font_small, "Join Game", fps, host_name)
             _join_game_rects_cache = join_game_rects  # Cache for event handling
             _new_game_rects_cache = None  # Clear new game cache

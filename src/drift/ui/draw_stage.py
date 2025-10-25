@@ -1,8 +1,9 @@
-import pygame, json, time
+import pygame, json, time, math
 import drift.config.const as const
 from drift.ui.ui_helpers import invalidate_ui_text_cache, get_cached_text
 from drift.core.helpers import rand_code
 from drift.net.communication import connect_to_relay, recv_jsons
+from tools.paths import asset_path
 
 # Game setup state (shared across new_game and join_game UI)
 _game_setup = {
@@ -22,6 +23,28 @@ _key_binds_state = {
     "selected_bind": None,  # Currently selected/hovered bind
 }
 
+# Car rotation state for selection screens
+_car_rotation_angle = 0.0  # Global rotation angle for all car sprites
+
+def _load_car_specs(car_type):
+    """Load car specifications from JSON file."""
+    try:
+        spec_path = asset_path("cars", car_type.upper(), "specs.json")
+        with open(spec_path, "r", encoding="utf-8") as fh:
+            specs = json.load(fh)
+        return specs.get("manufacturer", "Unknown"), specs.get("model", "Unknown")
+    except Exception as e:
+        print(f"Warning: Could not load specs for {car_type}: {e}")
+        return "Unknown", "Unknown"
+
+def _update_car_rotation(dt):
+    """Update the global car rotation angle for selection screens."""
+    global _car_rotation_angle
+    # Rotate at 45 degrees per second (π/4 radians per second)
+    _car_rotation_angle += (math.pi / 4) * dt
+    if _car_rotation_angle >= 2 * math.pi:
+        _car_rotation_angle -= 2 * math.pi
+
 def draw_lobby():         
     pass
 
@@ -35,9 +58,12 @@ def draw_error(ui_surf, error_msg, font_small):
     ui_surf.blit(tip, (const.WINDOW_WIDTH//2 - tip.get_width()//2, const.WINDOW_HEIGHT//2 + 40))
 
 
-def draw_new_game(ui_surf, font_big, font_medium):
+def draw_new_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.016):
     """Draw new game setup screen with username input, car/track/mode selection.
     This creates a clean new page with solid background color."""
+    
+    # Update car rotation
+    _update_car_rotation(dt)
     
     # Button dimensions
     btn_width = const.BTN_WIDTH
@@ -68,11 +94,12 @@ def draw_new_game(ui_surf, font_big, font_medium):
     label = font_medium.render("Car", True, const.WHITE_240)
     ui_surf.blit(label, (center_x - label.get_width() // 2, y))
     
-    # Car buttons
+    # Car buttons - now with sprites instead of text
     car_spacing = 30
     car_btn_width = (btn_width - car_spacing) // 2
-    car1_rect = pygame.Rect(center_x - btn_width // 2, y + 35, car_btn_width, btn_height)
-    car2_rect = pygame.Rect(center_x - btn_width // 2 + car_btn_width + car_spacing, y + 35, car_btn_width, btn_height)
+    car_btn_height = btn_height + 40  # Extra height for car sprite and manufacturer text
+    car1_rect = pygame.Rect(center_x - btn_width // 2, y + 35, car_btn_width, car_btn_height)
+    car2_rect = pygame.Rect(center_x - btn_width // 2 + car_btn_width + car_spacing, y + 35, car_btn_width, car_btn_height)
     
     car1_color = const.GREEN if _game_setup["selected_car"] == "ae86" else (80, 80, 90)
     car2_color = const.GREEN if _game_setup["selected_car"] == "m5" else (80, 80, 90)
@@ -80,15 +107,56 @@ def draw_new_game(ui_surf, font_big, font_medium):
     pygame.draw.rect(ui_surf, car1_color, car1_rect, 2)
     pygame.draw.rect(ui_surf, car2_color, car2_rect, 2)
     
-    car1_text = font_medium.render("ae86", True, const.WHITE_240)
-    car2_text = font_medium.render("m5", True, const.WHITE_240)
-    ui_surf.blit(car1_text, (car1_rect.centerx - car1_text.get_width() // 2, 
-                              car1_rect.centery - car1_text.get_height() // 2))
-    ui_surf.blit(car2_text, (car2_rect.centerx - car2_text.get_width() // 2, 
-                              car2_rect.centery - car2_text.get_height() // 2))
+    # Draw car sprites if available
+    if car_sprites_cache:
+        # AE86 car sprite
+        ae86_sprites = car_sprites_cache.get("ae86", [])
+        if ae86_sprites:
+            # Use only the main diffuse sprite (index 1)
+            main_sprite = ae86_sprites[1] if len(ae86_sprites) > 1 else ae86_sprites[0] if ae86_sprites else None
+            if main_sprite:
+                # Calculate sprite angle and index for rotation
+                show_angle = (-_car_rotation_angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
+                sprite_index = round(show_angle * 64) % 64
+                sprite = main_sprite[sprite_index]
+                sprite_size = (sprite.get_width(), sprite.get_height())
+                # Position sprite in upper part of button
+                sprite_x = car1_rect.centerx - sprite_size[0] // 2
+                sprite_y = car1_rect.y + 10
+                ui_surf.blit(sprite, (sprite_x, sprite_y))
+        
+        # M5 car sprite
+        m5_sprites = car_sprites_cache.get("m5", [])
+        if m5_sprites:
+            # Use only the main diffuse sprite (index 1)
+            main_sprite = m5_sprites[1] if len(m5_sprites) > 1 else m5_sprites[0] if m5_sprites else None
+            if main_sprite:
+                # Calculate sprite angle and index for rotation
+                show_angle = (-_car_rotation_angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
+                sprite_index = round(show_angle * 64) % 64
+                sprite = main_sprite[sprite_index]
+                sprite_size = (sprite.get_width(), sprite.get_height())
+                # Position sprite in upper part of button
+                sprite_x = car2_rect.centerx - sprite_size[0] // 2
+                sprite_y = car2_rect.y + 10
+                ui_surf.blit(sprite, (sprite_x, sprite_y))
+    
+    # Draw manufacturer and model text underneath sprites
+    ae86_manufacturer, ae86_model = _load_car_specs("ae86")
+    m5_manufacturer, m5_model = _load_car_specs("m5")
+    
+    # AE86 text
+    ae86_text = font_medium.render(f"{ae86_manufacturer} {ae86_model}", True, const.WHITE_240)
+    ui_surf.blit(ae86_text, (car1_rect.centerx - ae86_text.get_width() // 2, 
+                             car1_rect.bottom - ae86_text.get_height() - 5))
+    
+    # M5 text
+    m5_text = font_medium.render(f"{m5_manufacturer} {m5_model}", True, const.WHITE_240)
+    ui_surf.blit(m5_text, (car2_rect.centerx - m5_text.get_width() // 2, 
+                           car2_rect.bottom - m5_text.get_height() - 5))
     
     # Track selection section
-    y += spacing + 35
+    y += spacing + 75  # Extra space to account for taller car buttons
     label = font_medium.render("Track", True, const.WHITE_240)
     ui_surf.blit(label, (center_x - label.get_width() // 2, y))
     
@@ -138,9 +206,12 @@ def draw_new_game(ui_surf, font_big, font_medium):
         "host_btn": host_btn_rect,
     }
 
-def draw_join_game(ui_surf, font_big, font_medium):
+def draw_join_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.016):
     """Draw join game screen with username input, car selection, and code input.
     This creates a clean new page with solid background color."""
+    
+    # Update car rotation
+    _update_car_rotation(dt)
     
     # Fill background with solid color (dark background)
     ui_surf.fill(const.GREY_20)
@@ -174,11 +245,12 @@ def draw_join_game(ui_surf, font_big, font_medium):
     label = font_medium.render("Car", True, const.WHITE_240)
     ui_surf.blit(label, (center_x - label.get_width() // 2, y))
     
-    # Car buttons
+    # Car buttons - now with sprites instead of text
     car_spacing = 30
     car_btn_width = (btn_width - car_spacing) // 2
-    car1_rect = pygame.Rect(center_x - btn_width // 2, y + 35, car_btn_width, btn_height)
-    car2_rect = pygame.Rect(center_x - btn_width // 2 + car_btn_width + car_spacing, y + 35, car_btn_width, btn_height)
+    car_btn_height = btn_height + 40  # Extra height for car sprite and manufacturer text
+    car1_rect = pygame.Rect(center_x - btn_width // 2, y + 35, car_btn_width, car_btn_height)
+    car2_rect = pygame.Rect(center_x - btn_width // 2 + car_btn_width + car_spacing, y + 35, car_btn_width, car_btn_height)
     
     car1_color = const.GREEN if _game_setup["selected_car"] == "ae86" else (80, 80, 90)
     car2_color = const.GREEN if _game_setup["selected_car"] == "m5" else (80, 80, 90)
@@ -186,15 +258,56 @@ def draw_join_game(ui_surf, font_big, font_medium):
     pygame.draw.rect(ui_surf, car1_color, car1_rect, 2)
     pygame.draw.rect(ui_surf, car2_color, car2_rect, 2)
     
-    car1_text = font_medium.render("ae86", True, const.WHITE_240)
-    car2_text = font_medium.render("m5", True, const.WHITE_240)
-    ui_surf.blit(car1_text, (car1_rect.centerx - car1_text.get_width() // 2, 
-                              car1_rect.centery - car1_text.get_height() // 2))
-    ui_surf.blit(car2_text, (car2_rect.centerx - car2_text.get_width() // 2, 
-                              car2_rect.centery - car2_text.get_height() // 2))
+    # Draw car sprites if available
+    if car_sprites_cache:
+        # AE86 car sprite
+        ae86_sprites = car_sprites_cache.get("ae86", [])
+        if ae86_sprites:
+            # Use only the main diffuse sprite (index 1)
+            main_sprite = ae86_sprites[1] if len(ae86_sprites) > 1 else ae86_sprites[0] if ae86_sprites else None
+            if main_sprite:
+                # Calculate sprite angle and index for rotation
+                show_angle = (-_car_rotation_angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
+                sprite_index = round(show_angle * 64) % 64
+                sprite = main_sprite[sprite_index]
+                sprite_size = (sprite.get_width(), sprite.get_height())
+                # Position sprite in upper part of button
+                sprite_x = car1_rect.centerx - sprite_size[0] // 2
+                sprite_y = car1_rect.y + 10
+                ui_surf.blit(sprite, (sprite_x, sprite_y))
+        
+        # M5 car sprite
+        m5_sprites = car_sprites_cache.get("m5", [])
+        if m5_sprites:
+            # Use only the main diffuse sprite (index 1)
+            main_sprite = m5_sprites[1] if len(m5_sprites) > 1 else m5_sprites[0] if m5_sprites else None
+            if main_sprite:
+                # Calculate sprite angle and index for rotation
+                show_angle = (-_car_rotation_angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
+                sprite_index = round(show_angle * 64) % 64
+                sprite = main_sprite[sprite_index]
+                sprite_size = (sprite.get_width(), sprite.get_height())
+                # Position sprite in upper part of button
+                sprite_x = car2_rect.centerx - sprite_size[0] // 2
+                sprite_y = car2_rect.y + 10
+                ui_surf.blit(sprite, (sprite_x, sprite_y))
+    
+    # Draw manufacturer and model text underneath sprites
+    ae86_manufacturer, ae86_model = _load_car_specs("ae86")
+    m5_manufacturer, m5_model = _load_car_specs("m5")
+    
+    # AE86 text
+    ae86_text = font_medium.render(f"{ae86_manufacturer} {ae86_model}", True, const.WHITE_240)
+    ui_surf.blit(ae86_text, (car1_rect.centerx - ae86_text.get_width() // 2, 
+                             car1_rect.bottom - ae86_text.get_height() - 5))
+    
+    # M5 text
+    m5_text = font_medium.render(f"{m5_manufacturer} {m5_model}", True, const.WHITE_240)
+    ui_surf.blit(m5_text, (car2_rect.centerx - m5_text.get_width() // 2, 
+                           car2_rect.bottom - m5_text.get_height() - 5))
     
     # Code section
-    y += spacing + 35
+    y += spacing + 75  # Extra space to account for taller car buttons
     label = font_medium.render("Room Code", True, const.WHITE_240)
     ui_surf.blit(label, (center_x - label.get_width() // 2, y))
     
