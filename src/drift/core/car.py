@@ -111,7 +111,7 @@ class Car:
             wheel_steer_angle = -drift_angle*0.8* (const.STEER_BIAS if TRANSMITION_SETUP == "RWD" else 0.0)
 
         if TRANSMITION_SETUP == "RWD" and vel_dir_f > 0:
-            wheel_steer_angle += (steering_input * MAX_STEER_ANGLE)/clamp(speed_norm/100, 1.0, 5.0)
+            wheel_steer_angle += (steering_input * MAX_STEER_ANGLE)/clamp(speed_norm/50, 1.0, 5.0)
         else:
             wheel_steer_angle += steering_input * MAX_STEER_ANGLE
 
