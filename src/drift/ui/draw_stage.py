@@ -3,6 +3,8 @@ import drift.config.const as const
 from drift.ui.ui_helpers import invalidate_ui_text_cache, get_cached_text
 from drift.core.helpers import rand_code
 from drift.net.communication import connect_to_relay, recv_jsons
+from drift.ui.slider import Slider
+from drift.config.settings import settings_manager
 from tools.paths import asset_path
 
 # Game setup state (shared across new_game and join_game UI)
@@ -596,7 +598,7 @@ def join_new_game(my_id):
     invalidate_ui_text_cache('room')
     return ("game", my_name, code, sock, is_host, host_name, error)
 
-def draw_settings(ui_surf, world_surf, world_size, buttons, stage_path):    
+def draw_settings(ui_surf, world_surf, world_size, buttons, stage_path, font_small=None):    
     # Draw buttons and handle their state
     button_results = []
     for button in buttons:
@@ -624,6 +626,22 @@ def draw_settings(ui_surf, world_surf, world_size, buttons, stage_path):
         res = button.draw(ui_surf, stage_path)
         if res is not None:
             button_results.append(res)
+    
+    # Draw STEER_BIAS slider
+    if font_small is not None:
+        # Initialize slider if not already done
+        if 'steer_bias' not in settings_manager.sliders:
+            slider_x = const.WINDOW_WIDTH // 2 - 100
+            slider_y = const.WINDOW_HEIGHT * 0.75  # Position below buttons
+            slider = Slider(
+                x=slider_x, y=slider_y, width=200, height=30,
+                min_val=0.5, max_val=1.5, current_val=const.STEER_BIAS,
+                label="Steer Bias:", font=font_small
+            )
+            settings_manager.add_slider('steer_bias', slider)
+        
+        # Draw the slider
+        settings_manager.draw_sliders(ui_surf)
 
     return world_surf, button_results
 
