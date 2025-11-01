@@ -21,7 +21,11 @@ def get_cached_text(font, text, color, cache_key=None):
     
     if cache_key not in _header_footer_text_cache:
         _header_footer_text_cache[cache_key] = font.render(text, True, color)
-    
+        
+    if len(_header_footer_text_cache) > 100:
+        _header_footer_text_cache.clear()
+        print("Text cache cleared to free memory.")
+
     return _header_footer_text_cache[cache_key]
 
 def invalidate_ui_text_cache(cache_type=None):

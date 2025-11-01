@@ -1,6 +1,6 @@
 # Drift Race Test
 
-Top-down drift racing game with online multiplayer, AI opponents, and realistic physics.
+Drift racing game with online multiplayer, AI opponents, and arcade physics.
 
 **Website**: [https://nmax0.github.io/drift-site/](https://nmax0.github.io/drift-site/index.html)  
 For a complete overview, features, and controls.

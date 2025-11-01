@@ -539,10 +539,27 @@ def main():
     btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"]], switch_cursor_follow_mode),
     btn.Button("AI Path Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.65, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"]], switch_ai_path_mode),
     ]
+    
+    # Performance debugging
+    frame_count = 0
+    last_debug_time = time.time()
 
     while True:
         dt = clock.tick(const.FPS) / 1000.0
         #dt = min(dt, 1 / const.FPS)  # Cap dt to avoid large jumps
+        
+        # Performance debugging - print cache sizes every 3 seconds
+        frame_count += 1
+        current_time = time.time()
+        if current_time - last_debug_time >= 3.0:
+            from drift.ui import ui_helpers
+            text_cache_size = len(ui_helpers._header_footer_text_cache)
+            button_cache_size = len(btn.Button._font_cache)
+            chunk_cache_size = len(renderer.chunked_map._cache) if renderer and hasattr(renderer, 'chunked_map') else 0
+            tire_mark_chunks = len(renderer.tire_mark_grid._marks) if renderer and hasattr(renderer, 'tire_mark_grid') else 0
+            current_fps = clock.get_fps()
+            print(f"[DEBUG] FPS: {current_fps:.1f} | Text cache: {text_cache_size} | Button cache: {button_cache_size} | Chunk cache: {chunk_cache_size} | Tire marks: {tire_mark_chunks}")
+            last_debug_time = current_time
 
         # ======== EVENT HANDLING ========
 

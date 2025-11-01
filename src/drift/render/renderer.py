@@ -74,8 +74,8 @@ class WorldRenderer:
                 pass
 
     def _blit_visible_tire_marks(self, world_surf: pygame.Surface, cam) -> None:
-        # Fade accumulated marks from smoke color towards ground
-        self.tire_mark.fill(const.TIRE_MARK_GROUND, special_flags=pygame.BLEND_RGBA_MULT)
+        # Fade accumulated marks from smoke color towards ground (faster fade for better performance)
+        self.tire_mark.fill((200, 200, 200, 255), special_flags=pygame.BLEND_RGBA_MULT)
         top_left = (cam.x - (const.WINDOW_WIDTH / 2) / cam.zoom,
                     cam.y - (const.WINDOW_HEIGHT / 2) / cam.zoom)
         camera_rect = pygame.Rect(top_left[0], top_left[1], const.WINDOW_WIDTH / cam.zoom, const.WINDOW_HEIGHT / cam.zoom)
@@ -96,7 +96,7 @@ class WorldRenderer:
         return camera_rect
 
     def _update_tire_marks_chunked(self, my_car, ai_cars: List, remotes: Dict[str, Dict]) -> None:
-        self.tire_mark_grid.fade(const.TIRE_MARK_GROUND) # Fade a little each frame
+        self.tire_mark_grid.fade((200, 200, 200, 255)) # Fade faster for better performance
 
         def add_two_lines(p_cur, p_old, ratio: float):
             if ratio > 0.5 and p_old:
