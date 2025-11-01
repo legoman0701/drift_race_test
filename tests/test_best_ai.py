@@ -6,7 +6,7 @@ Test script to run the best trained AI network
 import pygame, sys, math, numpy as np, pickle, os
 
 # Import from our main AI environment
-from ai_env import AITrainingEnv, NeuralNetwork, create_black_mask, draw_cars_fast, raycast_black_mask
+from tests.ai_env import AITrainingEnv, NeuralNetwork, create_black_mask, draw_cars_fast, raycast_black_mask
 import drift.config.const as const
 from tools.paths import asset_path
 
