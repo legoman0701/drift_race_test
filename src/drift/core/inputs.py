@@ -40,9 +40,9 @@ def read_inputs(joysticks, car, cam, mouse_follow_mode: bool, ai_path_mode: bool
     
     # Smoothly approach target steering value
     if read_inputs._smoothed_st < raw_st:
-        read_inputs._smoothed_st += 0.07
+        read_inputs._smoothed_st += 0.03
     else:
-        read_inputs._smoothed_st -= 0.07
+        read_inputs._smoothed_st -= 0.03
     
     # Avoid tiny float drift
     if abs(read_inputs._smoothed_st) < 1e-3:
