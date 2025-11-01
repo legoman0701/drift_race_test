@@ -2,6 +2,7 @@ import pygame, math
 from PIL import Image
 
 from drift.config import const
+from tools.paths import normalize_asset_path
 
 def discover_track(map_path, start_pos=(1000, 450), start_angle=0, sample_rate=8, max_iterations=10000):
     """
@@ -177,7 +178,6 @@ def discover_track_visual(map_path, start_pos=(1000, 450), start_angle=0, sample
 
 
 if __name__ == "__main__":
-    from tools.paths import normalize_asset_path
     # Run visual version when called directly
     polygon = discover_track_visual(f"track/map{const.MAP_NUM}/main.png")
     print(f"Discovered track polygon with {len(polygon)} points")
