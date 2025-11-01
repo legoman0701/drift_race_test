@@ -121,7 +121,7 @@ def slice_map(
 
     # Manifest for reference
     manifest = {
-        "input": input_path,
+        "input": str(input_path),  # Convert Path to string for JSON serialization
         "image_size": [W, H],
         "tile": tile,
         "tiles_x": tiles_x,
@@ -133,11 +133,12 @@ def slice_map(
         "pad_color": list(pad_color),
         "count_written": written,
     }
-    with open(os.path.join(outdir, "manifest.json"), "w", encoding="utf-8") as f:
+    manifest_path = os.path.join(str(outdir), "manifest.json")  # Convert outdir to string
+    with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
 
     print(f"[OK] Wrote {written} tiles to '{outdir}'. Indexing='{indexing}' (ix_start={ix_start}, iy_start={iy_start})")
-    print(f"[OK] Manifest: {os.path.join(outdir, 'manifest.json')}")
+    print(f"[OK] Manifest: {manifest_path}")
 
 
 def main():
