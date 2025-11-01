@@ -1,6 +1,7 @@
 import pygame, math
 from PIL import Image
 
+from drift.config import const
 
 def discover_track(map_path, start_pos=(1000, 450), start_angle=0, sample_rate=8, max_iterations=10000):
     """
@@ -14,7 +15,7 @@ def discover_track(map_path, start_pos=(1000, 450), start_angle=0, sample_rate=8
     Returns:
         List of (x, y) tuples representing the track polygon
     """
-    pil_img = Image.open(map_path).convert("RGBA")
+    pil_img = Image.open(normalize_asset_path(map_path)).convert("RGBA")
     width, height = pil_img.size
     px = pil_img.load()
 
@@ -77,7 +78,7 @@ def discover_track_visual(map_path, start_pos=(1000, 450), start_angle=0, sample
     Discover track with visual display (original functionality).
     Returns the polygon when window is closed.
     """
-    bg_image = pygame.image.load(map_path)
+    bg_image = pygame.image.load(normalize_asset_path(map_path))
     image_surface = pygame.Surface((bg_image.get_width(), bg_image.get_height()))
     tmp_drawing_surf = pygame.Surface((bg_image.get_width(), bg_image.get_height()), pygame.SRCALPHA)
 
@@ -176,7 +177,7 @@ def discover_track_visual(map_path, start_pos=(1000, 450), start_angle=0, sample
 
 
 if __name__ == "__main__":
-    from tools.paths import asset_path
+    from tools.paths import normalize_asset_path
     # Run visual version when called directly
-    polygon = discover_track_visual(asset_path("track", "map1", "main.png"))
+    polygon = discover_track_visual(f"track/map{const.MAP_NUM}/main.png")
     print(f"Discovered track polygon with {len(polygon)} points")

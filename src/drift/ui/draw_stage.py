@@ -5,7 +5,7 @@ from drift.core.helpers import rand_code
 from drift.net.communication import connect_to_relay, recv_jsons
 from drift.ui.slider import Slider
 from drift.config.settings import settings_manager
-from tools.paths import asset_path
+from tools.paths import normalize_asset_path
 
 # Game setup state (shared across new_game and join_game UI)
 _game_setup = {
@@ -31,7 +31,7 @@ _car_rotation_angle = 0.0  # Global rotation angle for all car sprites
 def _load_car_specs(car_type):
     """Load car specifications from JSON file."""
     try:
-        spec_path = asset_path("cars", car_type.upper(), "specs.json")
+        spec_path = normalize_asset_path("cars", car_type.upper(), "specs.json")
         with open(spec_path, "r", encoding="utf-8") as fh:
             specs = json.load(fh)
         return specs.get("manufacturer", "Unknown"), specs.get("model", "Unknown")

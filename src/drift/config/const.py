@@ -2,6 +2,7 @@ import pygame, string, math
 
 # ======= CONFIGURATION =======
 RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
+VERSION = "0.8-alpha"
 
 # Global UI scale factor
 # 1.0 = original size, 1.5 = 150% (50% bigger)

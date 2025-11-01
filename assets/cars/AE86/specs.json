@@ -4,7 +4,7 @@
     "type": "drift",
     "year": 1983,
     "engine": {
-        "sound": "assets/cars/AE86/sound"
+        "sound": "cars/AE86/sound"
     },
     "dimensions": {
         "CAR_LEN": 38.0,

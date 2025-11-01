@@ -5,7 +5,7 @@
 # global imports
 import pygame, json, time, random, sys, math, uuid, argparse, threading
 # local imports
-from tools.paths import asset_path
+from tools.paths import asset_path, chdir_to_exe_folder_if_frozen, normalize_asset_path
 import drift.config.const as const
 import drift.render.camera as camera
 import drift.core.car as car
@@ -22,6 +22,8 @@ from drift.audio.engine_audio import EngineAudio
 from drift.render.map_chunks import ChunkedMap
 
 # ======= CONFIGURATION =======
+
+chdir_to_exe_folder_if_frozen()
 
 class AudioController(threading.Thread):
     """Separate thread for audio processing at adaptive rate for better low-end device compatibility."""
@@ -148,7 +150,6 @@ class AudioController(threading.Thread):
             if sleep_time > 0:
                 time.sleep(sleep_time)
 
-
 # ======= CONFIGURATION =======
 
 RELAY_PUBLIC_ENDPOINT = const.RELAY_PUBLIC_ENDPOINT
@@ -172,7 +173,7 @@ def draw_loading_screen(screen, progress, total_steps, current_task="Loading..."
     center_y = const.WINDOW_HEIGHT // 2
     
     # Draw title
-    title_text = title_font.render("Drift Race v0.7.10", True, (255, 255, 255))
+    title_text = title_font.render(f"Drift Race v{const.VERSION}", True, (255, 255, 255))
     title_rect = title_text.get_rect(center=(center_x, center_y - 100))
     screen.blit(title_text, title_rect)
     
@@ -260,8 +261,8 @@ def load_assets_with_progress(screen, clock):
             time.sleep(0.2)
             
         elif step_key == "track":
-            loaded_data["track_image"] = pygame.image.load(asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
-            loaded_data["chunk_map"] = ChunkedMap(root=asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=1024)
+            loaded_data["track_image"] = pygame.image.load(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
+            loaded_data["chunk_map"] = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=1024)
             time.sleep(0.1)
             
         elif step_key == "systems":
@@ -378,8 +379,7 @@ def main():
 
     pygame.init()
     pygame.joystick.init()
-    
-    pygame.display.set_caption("Drift Race v0.7.10")
+    pygame.display.set_caption(f"Drift Race v{const.VERSION}")
     screen = pygame.display.set_mode((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
     clock = pygame.time.Clock()
     
@@ -710,7 +710,7 @@ def main():
             # draw track, drift marks and cars (online & local)
             world_surf, resized, is_viewport = renderer.render_world(cam, stage1, my_car, ai_cars, remotes, lights_on, car_sprites_cache)
             if resized and not is_viewport:
-                path_poly = path_finder.discover_track(asset_path("track", f"map{const.MAP_NUM}", "main.png"))
+                path_poly = path_finder.discover_track(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png"))
 
             # draw camera view (scaled or classic)
             if is_viewport: final_surf = pygame.transform.scale(world_surf, (const.WINDOW_WIDTH, const.WINDOW_HEIGHT))  # chunk mode

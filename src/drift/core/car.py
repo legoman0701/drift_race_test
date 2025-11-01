@@ -1,6 +1,6 @@
-import math
-import json, os
+import json, math
 import drift.config.const as const
+from tools.paths import normalize_asset_path
 
 # world
 WINDOW_WIDTH, WINDOW_HEIGHT = 1000, 700
@@ -65,7 +65,7 @@ class Car:
             "wheels": []  # list of dicts per wheel
         }
         
-        spec_path = f"assets/cars/{self.car_type}/specs.json"
+        spec_path = normalize_asset_path("cars", self.car_type, "specs.json")
         with open(spec_path, "r", encoding="utf-8") as fh:
             self.specs = json.load(fh)
         
