@@ -728,7 +728,7 @@ def main():
         world_surf, button_results, new_game_rects, join_game_rects = draw_stage_ui(
             ui_surf, stage1, stage2, stage3, code, world_surf, world_size, 
             settings_buttons, error_msg, my_car, cam, joysticks, font_big, font_medium, font_small,
-            controls, engine_state, fps, dt, host_name
+            controls, engine_state, fps, dt, host_name, car_sprites_cache
         )
         
         # Handle button results from settings menu
