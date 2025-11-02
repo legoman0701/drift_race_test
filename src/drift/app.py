@@ -513,6 +513,9 @@ def main():
         const.AI_PATH_FOLLOW = False
         const.CURSOR_FOLLOW = False
         invalidate_ui_text_cache('room')  # Clear cached room code text
+        # Clear tire marks and chunk cache to free memory
+        renderer.clear_tire_marks()
+        renderer.clear_chunk_cache()
         return "lobby", "", None, None, remotes # stage, substage sock, code, remotes
     
     def handle_key_binds():

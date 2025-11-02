@@ -1,16 +1,15 @@
 # global
-import math, time, json, pygame
+import math, json, pygame
 
 # local
 import drift.config.const as const
 from drift.core.car import CAR_LEN, CAR_WID
-from drift.core.helpers import clamp, rand_code
-from drift.core.inputs import read_inputs  # Removed get_name_input, get_code_input (old system)
-from drift.net.communication import connect_to_relay, recv_jsons
+from drift.core.helpers import clamp
+from drift.core.inputs import read_inputs
 from drift.core.rpm import calc_engine_rpm
 from drift.ui.ui_helpers import get_cached_text, invalidate_ui_text_cache
 from drift.ui.draw_stage import (
-    draw_lobby, draw_new_game, draw_join_game, draw_settings, draw_game, draw_error,
+    draw_new_game, draw_join_game, draw_settings, draw_error,
     handle_new_game_click, handle_new_game_keypress, host_new_game, draw_key_binds,
     handle_join_game_click, handle_join_game_keypress, join_new_game,
     handle_key_binds_click, handle_key_binds_keypress,
@@ -18,14 +17,10 @@ from drift.ui.draw_stage import (
 )
 from drift.config.settings import settings_manager
 
-# Cache font to avoid recreating it every frame (massive performance killer)
-_car_name_font_cache = {}
-# Cache for new game UI rects (for event handling)
-_new_game_rects_cache = None
-# Cache for join game UI rects (for event handling)
-_join_game_rects_cache = None
-# Cache for key binds UI rects (for event handling)
-_key_binds_rects_cache = None
+_car_name_font_cache = {} # car name cache
+_new_game_rects_cache = None # new game rects cache
+_join_game_rects_cache = None # join game rects cache
+_key_binds_rects_cache = None # key binds rects cache
 
 def draw_car(surface, x, y, angle, name,
              color_body=const.COLOR_BODY_DEFAULT,
@@ -49,13 +44,6 @@ def draw_car(surface, x, y, angle, name,
         rx = px * ca - py * sa
         ry = px * sa + py * ca
         wpts.append((int(x + rx), int(y + ry)))
-    
-    
-    if False: # enable for debugging
-        try:
-            pygame.draw.polygon(surface, (60, 220, 180), wpts, 1)
-        except Exception:
-            pass
 
     if name:
         scale = getattr(const, "UI_SCALE", 1.0)
@@ -70,10 +58,8 @@ def draw_car(surface, x, y, angle, name,
     # Return rear-wheel edge points for tire mark drawing by callers (indices 2 and 3)
     return (wpts[2], wpts[3])
 
-# Cache debug font to avoid recreating it every frame
-_debug_font_cache = None
-# Cache HUD fonts to avoid recreating them every frame
-_hud_font_cache = {}
+_debug_font_cache = None # debug text cache
+_hud_font_cache = {} # HUD text cache
 
 def draw_wheel_debug(surface: pygame.Surface, car, offx: int = 0, offy: int = 0) -> None:
     """Visualize per-wheel forces and angles for a car.
@@ -154,37 +140,37 @@ def draw_wheel_debug(surface: pygame.Surface, car, offx: int = 0, offy: int = 0)
         draw_vec(brk,  (240, 80, 80))    # brake drag: red
 
 def draw_header(surface, font_big, font_small, title_str: str, fps: float, host_username: str = None):
-    # Draw header background
+    # header background
     pygame.draw.rect(surface, const.TRACK_BORDER_COLOR, (0, 0, const.WINDOW_WIDTH, const.TOP_LINE_Y))
     pygame.draw.line(surface, const.WHITE, (0, const.TOP_LINE_Y), (const.WINDOW_WIDTH, const.TOP_LINE_Y))
     
-    # CACHED: Version - never changes during runtime
+    # game version
     version_text = get_cached_text(font_small, f"v{const.VERSION}", const.GREY_180,
                                     cache_key=(id(font_small), "version", const.VERSION))
     surface.blit(version_text, (10, const.NAVBAR_Y))
     
-    # CACHED: Page title - limited set of values (Lobby, In Game, Settings, etc.)
+    # page title
     title = get_cached_text(font_big, title_str, const.WHITE_240)
     surface.blit(title, (const.WINDOW_WIDTH // 2 - title.get_width() // 2, const.TITLE_Y))
     
-    # CACHED: FPS counter - cache rounded integer values to avoid rendering every unique float
+    # fps counter
     fps_rounded = round(fps)
-    if fps_rounded >= 50: color = (120, 255, 120)  # Green for good FPS
-    elif fps_rounded >= 30: color = (255, 255, 120)  # Yellow for moderate FPS
-    else: color = (255, 120, 120)  # Red for low FPS
+    if fps_rounded >= 50: color = (120, 255, 120)
+    elif fps_rounded >= 30: color = (255, 255, 120)
+    else: color = (255, 120, 120)
     
     fps_text = get_cached_text(font_small, f"FPS: {fps_rounded}", color,
                                 cache_key=(id(font_small), "fps", fps_rounded, color))
     surface.blit(fps_text, (const.WINDOW_WIDTH - fps_text.get_width() - 10, const.NAVBAR_Y))
     
-    # CACHED: Debug status - only 2 possible values (True/False)
+    # debug status
     debug_status = "True" if const.DEBUG else "False"
     debug_color = (120, 255, 120) if const.DEBUG else (255, 120, 120)
     debug_text = get_cached_text(font_small, f"Debug: {debug_status}", debug_color,
                                   cache_key=(id(font_small), "debug", const.DEBUG))
     surface.blit(debug_text, (const.WINDOW_WIDTH*0.90 - debug_text.get_width() - 10, const.NAVBAR_Y))
     
-    # CACHED: Host username - changes rarely, only when host changes
+    # host username
     if host_username:
         host_text = get_cached_text(font_small, f"Host: {host_username}", const.WHITE_240)
         # Position after version text with some spacing
@@ -192,16 +178,16 @@ def draw_header(surface, font_big, font_small, title_str: str, fps: float, host_
         surface.blit(host_text, (20 + version_width, const.NAVBAR_Y))
 
 def draw_footer(surface: str, font_small, code=None):
-    # Draw footer background
+    # footer background
     pygame.draw.rect(surface, const.TRACK_BORDER_COLOR, (0, const.BOTTOM_LINE_Y, const.WINDOW_WIDTH, const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y))
     pygame.draw.line(surface, const.WHITE, (0, const.BOTTOM_LINE_Y), (const.WINDOW_WIDTH, const.BOTTOM_LINE_Y))
     
-    # CACHED: Relay endpoint - never changes during runtime
+    # relay endpoint
     relay = get_cached_text(font_small, f"Relay: {const.RELAY_PUBLIC_ENDPOINT}", const.GREY_180,
                             cache_key=(id(font_small), "relay", const.RELAY_PUBLIC_ENDPOINT))
     surface.blit(relay, (const.WINDOW_WIDTH // 2 - relay.get_width() // 2, const.BOTTOM_LINE_Y + 5))
-    
-    # CACHED: Room code - limited set of values, changes only when joining/leaving rooms
+
+    # room code
     room_label = code if code else "Offline"
     code_text = get_cached_text(font_small, f"Room Code: {room_label}", const.WHITE_240,
                                  cache_key=(id(font_small), "room_code", room_label))
@@ -220,9 +206,10 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
     global _new_game_rects_cache, _join_game_rects_cache, _key_binds_rects_cache
 
     button_results = []
-    new_game_rects = None  # For click detection
-    join_game_rects = None  # For click detection
-    key_binds_rects = None  # For click detection
+    # click detection
+    new_game_rects = None
+    join_game_rects = None
+    key_binds_rects = None
     
     # Stage 1: Main stages
     if stage1 == "lobby":

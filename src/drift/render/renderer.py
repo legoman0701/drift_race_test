@@ -29,6 +29,21 @@ class WorldRenderer:
         self._drift_points_old_remotes: Dict[str, Tuple[Tuple[int, int], Tuple[int, int]]] = {}
         self._last_world_size: Optional[Tuple[int, int]] = (track_image.get_width(), track_image.get_height())
 
+    def clear_tire_marks(self) -> None:
+        """Clear all tire marks (both classic and chunked modes)."""
+        # Clear classic tire mark surface
+        self.tire_mark.fill((255, 255, 255, 0))
+        # Clear chunked tire mark grid
+        if self.tire_mark_grid:
+            self.tire_mark_grid._marks.clear()
+        # Clear remote drift points tracking
+        self._drift_points_old_remotes.clear()
+    
+    def clear_chunk_cache(self) -> None:
+        """Clear chunk cache to free memory."""
+        if self.chunked_map:
+            self.chunked_map._cache.clear()
+
     # ---------- Classic helpers (single image) ----------
     def _ensure_tire_mark_size(self, world_size: Tuple[int, int]) -> bool:
         resized = False
