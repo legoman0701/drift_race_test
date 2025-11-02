@@ -262,7 +262,7 @@ def load_assets_with_progress(screen, clock):
             
         elif step_key == "track":
             loaded_data["track_image"] = pygame.image.load(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
-            loaded_data["chunk_map"] = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=1024)
+            loaded_data["chunk_map"] = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=const.TILE_SIZE)
             time.sleep(0.1)
             
         elif step_key == "systems":

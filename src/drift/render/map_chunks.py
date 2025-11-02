@@ -12,7 +12,7 @@ class ChunkedMap:
     """
     def __init__(self,
                  root: str = None,
-                 tile_size: int = 1024, # 1024x1024
+                 tile_size: int = const.TILE_SIZE, # 512x512
                  default_color=(28, 28, 28),
                  max_cached_chunks: int = 64) -> None:
         
@@ -26,7 +26,7 @@ class ChunkedMap:
         self._access_counter = 0
         slice_map(input_path = asset_path("track", f"map{const.MAP_NUM}", "main.png"),
             outdir = asset_path("track", f"map{const.MAP_NUM}", "chunks"),
-            tile = 1024,
+            tile = const.TILE_SIZE,
             indexing = "zero",
             prefix = "",
             pad_color = (28, 28, 28, 255),
@@ -40,7 +40,7 @@ class ChunkedMap:
             try: surf = pygame.image.load(link).convert()
             except Exception: pass
         if surf is None:
-            surf = pygame.Surface((self.tile_size, self.tile_size)) # surface : 1024x1024
+            surf = pygame.Surface((self.tile_size, self.tile_size)) # surface : 512x512
             surf.fill(self.default_color)
         self._cache[(ix, iy)] = surf # add it to cache
         return surf
@@ -149,3 +149,19 @@ class TireMarkGrid:
                 surf = self._marks.get(key)
                 if surf:
                     dest.blit(surf, (ix * ts - offx, iy * ts - offy))
+
+    def fade_visible(self, camera_rect: pygame.Rect, color_mult=(200, 200, 200, 255)) -> None:
+        """" Apply fade to visible chunks. """
+        ts = self.tile_size # 512x512
+        # Calculate tile indices for the camera rect
+        ix0 = int(camera_rect.left // ts)
+        iy0 = int(camera_rect.top // ts)
+        ix1 = int((camera_rect.right - 1) // ts)
+        iy1 = int((camera_rect.bottom - 1) // ts)
+        # Iterate only over visible tiles
+        for iy in range(iy0, iy1 + 1):
+            for ix in range(ix0, ix1 + 1):
+                surf = self._marks.get((ix, iy))
+                if surf: # apply fade
+                    surf.fill(color_mult, special_flags=pygame.BLEND_RGBA_MULT)
+
