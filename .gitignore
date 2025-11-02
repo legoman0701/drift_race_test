@@ -81,6 +81,6 @@ desktop.ini
 # *.dll
 
 # --- Development assets ---
-dev_assets/DIF/
-dev_assets/LIGHT/
-dev_assets/SHADOW/
+dev_assets/Diffuse/
+dev_assets/Light_Spray/
+dev_assets/Shadow_Map/
