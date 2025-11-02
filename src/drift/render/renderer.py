@@ -28,6 +28,9 @@ class WorldRenderer:
 
         self._drift_points_old_remotes: Dict[str, Tuple[Tuple[int, int], Tuple[int, int]]] = {}
         self._last_world_size: Optional[Tuple[int, int]] = (track_image.get_width(), track_image.get_height())
+        
+        # Frame counter for fade optimization
+        self._fade_frame_counter = 0
 
     def clear_tire_marks(self) -> None:
         """Clear all tire marks (both classic and chunked modes)."""
@@ -111,7 +114,11 @@ class WorldRenderer:
         return camera_rect
 
     def _update_tire_marks_chunked(self, my_car, ai_cars: List, remotes: Dict[str, Dict], camera_rect: pygame.Rect) -> None:
-        self.tire_mark_grid.fade_visible(camera_rect, (200, 200, 200, 255)) # Fade faster for better performance
+        # Fade every 3rd frame with stronger multiplier for better performance
+        self._fade_frame_counter += 1
+        if self._fade_frame_counter % 3 == 0:
+            # Stronger fade (185 instead of 200) compensates for less frequent updates
+            self.tire_mark_grid.fade_visible(camera_rect, (185, 185, 185, 255))
 
         def add_two_lines(p_cur, p_old, ratio: float):
             if ratio > 0.5 and p_old:
