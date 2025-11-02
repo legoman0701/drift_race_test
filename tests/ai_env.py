@@ -6,7 +6,7 @@
 import pygame, sys, math, pickle, os, numpy as np
 
 # local imports (only what's needed for local play)
-from tools.paths import asset_path
+from tools.paths import asset_path, normalize_asset_path
 import drift.config.const as const, drift.render.camera as camera, drift.core.car as car
 from drift.core.helpers import clamp, rand_name
 #from drift.ui.ui import draw_track_ui, draw_controls_hud
@@ -252,7 +252,7 @@ class GeneticAlgorithm:
     def save_best(self, filename="best_network.pkl"):
         """Save the best network to file"""
         if self.best_network is not None:
-            with open(filename, 'wb') as f:
+            with open(normalize_asset_path(filename), 'wb') as f:
                 pickle.dump({
                     'weights': self.best_network.get_weights(),
                     'architecture': {
@@ -274,7 +274,7 @@ class GeneticAlgorithm:
         
         if os.path.exists(filename):
             try:
-                with open(filename, 'rb') as f:
+                with open(normalize_asset_path(filename), 'rb') as f:
                     data = pickle.load(f)
                     
                 arch = data['architecture']
@@ -778,8 +778,8 @@ def main():
     pygame.joystick.init()
 
     # Load image before setting the display; convert after display is initialized
-    track_image = pygame.image.load(asset_path("track", f"map{const.MAP_NUM}", "main.png"))
-    track_mask_img = pygame.image.load(asset_path("track", f"map{const.MAP_NUM}", "ring.png"))
+    track_image = pygame.image.load(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png"))
+    track_mask_img = pygame.image.load(normalize_asset_path("track", f"map{const.MAP_NUM}", "ring.png"))
     scaled_track = pygame.transform.scale_by(track_image, (0.5, 0.5))
 
     pygame.display.set_caption("Drift Race - AI Training with Neural Network")

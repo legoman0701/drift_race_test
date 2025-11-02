@@ -2,6 +2,7 @@ import pygame, string, math
 
 # ======= CONFIGURATION =======
 RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
+VERSION = "0.6"
 
 # Global UI scale factor
 # 1.0 = original size, 1.5 = 150% (50% bigger)
@@ -45,26 +46,25 @@ HEADLIGHT_COLOR = (200, 200, 200)
 FLAGS = pygame.HWSURFACE | pygame.DOUBLEBUF
 
 # key binds
-UP_KEY = [pygame.K_UP, pygame.K_z]
-DOWN_KEY = [pygame.K_DOWN, pygame.K_s]
-LEFT_KEY = [pygame.K_LEFT, pygame.K_q]
-RIGHT_KEY = [pygame.K_RIGHT, pygame.K_d]
-BRAKE_KEY = pygame.K_SPACE
-ESCAPE_KEY = pygame.K_ESCAPE
-RESET_KEY = pygame.K_r
-HOST_KEY = pygame.K_h
-JOIN_KEY = pygame.K_j
-CHANGE_CAR_KEY = pygame.K_c
-DEBUG_TOGGLE_KEY = pygame.K_F3
+RETURN_KEYS = [pygame.K_RETURN, pygame.K_KP_ENTER]
+ESCAPE_KEY = pygame.K_ESCAPE # open settings / pause menu
+UP_KEY = [pygame.K_UP, pygame.K_z] # accelerate
+DOWN_KEY = [pygame.K_DOWN, pygame.K_s] # reverse
+LEFT_KEY = [pygame.K_LEFT, pygame.K_q] # steer left
+RIGHT_KEY = [pygame.K_RIGHT, pygame.K_d] # steer right
+BRAKE_KEY = pygame.K_SPACE # handbrake
+RESET_KEY = pygame.K_r # reset car position
+HOST_KEY = pygame.K_h # host game
+JOIN_KEY = pygame.K_j # join game
+CHANGE_CAR_KEY = pygame.K_c # change car
+DEBUG_TOGGLE_KEY = pygame.K_F3 # toggle debug mode
 
 # car
 CAR_LEN = 38.0
 CAR_WID = 20.0
 TIRE_MARK_SMOKE = (255, 255, 255, 100)  # tire mark color at first step (smoke)
 TIRE_MARK_GROUND = (220, 220, 220, 220)  # tire mark color at second step on the ground
-HEADLIGHT_LEN = 150
-HEADLIGHT_FOV = 25  # degrees per headlight cone (narrow beams)
-GLOW_RADIUS = 10  # soft round glow around the car
+STEER_BIAS = 1.0  # how much the car automatically steers into the drift 
 
 # visual const
 TOP_LINE_Y = 30
@@ -95,16 +95,16 @@ VIEW_ANGLE = 70 * math.pi / 180.0  # radians
 CAR_SPRITES = {
     "ae86": {
         "paths": [
-            "cars/AE86/Shadow_Map/Image{i:04}.png",
-            "cars/AE86/Diffuse/Image{i:04}.png", 
-            "cars/AE86/Light_Spray/{i:04}.png"
+            "cars/ae86/Shadow_Map/Image{i:04}.png",
+            "cars/ae86/Diffuse/Image{i:04}.png", 
+            "cars/ae86/Light_Spray/{i:04}.png"
         ]
     },
     "m5": {
         "paths": [
-            "cars/M5/Shadow_Map/Image{i:04}.png",
-            "cars/M5/Diffuse/Image{i:04}.png",
-            "cars/M5/Light_Spray/{i:04}.png"
+            "cars/m5/Shadow_Map/Image{i:04}.png",
+            "cars/m5/Diffuse/Image{i:04}.png",
+            "cars/m5/Light_Spray/{i:04}.png"
         ]
     }
 }

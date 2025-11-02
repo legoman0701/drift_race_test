@@ -26,6 +26,8 @@ Notes:
 """
 import argparse, json, math, os, sys
 import drift.config.const as const
+from packages.build.dist.DriftRace._internal.tools.paths import asset_path
+from tools.paths import normalize_asset_path
 
 # Use pygame for zero-deps in your project (already installed). Pillow is optional.
 try:
@@ -45,8 +47,8 @@ def parse_color(s: str):
 
 
 def slice_map(
-    input_path: str = f"assets/track/map{const.MAP_NUM}/main.png",
-    outdir: str = f"assets/track/map{const.MAP_NUM}/chunks",
+    input_path: str = asset_path("track", f"map{const.MAP_NUM}", "main.png"),
+    outdir: str = asset_path("track", f"map{const.MAP_NUM}", "chunks"),
     tile: int = 1024,
     indexing: str = "zero",
     prefix: str = "",
@@ -67,7 +69,7 @@ def slice_map(
 
     pygame.init()
     # Load without convert()/convert_alpha() to avoid needing a display surface
-    img = pygame.image.load(input_path)
+    img = pygame.image.load(normalize_asset_path(input_path))
     # If the source has no per-pixel alpha, put it on an SRCALPHA surface so padding blends correctly
     if img.get_alpha() is None:
         tmp = pygame.Surface(img.get_size(), pygame.SRCALPHA)
@@ -119,7 +121,7 @@ def slice_map(
 
     # Manifest for reference
     manifest = {
-        "input": input_path,
+        "input": str(input_path),  # Convert Path to string for JSON serialization
         "image_size": [W, H],
         "tile": tile,
         "tiles_x": tiles_x,
@@ -131,17 +133,18 @@ def slice_map(
         "pad_color": list(pad_color),
         "count_written": written,
     }
-    with open(os.path.join(outdir, "manifest.json"), "w", encoding="utf-8") as f:
+    manifest_path = os.path.join(str(outdir), "manifest.json")  # Convert outdir to string
+    with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
 
     print(f"[OK] Wrote {written} tiles to '{outdir}'. Indexing='{indexing}' (ix_start={ix_start}, iy_start={iy_start})")
-    print(f"[OK] Manifest: {os.path.join(outdir, 'manifest.json')}")
+    print(f"[OK] Manifest: {manifest_path}")
 
 
 def main():
     ap = argparse.ArgumentParser(description="Slice a large map PNG into ix_iy.png tiles for the chunked renderer.")
-    ap.add_argument("--input", "-i", default=f"assets/track/map{const.MAP_NUM}/main.png", help="Path to source map image (PNG recommended).")
-    ap.add_argument("--outdir", "-o", default=f"assets/track/map{const.MAP_NUM}/chunks", help="Directory to write tiles into.")
+    ap.add_argument("--input", "-i", default=asset_path("track", f"map{const.MAP_NUM}", "main.png"), help="Path to source map image (PNG recommended).")
+    ap.add_argument("--outdir", "-o", default=asset_path("track", f"map{const.MAP_NUM}", "chunks"), help="Directory to write tiles into.")
     ap.add_argument("--tile", "-t", type=int, default=1024, help="Tile size in pixels (square).")
     ap.add_argument("--indexing", choices=("zero", "center"), default="zero",
                     help="'zero': top-left tile is 0_0; 'center': indices centered near image center (negative/positive).")

@@ -13,8 +13,8 @@ TICK = 0.01             # main loop tick
 
 # Rooms:
 #   code -> {
-#       "clients": { addr: {"id","name","last"} },
-#       "states":  { id: {"x","y","a","vx","vy","name", "drift_ratio"} },
+#       "clients": { addr: {"id","name", "car_type","last"} },
+#       "states":  { id: {"x","y","a","vx","vy","name", "drift_ratio", "car_type"} },
 #       "host_addr": tuple|None,   # address of the creator
 #       "host_id": str,            # id of the creator
 #       "last_broadcast": float,
@@ -96,14 +96,15 @@ def loop():
             code = (msg.get("code") or "").upper().strip()
             pid  = (msg.get("id") or "")[:16]
             name = (msg.get("name") or f"Player{pid}")[:24]
+            car_type = (msg.get("car_type") or "ae86")[:16]
             if not code or not pid:
                 sendto_json(sock, addr, {"t":"error","msg":"missing_code_or_id"}); continue
             if code in rooms:
                 sendto_json(sock, addr, {"t":"error","msg":"room_already_exists"}); continue
             room = {"clients": {}, "states": {}, "host_addr": addr, "host_id": pid, "host_name": name, "last_broadcast": 0.0, "dirty": True}
             rooms[code] = room
-            room["clients"][addr] = {"id": pid, "name": name, "last": now}
-            room["states"].setdefault(pid, {"x": 500, "y": 350, "a": 0.0, "vx": 0.0, "vy": 0.0, "name": name, "drift_ratio": 0.0})
+            room["clients"][addr] = {"id": pid, "name": name, "car_type": car_type, "last": now}
+            room["states"].setdefault(pid, {"x": 500, "y": 350, "a": 0.0, "vx": 0.0, "vy": 0.0, "name": name, "drift_ratio": 0.0, "car_type": car_type})
             room["dirty"] = True
             sendto_json(sock, addr, {"t":"join_ok", "code": code, "host_name": name})
             broadcast_world(sock, code, room)
@@ -112,13 +113,14 @@ def loop():
             code = (msg.get("code") or "").upper().strip()
             pid  = (msg.get("id") or "")[:16]
             name = (msg.get("name") or f"Player{pid}")[:24]
+            car_type = (msg.get("car_type") or "ae86")[:16]
             if not code or not pid:
                 sendto_json(sock, addr, {"t":"error","msg":"missing_code_or_id"}); continue
             room = rooms.get(code)
             if not room:
                 sendto_json(sock, addr, {"t":"error","msg":"room_not_found"}); continue
-            room["clients"][addr] = {"id": pid, "name": name, "last": now}
-            room["states"].setdefault(pid, {"x": 500, "y": 350, "a": 0.0, "vx": 0.0, "vy": 0.0, "name": name, "drift_ratio": 0.0})
+            room["clients"][addr] = {"id": pid, "name": name, "last": now, "car_type": car_type}
+            room["states"].setdefault(pid, {"x": 500, "y": 350, "a": 0.0, "vx": 0.0, "vy": 0.0, "name": name, "drift_ratio": 0.0, "car_type": car_type})
             room["dirty"] = True
             # Send host_name from room data
             host_name = room.get("host_name", "no_host")
@@ -147,6 +149,7 @@ def loop():
                 # for AI, trust provided name; for players, use registered name
                 "name": (str(msg.get("name")) if is_ai else room["clients"][addr]["name"]),
                 "drift_ratio": float(msg.get("drift_ratio", 0.0)),
+                "car_type": (str(msg.get("car_type")) if is_ai else room["clients"][addr]["car_type"]),
             }
             room["states"][pid] = st
             room["dirty"] = True

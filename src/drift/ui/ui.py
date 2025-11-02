@@ -1,26 +1,26 @@
 # global
-import math, time, json, pygame
+import math, json, pygame
 
 # local
 import drift.config.const as const
 from drift.core.car import CAR_LEN, CAR_WID
-from drift.core.helpers import clamp, rand_code
-from drift.core.inputs import read_inputs  # Removed get_name_input, get_code_input (old system)
-from drift.net.communication import connect_to_relay, recv_jsons
+from drift.core.helpers import clamp
+from drift.core.inputs import read_inputs
 from drift.core.rpm import calc_engine_rpm
+from drift.ui.ui_helpers import get_cached_text, invalidate_ui_text_cache
 from drift.ui.draw_stage import (
-    draw_lobby, draw_new_game, draw_join_game, draw_settings, draw_game, draw_error,
-    handle_new_game_click, handle_new_game_keypress, host_new_game,
+    draw_new_game, draw_join_game, draw_settings, draw_error,
+    handle_new_game_click, handle_new_game_keypress, host_new_game, draw_key_binds,
     handle_join_game_click, handle_join_game_keypress, join_new_game,
+    handle_key_binds_click, handle_key_binds_keypress,
     get_game_setup, reset_game_setup, set_error_message, clear_error_message
 )
+from drift.config.settings import settings_manager
 
-# Cache font to avoid recreating it every frame (massive performance killer)
-_car_name_font_cache = {}
-# Cache for new game UI rects (for event handling)
-_new_game_rects_cache = None
-# Cache for join game UI rects (for event handling)
-_join_game_rects_cache = None
+_car_name_font_cache = {} # car name cache
+_new_game_rects_cache = None # new game rects cache
+_join_game_rects_cache = None # join game rects cache
+_key_binds_rects_cache = None # key binds rects cache
 
 def draw_car(surface, x, y, angle, name,
              color_body=const.COLOR_BODY_DEFAULT,
@@ -44,13 +44,6 @@ def draw_car(surface, x, y, angle, name,
         rx = px * ca - py * sa
         ry = px * sa + py * ca
         wpts.append((int(x + rx), int(y + ry)))
-    
-    
-    if False: # enable for debugging
-        try:
-            pygame.draw.polygon(surface, (60, 220, 180), wpts, 1)
-        except Exception:
-            pass
 
     if name:
         scale = getattr(const, "UI_SCALE", 1.0)
@@ -65,10 +58,8 @@ def draw_car(surface, x, y, angle, name,
     # Return rear-wheel edge points for tire mark drawing by callers (indices 2 and 3)
     return (wpts[2], wpts[3])
 
-# Cache debug font to avoid recreating it every frame
-_debug_font_cache = None
-# Cache HUD fonts to avoid recreating them every frame
-_hud_font_cache = {}
+_debug_font_cache = None # debug text cache
+_hud_font_cache = {} # HUD text cache
 
 def draw_wheel_debug(surface: pygame.Surface, car, offx: int = 0, offy: int = 0) -> None:
     """Visualize per-wheel forces and angles for a car.
@@ -149,43 +140,62 @@ def draw_wheel_debug(surface: pygame.Surface, car, offx: int = 0, offy: int = 0)
         draw_vec(brk,  (240, 80, 80))    # brake drag: red
 
 def draw_header(surface, font_big, font_small, title_str: str, fps: float, host_username: str = None):
-    # Draw header background
+    # header background
     pygame.draw.rect(surface, const.TRACK_BORDER_COLOR, (0, 0, const.WINDOW_WIDTH, const.TOP_LINE_Y))
     pygame.draw.line(surface, const.WHITE, (0, const.TOP_LINE_Y), (const.WINDOW_WIDTH, const.TOP_LINE_Y))
-    # draw a header title centered at the top of the screen
-    title = font_big.render(title_str, True, const.WHITE_240)
+    
+    # game version
+    version_text = get_cached_text(font_small, f"v{const.VERSION}", const.GREY_180,
+                                    cache_key=(id(font_small), "version", const.VERSION))
+    surface.blit(version_text, (10, const.NAVBAR_Y))
+    
+    # page title
+    title = get_cached_text(font_big, title_str, const.WHITE_240)
     surface.blit(title, (const.WINDOW_WIDTH // 2 - title.get_width() // 2, const.TITLE_Y))
-    # Draw FPS counter next to debug status
-    if fps >= 50: color = (120, 255, 120)  # Green for good FPS
-    elif fps >= 30: color = (255, 255, 120)  # Yellow for moderate FPS
-    else: color = (255, 120, 120)  # Red for low FPS
-    fps_text = font_small.render(f"FPS: {fps:.1f}", True, color)
+    
+    # fps counter
+    fps_rounded = round(fps)
+    if fps_rounded >= 50: color = (120, 255, 120)
+    elif fps_rounded >= 30: color = (255, 255, 120)
+    else: color = (255, 120, 120)
+    
+    fps_text = get_cached_text(font_small, f"FPS: {fps_rounded}", color,
+                                cache_key=(id(font_small), "fps", fps_rounded, color))
     surface.blit(fps_text, (const.WINDOW_WIDTH - fps_text.get_width() - 10, const.NAVBAR_Y))
-    # Draw debug status
+    
+    # debug status
     debug_status = "True" if const.DEBUG else "False"
-    debug_color = (120, 255, 120) if const.DEBUG else (255, 120, 120)  # Green if True, Red if False
-    debug_text = font_small.render(f"Debug: {debug_status}", True, debug_color)
+    debug_color = (120, 255, 120) if const.DEBUG else (255, 120, 120)
+    debug_text = get_cached_text(font_small, f"Debug: {debug_status}", debug_color,
+                                  cache_key=(id(font_small), "debug", const.DEBUG))
     surface.blit(debug_text, (const.WINDOW_WIDTH*0.90 - debug_text.get_width() - 10, const.NAVBAR_Y))
-    # Draw host username if provided
+    
+    # host username
     if host_username:
-        host_text = font_small.render(f"Host: {host_username}", True, const.WHITE_240)
-        surface.blit(host_text, (10, const.NAVBAR_Y))
+        host_text = get_cached_text(font_small, f"Host: {host_username}", const.WHITE_240)
+        # Position after version text with some spacing
+        version_width = version_text.get_width()
+        surface.blit(host_text, (20 + version_width, const.NAVBAR_Y))
 
 def draw_footer(surface: str, font_small, code=None):
-    # Draw footer background
+    # footer background
     pygame.draw.rect(surface, const.TRACK_BORDER_COLOR, (0, const.BOTTOM_LINE_Y, const.WINDOW_WIDTH, const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y))
     pygame.draw.line(surface, const.WHITE, (0, const.BOTTOM_LINE_Y), (const.WINDOW_WIDTH, const.BOTTOM_LINE_Y))
-    # draw a footer title centered at the bottom of the screen
-    relay = font_small.render(f"Relay: {const.RELAY_PUBLIC_ENDPOINT}", True, const.GREY_180)
+    
+    # relay endpoint
+    relay = get_cached_text(font_small, f"Relay: {const.RELAY_PUBLIC_ENDPOINT}", const.GREY_180,
+                            cache_key=(id(font_small), "relay", const.RELAY_PUBLIC_ENDPOINT))
     surface.blit(relay, (const.WINDOW_WIDTH // 2 - relay.get_width() // 2, const.BOTTOM_LINE_Y + 5))
-    # Draw room code on the left side if provided
+
+    # room code
     room_label = code if code else "Offline"
-    code_text = font_small.render(f"Room Code: {room_label}", True, const.WHITE_240)
+    code_text = get_cached_text(font_small, f"Room Code: {room_label}", const.WHITE_240,
+                                 cache_key=(id(font_small), "room_code", room_label))
     surface.blit(code_text, (10, const.BOTTOM_LINE_Y + 5))
 
 def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size, buttons, 
                   error_msg, my_car, cam, joysticks, font_big, font_medium, font_small,
-                  ai_path_mode_controls, engine_state, fps, dt, host_name=None):
+                  ai_path_mode_controls, engine_state, fps, dt, host_name=None, car_sprites_cache=None):
     """Draw UI elements based on current stage levels (stage1, stage2, stage3).
     
     Stage levels:
@@ -193,34 +203,36 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
     - stage2: settings | new_game | join_game
     - stage3: key_binds
     """
-    global _new_game_rects_cache, _join_game_rects_cache
+    global _new_game_rects_cache, _join_game_rects_cache, _key_binds_rects_cache
 
     button_results = []
-    new_game_rects = None  # For click detection
-    join_game_rects = None  # For click detection
+    # click detection
+    new_game_rects = None
+    join_game_rects = None
+    key_binds_rects = None
     
     # Stage 1: Main stages
     if stage1 == "lobby":
         if stage2 == "settings":
             if stage3 == "key_binds":
-                draw_header(ui_surf, font_big, font_small, "Key Bindings", fps)
+                draw_header(ui_surf, font_big, font_small, "Key Bindings", fps, host_name)
             else:
-                world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2])
-                draw_header(ui_surf, font_big, font_small, "Settings", fps)
+                world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
+                draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
         elif stage2 == "new_game": 
-            new_game_rects = draw_new_game(ui_surf, font_big, font_medium)
-            draw_header(ui_surf, font_big, font_small, "Host Game", fps)
+            new_game_rects = draw_new_game(ui_surf, font_big, font_medium, car_sprites_cache, dt)
+            draw_header(ui_surf, font_big, font_small, "Host Game", fps, host_name)
             _new_game_rects_cache = new_game_rects  # Cache for event handling
             _join_game_rects_cache = None  # Clear join game cache
         elif stage2 == "join_game":
             # Join game page doesn't need header/footer - it's a full page
-            join_game_rects = draw_join_game(ui_surf, font_big, font_medium)
-            draw_header(ui_surf, font_big, font_small, "Join Game", fps)
+            join_game_rects = draw_join_game(ui_surf, font_big, font_medium, car_sprites_cache, dt)
+            draw_header(ui_surf, font_big, font_small, "Join Game", fps, host_name)
             _join_game_rects_cache = join_game_rects  # Cache for event handling
             _new_game_rects_cache = None  # Clear new game cache
         else:
-            draw_lobby()
-            draw_header(ui_surf, font_big, font_small, "Lobby", fps)
+            # draw_lobby()
+            draw_header(ui_surf, font_big, font_small, "Lobby", fps, host_name)
             _new_game_rects_cache = None  # Clear cache when not in new_game
             _join_game_rects_cache = None  # Clear cache when not in join_game
         draw_footer(ui_surf, font_small)
@@ -229,11 +241,18 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
         _new_game_rects_cache = None  # Clear cache when in game
         _join_game_rects_cache = None  # Clear cache when in game
         if stage2 == "settings": 
-            draw_header(ui_surf, font_big, font_small, "Settings", fps)
-            world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2])
+            if stage3 == "key_binds":
+                key_binds_rects = draw_key_binds(ui_surf, font_small)
+                _key_binds_rects_cache = key_binds_rects  # Cache for event handling
+                draw_header(ui_surf, font_big, font_small, "Key Bindings", fps, host_name)
+            else:
+                _key_binds_rects_cache = None  # Clear cache when not in key_binds
+                world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
+                draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
         else:
-            draw_header(ui_surf, font_big, font_small, "In Game", fps, host_username=host_name)
-            # draw_game(ui_surf, code, font_small)
+            _key_binds_rects_cache = None  # Clear cache when not in settings
+            # draw_game()
+            draw_header(ui_surf, font_big, font_small, "In Game", fps, host_name)
             draw_controls_hud(ui_surf, ai_path_mode_controls, joysticks, my_car, cam, font_small, dt, engine_state, 7000)
         draw_footer(ui_surf, font_small, code)
 
@@ -246,7 +265,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
     
     return world_surf, button_results, new_game_rects, join_game_rects
 
-def handle_game_events(screen, ev, stage1, stage2, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref, host_name=None, new_game_rects=None):
+def handle_game_events(screen, ev, stage1, stage2, stage3, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref, host_name=None, new_game_rects=None):
     """Handle game events including new game UI interactions."""
     global _new_game_rects_cache
     
@@ -263,7 +282,7 @@ def handle_game_events(screen, ev, stage1, stage2, remotes, ai_cars, sock, code,
                 if ev.key == const.ESCAPE_KEY: # esc
                     stage2 = "" # go back to lobby
                     reset_game_setup()
-                if ev.key == pygame.K_RETURN or ev.key == pygame.K_KP_ENTER:
+                if ev.key in const.RETURN_KEYS:
                     setup = get_game_setup()
                     if setup["username"]:  # Only proceed if username is entered
                         stage1, my_name, code, sock, is_host, host_name = host_new_game(my_id)
@@ -280,7 +299,7 @@ def handle_game_events(screen, ev, stage1, stage2, remotes, ai_cars, sock, code,
                 if ev.key == const.ESCAPE_KEY: # esc to go back to lobby
                     stage2 = ""
                     reset_game_setup()
-                if ev.key == pygame.K_RETURN or ev.key == pygame.K_KP_ENTER:
+                if ev.key in const.RETURN_KEYS:
                     setup = get_game_setup()
                     if not setup["username"]:
                         set_error_message("username missing")
@@ -301,8 +320,15 @@ def handle_game_events(screen, ev, stage1, stage2, remotes, ai_cars, sock, code,
         elif stage1 == "game": # in game
             if stage2 == "" and ev.key == const.ESCAPE_KEY: 
                 stage2 = "settings" # open settings
-            elif stage2 == "settings": 
-                stage2 = "" # close settings
+            elif stage2 == "settings":
+                if stage3 == "key_binds":
+                    result = handle_key_binds_keypress(ev)
+                    if result == "saved":
+                        invalidate_ui_text_cache('all')  # Refresh cached text after save
+                    elif result == "back":
+                        stage3 = ""  # Go back to settings menu
+                elif stage3 == "" and ev.key == const.ESCAPE_KEY:
+                    stage2 = "" # close settings
         elif stage1 == "error" and ev.key == const.RESET_KEY: # r to reset from error
             stage1 = "lobby"
             stage2 = ""
@@ -352,8 +378,15 @@ def handle_game_events(screen, ev, stage1, stage2, remotes, ai_cars, sock, code,
                     # Update car with new name and selected car type
                     my_car.name = my_name
                     my_car.car_type = setup["selected_car"]
+        elif stage1 == "game" and stage2 == "settings" and stage3 == "key_binds" and _key_binds_rects_cache:
+            handle_key_binds_click(ev.pos, _key_binds_rects_cache)
+    
+    # Handle slider events in settings menu (all event types)
+    if ((stage1 == "game" and stage2 == "settings" and stage3 == "") or 
+        (stage1 == "lobby" and stage2 == "settings" and stage3 == "")):
+        settings_manager.handle_slider_events(ev)
 
-    return ev, stage1, stage2, remotes, sock, code, my_car, error_msg, host_name
+    return ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name
 
 def _get_cached_hud_font(font_small: pygame.font.Font, scale: float) -> pygame.font.Font:
     """Get or create a cached scaled font for HUD elements."""

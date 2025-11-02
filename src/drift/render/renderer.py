@@ -29,6 +29,21 @@ class WorldRenderer:
         self._drift_points_old_remotes: Dict[str, Tuple[Tuple[int, int], Tuple[int, int]]] = {}
         self._last_world_size: Optional[Tuple[int, int]] = (track_image.get_width(), track_image.get_height())
 
+    def clear_tire_marks(self) -> None:
+        """Clear all tire marks (both classic and chunked modes)."""
+        # Clear classic tire mark surface
+        self.tire_mark.fill((255, 255, 255, 0))
+        # Clear chunked tire mark grid
+        if self.tire_mark_grid:
+            self.tire_mark_grid._marks.clear()
+        # Clear remote drift points tracking
+        self._drift_points_old_remotes.clear()
+    
+    def clear_chunk_cache(self) -> None:
+        """Clear chunk cache to free memory."""
+        if self.chunked_map:
+            self.chunked_map._cache.clear()
+
     # ---------- Classic helpers (single image) ----------
     def _ensure_tire_mark_size(self, world_size: Tuple[int, int]) -> bool:
         resized = False
@@ -74,8 +89,8 @@ class WorldRenderer:
                 pass
 
     def _blit_visible_tire_marks(self, world_surf: pygame.Surface, cam) -> None:
-        # Fade accumulated marks from smoke color towards ground
-        self.tire_mark.fill(const.TIRE_MARK_GROUND, special_flags=pygame.BLEND_RGBA_MULT)
+        # Fade accumulated marks from smoke color towards ground (faster fade for better performance)
+        self.tire_mark.fill((200, 200, 200, 255), special_flags=pygame.BLEND_RGBA_MULT)
         top_left = (cam.x - (const.WINDOW_WIDTH / 2) / cam.zoom,
                     cam.y - (const.WINDOW_HEIGHT / 2) / cam.zoom)
         camera_rect = pygame.Rect(top_left[0], top_left[1], const.WINDOW_WIDTH / cam.zoom, const.WINDOW_HEIGHT / cam.zoom)
@@ -96,7 +111,7 @@ class WorldRenderer:
         return camera_rect
 
     def _update_tire_marks_chunked(self, my_car, ai_cars: List, remotes: Dict[str, Dict]) -> None:
-        self.tire_mark_grid.fade(const.TIRE_MARK_GROUND) # Fade a little each frame
+        self.tire_mark_grid.fade((200, 200, 200, 255)) # Fade faster for better performance
 
         def add_two_lines(p_cur, p_old, ratio: float):
             if ratio > 0.5 and p_old:
@@ -174,7 +189,7 @@ class WorldRenderer:
             # Remotes (draw + their tire marks)
             if draw_remotes:
                 for pid, d in remotes.items():
-                    # Default to ae86 for remotes since we don't have their car type info yet
+                    # Use remote player's car_type (fallback to ae86 if not available)
                     remote_car_sprites = car_sprites_cache.get(d.get("car_type", "ae86"), car_sprites_cache.get("ae86", []))
                     drift_pts = draw_car(world_surf, d["x"] - offx, d["y"] - offy, d["a"], d.get("name", f"Player{pid}"),
                                          color_body=const.COLOR_BODY_REMOTE,

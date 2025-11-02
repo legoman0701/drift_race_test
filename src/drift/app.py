@@ -5,7 +5,7 @@
 # global imports
 import pygame, json, time, random, sys, math, uuid, argparse, threading
 # local imports
-from tools.paths import asset_path
+from tools.paths import asset_path, chdir_to_exe_folder_if_frozen, normalize_asset_path
 import drift.config.const as const
 import drift.render.camera as camera
 import drift.core.car as car
@@ -16,12 +16,14 @@ from drift.core.helpers import clamp, rand_name
 from drift.ai.ai import ai_algorithme
 from drift.core.inputs import read_inputs
 from drift.net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, recv_jsons
-from drift.ui.ui import handle_game_events, draw_stage_ui
+from drift.ui.ui import handle_game_events, draw_stage_ui, invalidate_ui_text_cache
 from drift.core.rpm import calc_engine_rpm
 from drift.audio.engine_audio import EngineAudio
 from drift.render.map_chunks import ChunkedMap
 
 # ======= CONFIGURATION =======
+
+chdir_to_exe_folder_if_frozen()
 
 class AudioController(threading.Thread):
     """Separate thread for audio processing at adaptive rate for better low-end device compatibility."""
@@ -94,7 +96,7 @@ class AudioController(threading.Thread):
             if new_rate != self._adaptive_rate:
                 self._adaptive_rate = new_rate
                 self.update_interval = 1.0 / self._adaptive_rate
-                print(f"Audio rate reduced to {self._adaptive_rate:.1f} Hz due to performance")
+                # print(f"Audio rate reduced to {self._adaptive_rate:.1f} Hz due to performance")
         
         # If processing is fast, try to increase rate (but not above target)
         elif avg_processing_time < target_frame_time * 0.3:
@@ -102,7 +104,7 @@ class AudioController(threading.Thread):
             if new_rate != self._adaptive_rate:
                 self._adaptive_rate = new_rate
                 self.update_interval = 1.0 / self._adaptive_rate
-                print(f"Audio rate increased to {self._adaptive_rate:.1f} Hz")
+                # print(f"Audio rate increased to {self._adaptive_rate:.1f} Hz")
     
     def start_audio_thread(self):
         """Start the audio processing thread."""
@@ -148,7 +150,6 @@ class AudioController(threading.Thread):
             if sleep_time > 0:
                 time.sleep(sleep_time)
 
-
 # ======= CONFIGURATION =======
 
 RELAY_PUBLIC_ENDPOINT = const.RELAY_PUBLIC_ENDPOINT
@@ -161,7 +162,7 @@ flags = const.FLAGS
 
 def draw_loading_screen(screen, progress, total_steps, current_task="Loading..."):
     """Draw a loading screen with circular progress bar from 7π/4 to π/4"""
-    screen.fill((20, 20, 30))  # Dark background
+    screen.fill(const.GREY_20)  # Dark background
     
     # Create fonts for loading screen
     title_font = pygame.font.SysFont(None, 72)
@@ -172,7 +173,7 @@ def draw_loading_screen(screen, progress, total_steps, current_task="Loading..."
     center_y = const.WINDOW_HEIGHT // 2
     
     # Draw title
-    title_text = title_font.render("Drift Race v0.7.10", True, (255, 255, 255))
+    title_text = title_font.render(f"Drift Race v{const.VERSION}", True, (255, 255, 255))
     title_rect = title_text.get_rect(center=(center_x, center_y - 100))
     screen.blit(title_text, title_rect)
     
@@ -260,8 +261,8 @@ def load_assets_with_progress(screen, clock):
             time.sleep(0.2)
             
         elif step_key == "track":
-            loaded_data["track_image"] = pygame.image.load(asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
-            loaded_data["chunk_map"] = ChunkedMap(root=asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=1024)
+            loaded_data["track_image"] = pygame.image.load(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
+            loaded_data["chunk_map"] = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=1024)
             time.sleep(0.1)
             
         elif step_key == "systems":
@@ -378,8 +379,7 @@ def main():
 
     pygame.init()
     pygame.joystick.init()
-    
-    pygame.display.set_caption("Drift Race v0.7.10")
+    pygame.display.set_caption(f"Drift Race v{const.VERSION}")
     screen = pygame.display.set_mode((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
     clock = pygame.time.Clock()
     
@@ -512,9 +512,15 @@ def main():
         ai_cars.clear()
         const.AI_PATH_FOLLOW = False
         const.CURSOR_FOLLOW = False
+        invalidate_ui_text_cache('room')  # Clear cached room code text
+        # Clear tire marks and chunk cache to free memory
+        renderer.clear_tire_marks()
+        renderer.clear_chunk_cache()
         return "lobby", "", None, None, remotes # stage, substage sock, code, remotes
     
-    def hande_key_binds(): pass
+    def handle_key_binds():
+        nonlocal stage3
+        stage3 = "key_binds"
         
     def switch_cursor_follow_mode():
         const.CURSOR_FOLLOW = not const.CURSOR_FOLLOW
@@ -532,14 +538,31 @@ def main():
 
     settings_buttons = [ # to do : be able to use * like */settings for key binds
     btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"]] ,lambda: leave_room(sock, code, my_id, remotes)),
-    btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, [["lobby", "settings"], ["game", "settings"]], hande_key_binds),
+    btn.Button("Key Binds", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, [["lobby", "settings"], ["game", "settings"]], handle_key_binds),
     btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"]], switch_cursor_follow_mode),
     btn.Button("AI Path Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.65, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"]], switch_ai_path_mode),
     ]
+    
+    # Performance debugging
+    frame_count = 0
+    last_debug_time = time.time()
 
     while True:
         dt = clock.tick(const.FPS) / 1000.0
         #dt = min(dt, 1 / const.FPS)  # Cap dt to avoid large jumps
+        
+        # Performance debugging - print cache sizes every 3 seconds
+        frame_count += 1
+        current_time = time.time()
+        if current_time - last_debug_time >= 3.0:
+            from drift.ui import ui_helpers
+            text_cache_size = len(ui_helpers._header_footer_text_cache)
+            button_cache_size = len(btn.Button._font_cache)
+            chunk_cache_size = len(renderer.chunked_map._cache) if renderer and hasattr(renderer, 'chunked_map') else 0
+            tire_mark_chunks = len(renderer.tire_mark_grid._marks) if renderer and hasattr(renderer, 'tire_mark_grid') else 0
+            current_fps = clock.get_fps()
+            print(f"[DEBUG] FPS: {current_fps:.1f} | Text cache: {text_cache_size} | Button cache: {button_cache_size} | Chunk cache: {chunk_cache_size} | Tire marks: {tire_mark_chunks}")
+            last_debug_time = current_time
 
         # ======== EVENT HANDLING ========
 
@@ -569,6 +592,7 @@ def main():
             if ev.type == pygame.KEYDOWN and ev.key == const.DEBUG_TOGGLE_KEY:
                 # Toggle debug mode
                 const.DEBUG = not const.DEBUG
+                invalidate_ui_text_cache('debug')  # Clear cached debug text
                 print(f"Debug mode {'enabled' if const.DEBUG else 'disabled'}")
             if ev.type == pygame.KEYDOWN and ev.key == pygame.K_n:
                 if I_AM_HOST and stage1 == "game":
@@ -599,10 +623,13 @@ def main():
                 cam.offset[0] -= ev.rel[0] / cam.zoom
                 cam.offset[1] -= ev.rel[1] / cam.zoom
 
-            ev, stage1, stage2, remotes, sock, code, my_car, error_msg, host_name = handle_game_events(screen, ev, stage1, stage2, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name)
+            ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name = handle_game_events(screen, ev, stage1, stage2, stage3, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name)
             I_AM_HOST = host_ref[0]
 
+        # ======== NETWORKING ========
+
         if sock:
+            # print(sock)
             err = handle_network_messages(sock, remotes, dt, my_id, I_AM_HOST)
             if err:
                 # Switch to offline on relay errors
@@ -629,79 +656,93 @@ def main():
         
         world_size = renderer.get_world_size(stage1)
 
-        # Prepare remotes view for the player: include network remotes + AI cars (so player can collide with AIs)
-        remotes_with_ai_for_player = dict(remotes)
-        if I_AM_HOST:
-            for i, ai in enumerate(ai_cars, start=1):
-                key = f"AI-{i}"
-                remotes_with_ai_for_player[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "drift_ratio": ai.drift_ratio, "name": ai.name}
-
-        # Update player car using remotes that include AIs
-        # If AI path mode is enabled and a path is available, let the AI drive the player
-        controls = None
-        if const.AI_PATH_FOLLOW and path_poly:
-            try:
-                controls, ai_debug_surface = ai_algorithme(path_poly, my_car, ai_path_mode=True, surface=pygame.Surface((track_image.get_width(), track_image.get_height()), pygame.SRCALPHA), font_small=font_small)
-            except Exception:
-                controls = None
-        if controls is None:
-            controls = read_inputs(joysticks, my_car, cam, const.CURSOR_FOLLOW, const.AI_PATH_FOLLOW)
-        my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG)
-        # Update engine audio based on RPM and throttle with enhanced drift characteristics
-        try:
-            if engine_sound is not None and audio_controller is not None and audio_initialized:
-                speed_units = math.hypot(my_car.vx, my_car.vy)
-                th = clamp(controls.get("th", 0.0), -1.0, 1.0)
-                prev_rpm = engine_state.get("last_rpm")
-                rpm = calc_engine_rpm(
-                    speed_units=speed_units,
-                    drift_ratio=my_car.drift_ratio,
-                    throttle=th,
-                    prev_rpm=prev_rpm,
-                    dt=dt,
-                    params=None,
-                    _state=engine_state,
-                )
-                engine_state["last_rpm"] = rpm
-                # Get current gear from engine state for gear shift sounds
-                current_gear = engine_state.get("gear", 0)
-                # Thread-safe audio state update with gear and drift info
-                audio_controller.set_engine_state(
-                    rpm=rpm, 
-                    throttle=max(0.0, th),
-                    current_gear=current_gear,
-                    drift_ratio=my_car.drift_ratio
-                )
-        except Exception as e:
-            # Silently handle audio errors to prevent crashes on low-end devices
-            pass
-
-        # Prepare remotes view for AIs: include network remotes + all AIs + the local player (so AIs can detect collisions with player)
-        remotes_with_ai_for_ais = dict(remotes)
+        # Skip physics computations when in menus (new_game, join_game, key_binds)
+        # This saves CPU on low-end devices and improves battery life
+        skip_physics = stage2 in ["new_game", "join_game"] or stage3 == "key_binds"
         
-        if I_AM_HOST:
-            # add local player under a distinct key so AIs see it
-            remotes_with_ai_for_ais[f"PLAYER-{my_id}"] = {"x": my_car.x, "y": my_car.y, "a": my_car.angle, "drift_ratio": my_car.drift_ratio, "name": my_car.name}
-            for i, ai in enumerate(ai_cars, start=1):
-                key = f"AI-{i}"
-                remotes_with_ai_for_ais[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "drift_ratio": ai.drift_ratio, "name": ai.name}
+        if not skip_physics:
+            # Prepare remotes view for the player: include network remotes + AI cars (so player can collide with AIs)
+            remotes_with_ai_for_player = dict(remotes)
+            if I_AM_HOST:
+                for i, ai in enumerate(ai_cars, start=1):
+                    key = f"AI-{i}"
+                    remotes_with_ai_for_player[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "drift_ratio": ai.drift_ratio, "name": ai.name}
 
-        # Step AIs (each AI sees other AIs + network remotes + the player)
-        if I_AM_HOST:
-            for ai in ai_cars:
-                ai.step(ai_algorithme(path_poly, ai), dt, remotes_with_ai_for_ais, world_size, compute_debug=const.DEBUG)
-        cam.update(my_car, world_size)
+            # Update player car using remotes that include AIs
+            # If AI path mode is enabled and a path is available, let the AI drive the player
+            controls = None
+            if const.AI_PATH_FOLLOW and path_poly:
+                try:
+                    controls, ai_debug_surface = ai_algorithme(path_poly, my_car, ai_path_mode=True, surface=pygame.Surface((track_image.get_width(), track_image.get_height()), pygame.SRCALPHA), font_small=font_small)
+                except Exception:
+                    controls = None
+            if controls is None:
+                controls = read_inputs(joysticks, my_car, cam, const.CURSOR_FOLLOW, const.AI_PATH_FOLLOW)
+            my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG)
+            # Update engine audio based on RPM and throttle with enhanced drift characteristics
+            try:
+                if engine_sound is not None and audio_controller is not None and audio_initialized:
+                    speed_units = math.hypot(my_car.vx, my_car.vy)
+                    th = clamp(controls.get("th", 0.0), -1.0, 1.0)
+                    prev_rpm = engine_state.get("last_rpm")
+                    rpm = calc_engine_rpm(
+                        speed_units=speed_units,
+                        drift_ratio=my_car.drift_ratio,
+                        throttle=th,
+                        prev_rpm=prev_rpm,
+                        dt=dt,
+                        params=None,
+                        _state=engine_state,
+                    )
+                    engine_state["last_rpm"] = rpm
+                    # Get current gear from engine state for gear shift sounds
+                    current_gear = engine_state.get("gear", 0)
+                    # Thread-safe audio state update with gear and drift info
+                    audio_controller.set_engine_state(
+                        rpm=rpm, 
+                        throttle=max(0.0, th),
+                        current_gear=current_gear,
+                        drift_ratio=my_car.drift_ratio
+                    )
+            except Exception as e:
+                # Silently handle audio errors to prevent crashes on low-end devices
+                pass
+
+            # Prepare remotes view for AIs: include network remotes + all AIs + the local player (so AIs can detect collisions with player)
+            remotes_with_ai_for_ais = dict(remotes)
+            
+            if I_AM_HOST:
+                # add local player under a distinct key so AIs see it
+                remotes_with_ai_for_ais[f"PLAYER-{my_id}"] = {"x": my_car.x, "y": my_car.y, "a": my_car.angle, "drift_ratio": my_car.drift_ratio, "name": my_car.name}
+                for i, ai in enumerate(ai_cars, start=1):
+                    key = f"AI-{i}"
+                    remotes_with_ai_for_ais[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "drift_ratio": ai.drift_ratio, "name": ai.name}
+
+            # Step AIs (each AI sees other AIs + network remotes + the player)
+            if I_AM_HOST:
+                for ai in ai_cars:
+                    ai.step(ai_algorithme(path_poly, ai), dt, remotes_with_ai_for_ais, world_size, compute_debug=const.DEBUG)
+            cam.update(my_car, world_size)
+        else:
+            # In menus: set default controls to prevent undefined variable errors
+            controls = {"th": 0.0, "st": 0.0, "br": 0.0}
 
         # ======== RENDERING ========
 
-        # draw track, drift marks and cars (online & local)
-        world_surf, resized, is_viewport = renderer.render_world(cam, stage1, my_car, ai_cars, remotes, lights_on, car_sprites_cache)
-        if resized and not is_viewport:
-            path_poly = path_finder.discover_track(asset_path("track", f"map{const.MAP_NUM}", "main.png"))
+        if not skip_physics:
+            # draw track, drift marks and cars (online & local)
+            world_surf, resized, is_viewport = renderer.render_world(cam, stage1, my_car, ai_cars, remotes, lights_on, car_sprites_cache)
+            if resized and not is_viewport:
+                path_poly = path_finder.discover_track(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png"))
 
-        # draw camera view (scaled or classic)
-        if is_viewport: final_surf = pygame.transform.scale(world_surf, (const.WINDOW_WIDTH, const.WINDOW_HEIGHT))  # chunk mode
-        else: final_surf = cam.apply(world_surf)  # classic mode
+            # draw camera view (scaled or classic)
+            if is_viewport: final_surf = pygame.transform.scale(world_surf, (const.WINDOW_WIDTH, const.WINDOW_HEIGHT))  # chunk mode
+            else: final_surf = cam.apply(world_surf)  # classic mode
+        else:
+            # blank world surface for lobby, settings, key binds
+            world_surf = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
+            world_surf.fill(const.GREY_20)
+            final_surf = world_surf
 
         # draw ui
         ui_surf = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), pygame.SRCALPHA)
@@ -710,7 +751,7 @@ def main():
         world_surf, button_results, new_game_rects, join_game_rects = draw_stage_ui(
             ui_surf, stage1, stage2, stage3, code, world_surf, world_size, 
             settings_buttons, error_msg, my_car, cam, joysticks, font_big, font_medium, font_small,
-            controls, engine_state, fps, dt, host_name
+            controls, engine_state, fps, dt, host_name, car_sprites_cache
         )
         
         # Handle button results from settings menu
