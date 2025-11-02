@@ -25,8 +25,8 @@ except Exception as e:
 try:
     ae86_manufacturer, ae86_model = _load_car_specs("ae86")
     m5_manufacturer, m5_model = _load_car_specs("m5")
-    print(f"✓ AE86: {ae86_manufacturer} {ae86_model}")
-    print(f"✓ M5: {m5_manufacturer} {m5_model}")
+    print(f"✓ ae86: {ae86_manufacturer} {ae86_model}")
+    print(f"✓ m5: {m5_manufacturer} {m5_model}")
 except Exception as e:
     print(f"✗ Car specs loading error: {e}")
     sys.exit(1)

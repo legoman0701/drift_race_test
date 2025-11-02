@@ -158,6 +158,11 @@ def draw_header(surface, font_big, font_small, title_str: str, fps: float, host_
     pygame.draw.rect(surface, const.TRACK_BORDER_COLOR, (0, 0, const.WINDOW_WIDTH, const.TOP_LINE_Y))
     pygame.draw.line(surface, const.WHITE, (0, const.TOP_LINE_Y), (const.WINDOW_WIDTH, const.TOP_LINE_Y))
     
+    # CACHED: Version - never changes during runtime
+    version_text = get_cached_text(font_small, f"v{const.VERSION}", const.GREY_180,
+                                    cache_key=(id(font_small), "version", const.VERSION))
+    surface.blit(version_text, (10, const.NAVBAR_Y))
+    
     # CACHED: Page title - limited set of values (Lobby, In Game, Settings, etc.)
     title = get_cached_text(font_big, title_str, const.WHITE_240)
     surface.blit(title, (const.WINDOW_WIDTH // 2 - title.get_width() // 2, const.TITLE_Y))
@@ -182,7 +187,9 @@ def draw_header(surface, font_big, font_small, title_str: str, fps: float, host_
     # CACHED: Host username - changes rarely, only when host changes
     if host_username:
         host_text = get_cached_text(font_small, f"Host: {host_username}", const.WHITE_240)
-        surface.blit(host_text, (10, const.NAVBAR_Y))
+        # Position after version text with some spacing
+        version_width = version_text.get_width()
+        surface.blit(host_text, (20 + version_width, const.NAVBAR_Y))
 
 def draw_footer(surface: str, font_small, code=None):
     # Draw footer background

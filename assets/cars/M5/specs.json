@@ -1,10 +1,10 @@
 {
-    "model": "M5",
+    "model": "m5",
     "manufacturer": "BMW",
     "type": "drift",
     "year": 1983,
     "engine": {
-        "sound": "cars/M5/sound"
+        "sound": "cars/m5/sound"
     },
     "dimensions": {
         "CAR_LEN": 38.0,

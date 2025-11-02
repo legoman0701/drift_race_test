@@ -46,7 +46,7 @@ class GearShiftSound:
         # Load BOV sound for powershifting
         self.bov_sound = None
         if bov_sample_path is None:
-            bov_sample_path = asset_path("cars", "AE86", "sound", "turbo_bov.wav")
+            bov_sample_path = asset_path("cars", "ae86", "sound", "turbo_bov.wav")
         try:
             self.bov_sound = pygame.mixer.Sound(bov_sample_path)
             print(f"Loaded powershift BOV sound: {bov_sample_path}")
@@ -56,9 +56,9 @@ class GearShiftSound:
         # Load default gear shift samples if none provided
         if gear_shift_samples is None:
             gear_shift_samples = [
-                asset_path("cars", "AE86", "sound", "gear_shift_1.wav"),
-                asset_path("cars", "AE86", "sound", "gear_shift_2.wav"), 
-                asset_path("cars", "AE86", "sound", "gear_shift_3.wav")
+                asset_path("cars", "ae86", "sound", "gear_shift_1.wav"),
+                asset_path("cars", "ae86", "sound", "gear_shift_2.wav"), 
+                asset_path("cars", "ae86", "sound", "gear_shift_3.wav")
             ]
         
         self.shift_sounds = []

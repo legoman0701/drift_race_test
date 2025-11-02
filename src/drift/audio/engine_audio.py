@@ -80,22 +80,22 @@ def resolve_audio_path(json_path: str, car_folder = None) -> str:
     Resolve BeamNG-style audio paths to actual file paths.
     
     BeamNG JSON files use paths like "art/sound/engine/4_alt_int/file.wav"
-    but actual files are in "assets/cars/AE86/sound/engine/4_alt_int/file.wav"
+    but actual files are in "assets/cars/ae86/sound/engine/4_alt_int/file.wav"
     """
     # If path is already absolute or relative to current directory, use as-is
     if os.path.exists(json_path):
         return json_path
     
-    # If no car folder specified, default to AE86
+    # If no car folder specified, default to ae86
     if car_folder is None:
-        car_folder = asset_path("cars", "AE86", "sound")
+        car_folder = asset_path("cars", "ae86", "sound")
     
     # Convert car_folder to string if it's a Path object
     car_folder_str = str(car_folder)
     
     # Convert BeamNG path format to our asset structure
     if json_path.startswith("art/sound/"):
-        # art/sound/engine/4_alt_int/file.wav -> assets/cars/AE86/sound/engine/4_alt_int/file.wav
+        # art/sound/engine/4_alt_int/file.wav -> assets/cars/ae86/sound/engine/4_alt_int/file.wav
         relative_path = json_path.replace("art/sound/", "")
         resolved_path = os.path.join(car_folder_str, relative_path)
     else:
@@ -277,15 +277,15 @@ class EngineAudio:
         
         # Set default paths if not provided
         if intake_json is None:
-            intake_json = asset_path("cars", "AE86", "sound", "blends", "4_alt_int.sfxBlend2D.json")
+            intake_json = asset_path("cars", "ae86", "sound", "blends", "4_alt_int.sfxBlend2D.json")
         if jbeam_file is None:
-            jbeam_file = asset_path("cars", "AE86", "sound", "pessima_engine.jbeam")
+            jbeam_file = asset_path("cars", "ae86", "sound", "pessima_engine.jbeam")
         if engine_json is None:
-            engine_json = asset_path("cars", "AE86", "sound", "blends", "4_alt_exh.sfxBlend2D.json")
+            engine_json = asset_path("cars", "ae86", "sound", "blends", "4_alt_exh.sfxBlend2D.json")
         if turbo_wav is None:
-            turbo_wav = asset_path("cars", "AE86", "sound", "turbo_03.wav")
+            turbo_wav = asset_path("cars", "ae86", "sound", "turbo_03.wav")
         if bov_wav is None:
-            bov_wav = asset_path("cars", "AE86", "sound", "turbo_bov.wav")
+            bov_wav = asset_path("cars", "ae86", "sound", "turbo_bov.wav")
         
         # Load sound samples for intake and engine
         intake_data = json.load(open(intake_json))
@@ -332,7 +332,7 @@ class EngineAudio:
             print(f"Increased mixer channels from {current_channels} to {total_sounds + 8}")
         
         # Detect car folder from JSON file paths for path resolution
-        car_folder = asset_path("cars", "AE86", "sound")
+        car_folder = asset_path("cars", "ae86", "sound")
         
         # Initialize intake sound layers
         self.intake_off = []

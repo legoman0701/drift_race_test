@@ -174,7 +174,7 @@ class WorldRenderer:
             # Remotes (draw + their tire marks)
             if draw_remotes:
                 for pid, d in remotes.items():
-                    # Default to ae86 for remotes since we don't have their car type info yet
+                    # Use remote player's car_type (fallback to ae86 if not available)
                     remote_car_sprites = car_sprites_cache.get(d.get("car_type", "ae86"), car_sprites_cache.get("ae86", []))
                     drift_pts = draw_car(world_surf, d["x"] - offx, d["y"] - offy, d["a"], d.get("name", f"Player{pid}"),
                                          color_body=const.COLOR_BODY_REMOTE,

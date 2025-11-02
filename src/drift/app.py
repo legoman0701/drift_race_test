@@ -96,7 +96,7 @@ class AudioController(threading.Thread):
             if new_rate != self._adaptive_rate:
                 self._adaptive_rate = new_rate
                 self.update_interval = 1.0 / self._adaptive_rate
-                print(f"Audio rate reduced to {self._adaptive_rate:.1f} Hz due to performance")
+                # print(f"Audio rate reduced to {self._adaptive_rate:.1f} Hz due to performance")
         
         # If processing is fast, try to increase rate (but not above target)
         elif avg_processing_time < target_frame_time * 0.3:
@@ -104,7 +104,7 @@ class AudioController(threading.Thread):
             if new_rate != self._adaptive_rate:
                 self._adaptive_rate = new_rate
                 self.update_interval = 1.0 / self._adaptive_rate
-                print(f"Audio rate increased to {self._adaptive_rate:.1f} Hz")
+                # print(f"Audio rate increased to {self._adaptive_rate:.1f} Hz")
     
     def start_audio_thread(self):
         """Start the audio processing thread."""
@@ -623,7 +623,10 @@ def main():
             ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name = handle_game_events(screen, ev, stage1, stage2, stage3, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name)
             I_AM_HOST = host_ref[0]
 
+        # ======== NETWORKING ========
+
         if sock:
+            # print(sock)
             err = handle_network_messages(sock, remotes, dt, my_id, I_AM_HOST)
             if err:
                 # Switch to offline on relay errors

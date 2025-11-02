@@ -2,7 +2,7 @@ import pygame, string, math
 
 # ======= CONFIGURATION =======
 RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
-VERSION = "0.8-alpha"
+VERSION = "0.6"
 
 # Global UI scale factor
 # 1.0 = original size, 1.5 = 150% (50% bigger)
@@ -95,16 +95,16 @@ VIEW_ANGLE = 70 * math.pi / 180.0  # radians
 CAR_SPRITES = {
     "ae86": {
         "paths": [
-            "cars/AE86/Shadow_Map/Image{i:04}.png",
-            "cars/AE86/Diffuse/Image{i:04}.png", 
-            "cars/AE86/Light_Spray/{i:04}.png"
+            "cars/ae86/Shadow_Map/Image{i:04}.png",
+            "cars/ae86/Diffuse/Image{i:04}.png", 
+            "cars/ae86/Light_Spray/{i:04}.png"
         ]
     },
     "m5": {
         "paths": [
-            "cars/M5/Shadow_Map/Image{i:04}.png",
-            "cars/M5/Diffuse/Image{i:04}.png",
-            "cars/M5/Light_Spray/{i:04}.png"
+            "cars/m5/Shadow_Map/Image{i:04}.png",
+            "cars/m5/Diffuse/Image{i:04}.png",
+            "cars/m5/Light_Spray/{i:04}.png"
         ]
     }
 }

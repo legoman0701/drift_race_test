@@ -111,7 +111,7 @@ def draw_new_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.0
     
     # Draw car sprites if available
     if car_sprites_cache:
-        # AE86 car sprite
+        # ae86 car sprite
         ae86_sprites = car_sprites_cache.get("ae86", [])
         if ae86_sprites:
             # Use only the main diffuse sprite (index 1)
@@ -127,7 +127,7 @@ def draw_new_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.0
                 sprite_y = car1_rect.y + 10
                 ui_surf.blit(sprite, (sprite_x, sprite_y))
         
-        # M5 car sprite
+        # m5 car sprite
         m5_sprites = car_sprites_cache.get("m5", [])
         if m5_sprites:
             # Use only the main diffuse sprite (index 1)
@@ -147,12 +147,12 @@ def draw_new_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.0
     ae86_manufacturer, ae86_model = _load_car_specs("ae86")
     m5_manufacturer, m5_model = _load_car_specs("m5")
     
-    # AE86 text
+    # ae86 text
     ae86_text = font_medium.render(f"{ae86_manufacturer} {ae86_model}", True, const.WHITE_240)
     ui_surf.blit(ae86_text, (car1_rect.centerx - ae86_text.get_width() // 2, 
                              car1_rect.bottom - ae86_text.get_height() - 5))
     
-    # M5 text
+    # m5 text
     m5_text = font_medium.render(f"{m5_manufacturer} {m5_model}", True, const.WHITE_240)
     ui_surf.blit(m5_text, (car2_rect.centerx - m5_text.get_width() // 2, 
                            car2_rect.bottom - m5_text.get_height() - 5))
@@ -262,7 +262,7 @@ def draw_join_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.
     
     # Draw car sprites if available
     if car_sprites_cache:
-        # AE86 car sprite
+        # ae86 car sprite
         ae86_sprites = car_sprites_cache.get("ae86", [])
         if ae86_sprites:
             # Use only the main diffuse sprite (index 1)
@@ -278,7 +278,7 @@ def draw_join_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.
                 sprite_y = car1_rect.y + 10
                 ui_surf.blit(sprite, (sprite_x, sprite_y))
         
-        # M5 car sprite
+        # m5 car sprite
         m5_sprites = car_sprites_cache.get("m5", [])
         if m5_sprites:
             # Use only the main diffuse sprite (index 1)
@@ -298,12 +298,12 @@ def draw_join_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.
     ae86_manufacturer, ae86_model = _load_car_specs("ae86")
     m5_manufacturer, m5_model = _load_car_specs("m5")
     
-    # AE86 text
+    # ae86 text
     ae86_text = font_medium.render(f"{ae86_manufacturer} {ae86_model}", True, const.WHITE_240)
     ui_surf.blit(ae86_text, (car1_rect.centerx - ae86_text.get_width() // 2, 
                              car1_rect.bottom - ae86_text.get_height() - 5))
     
-    # M5 text
+    # m5 text
     m5_text = font_medium.render(f"{m5_manufacturer} {m5_model}", True, const.WHITE_240)
     ui_surf.blit(m5_text, (car2_rect.centerx - m5_text.get_width() // 2, 
                            car2_rect.bottom - m5_text.get_height() - 5))
