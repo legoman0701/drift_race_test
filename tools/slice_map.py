@@ -26,8 +26,7 @@ Notes:
 """
 import argparse, json, math, os, sys
 import drift.config.const as const
-from packages.build.dist.DriftRace._internal.tools.paths import asset_path
-from tools.paths import normalize_asset_path
+from tools.paths import asset_path, normalize_asset_path
 
 # Use pygame for zero-deps in your project (already installed). Pillow is optional.
 try:
