@@ -5,14 +5,14 @@ slice_map.py — cut a large map image into ix_iy.png tiles for the chunked rend
 Defaults match the project layout:
 - input  : assets/track/map{x}/main.png
 - outdir : assets/track/map{x}/chunks
-- tile   : 1024
+- tile   : 512 (512x512 tiles)
 - indexing: "zero" (top-left tile is 0_0, as the current game uses world coords >= 0)
 - prefix : ""  (renderer also accepts "Map1_" as prefix if you prefer)
 
 USAGE EXAMPLES
 --------------
 # Basic (recommended for your current Map1.png):
-python tools/slice_map.py --input assets/track/map1/main.png --outdir assets/track/map1/chunks --tile 1024 --indexing zero
+python tools/slice_map.py --input assets/track/map1/main.png --outdir assets/track/map1/chunks --tile 512 --indexing zero
 
 # With file prefix (loader supports this too):
 python tools/slice_map.py --prefix Map1_
@@ -49,7 +49,7 @@ def parse_color(s: str):
 def slice_map(
     input_path: str = asset_path("track", f"map{const.MAP_NUM}", "main.png"),
     outdir: str = asset_path("track", f"map{const.MAP_NUM}", "chunks"),
-    tile: int = 1024,
+    tile: int = const.TILE_SIZE,
     indexing: str = "zero",
     prefix: str = "",
     pad_color=(28, 28, 28, 255),
@@ -145,7 +145,7 @@ def main():
     ap = argparse.ArgumentParser(description="Slice a large map PNG into ix_iy.png tiles for the chunked renderer.")
     ap.add_argument("--input", "-i", default=asset_path("track", f"map{const.MAP_NUM}", "main.png"), help="Path to source map image (PNG recommended).")
     ap.add_argument("--outdir", "-o", default=asset_path("track", f"map{const.MAP_NUM}", "chunks"), help="Directory to write tiles into.")
-    ap.add_argument("--tile", "-t", type=int, default=1024, help="Tile size in pixels (square).")
+    ap.add_argument("--tile", "-t", type=int, default=const.TILE_SIZE, help="Tile size in pixels (square).")
     ap.add_argument("--indexing", choices=("zero", "center"), default="zero",
                     help="'zero': top-left tile is 0_0; 'center': indices centered near image center (negative/positive).")
     ap.add_argument("--prefix", default="", help="Optional filename prefix, e.g. 'Map1_' produces Map1_ix_iy.png files.")

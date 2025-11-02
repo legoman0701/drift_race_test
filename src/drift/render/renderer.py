@@ -110,8 +110,8 @@ class WorldRenderer:
         self.chunked_map.render_to(viewport_surf, camera_rect)
         return camera_rect
 
-    def _update_tire_marks_chunked(self, my_car, ai_cars: List, remotes: Dict[str, Dict]) -> None:
-        self.tire_mark_grid.fade((200, 200, 200, 255)) # Fade faster for better performance
+    def _update_tire_marks_chunked(self, my_car, ai_cars: List, remotes: Dict[str, Dict], camera_rect: pygame.Rect) -> None:
+        self.tire_mark_grid.fade_visible(camera_rect, (200, 200, 200, 255)) # Fade faster for better performance
 
         def add_two_lines(p_cur, p_old, ratio: float):
             if ratio > 0.5 and p_old:
@@ -165,7 +165,7 @@ class WorldRenderer:
             camera_rect = self._draw_track_chunked(world_surf, cam)
 
             # Tire marks accumulation (local + AIs)
-            self._update_tire_marks_chunked(my_car, ai_cars, remotes)
+            self._update_tire_marks_chunked(my_car, ai_cars, remotes, camera_rect)
             self._blit_tire_marks_chunked(world_surf, camera_rect)
 
             # Cars (AIs first)
