@@ -40,5 +40,18 @@ if (Test-Path $ReqFile) {
   }
 }
 
+Write-Output "Installing package in editable mode..."
+& $venvPip install -e .
+if ($LASTEXITCODE -ne 0) {
+  Write-Error "Failed to install package in editable mode. Aborting."
+  exit 1
+}
+
+& $venvPy -c "import drift" | Out-Null
+if ($LASTEXITCODE -ne 0) {
+  Write-Error "Drift package is not importable even after install. Aborting."
+  exit 1
+}
+
 # Run
 & $venvPy -m drift @Args

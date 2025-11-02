@@ -42,5 +42,15 @@ if [ -f "$REQ_FILE" ]; then
   fi
 fi
 
+# Install the project in editable mode every run to ensure import path is correct
+echo "Installing package in editable mode..."
+"$VENV_PIP" install -e .
+
+# Verify the package is importable before trying to run it
+if ! "$VENV_PY" -c "import drift" >/dev/null 2>&1; then
+  echo "Drift package is not importable even after install. Aborting." >&2
+  exit 1
+fi
+
 # Run the project
 exec "$VENV_PY" -m drift "$@"

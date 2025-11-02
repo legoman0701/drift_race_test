@@ -1,5 +1,7 @@
 @echo off
 setlocal
+rem Ensure we run from this script's folder (project root)
+cd /d "%~dp0"
 
 set "VENV_DIR=.venv"
 set "REQ_FILE=requirements.txt"
@@ -27,6 +29,24 @@ set "VENV_PIP=%VENV_DIR%\Scripts\pip.exe"
 if exist "%REQ_FILE%" (
   echo Installing requirements from %REQ_FILE%...
   "%VENV_PIP%" install -r "%REQ_FILE%"
+  if errorlevel 1 (
+    echo Failed to install requirements. Aborting.
+    exit /b 1
+  )
+)
+
+:: install package in editable mode
+echo Installing package in editable mode...
+"%VENV_PIP%" install -e .
+if errorlevel 1 (
+  echo Failed to install package in editable mode. Aborting.
+  exit /b 1
+)
+
+"%VENV_PY%" -c "import drift" >nul 2>&1
+if errorlevel 1 (
+  echo Drift package is not importable even after install. Aborting.
+  exit /b 1
 )
 
 :: run
