@@ -5,7 +5,7 @@ from drift.core.helpers import rand_code
 from drift.net.communication import connect_to_relay, recv_jsons
 from drift.ui.slider import Slider
 from drift.config.settings import settings_manager
-from tools.paths import normalize_asset_path
+from drift.tools.paths import normalize_asset_path
 
 # Game setup state (shared across new_game and join_game UI)
 _game_setup = {

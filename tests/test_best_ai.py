@@ -3,12 +3,12 @@
 Test script to run the best trained AI network
 """
 
-import pygame, sys, math, numpy as np, pickle, os
+import pygame, sys, math, pickle, os
 
 # Import from our main AI environment
 from tests.ai_env import AITrainingEnv, NeuralNetwork, create_black_mask, draw_cars_fast, raycast_black_mask
 import drift.config.const as const
-from tools.paths import asset_path, normalize_asset_path
+from drift.tools.paths import normalize_asset_path
 
 def load_best_network(filename="ai_models\generation_530.pkl"):
     """Load the best trained network"""

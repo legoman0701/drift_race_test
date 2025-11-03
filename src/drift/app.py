@@ -5,7 +5,7 @@
 # global imports
 import pygame, json, time, random, sys, math, uuid, argparse, threading
 # local imports
-from tools.paths import asset_path, chdir_to_exe_folder_if_frozen, normalize_asset_path
+from drift.tools.paths import asset_path, chdir_to_exe_folder_if_frozen, normalize_asset_path
 import drift.config.const as const
 import drift.render.camera as camera
 import drift.core.car as car
@@ -561,7 +561,7 @@ def main():
             chunk_cache_size = len(renderer.chunked_map._cache) if renderer and hasattr(renderer, 'chunked_map') else 0
             tire_mark_chunks = len(renderer.tire_mark_grid._marks) if renderer and hasattr(renderer, 'tire_mark_grid') else 0
             current_fps = clock.get_fps()
-            print(f"[DEBUG] FPS: {current_fps:.1f} | Text cache: {text_cache_size} | Button cache: {button_cache_size} | Chunk cache: {chunk_cache_size} | Tire marks: {tire_mark_chunks}")
+            # print(f"[DEBUG] FPS: {current_fps:.1f} | Text cache: {text_cache_size} | Button cache: {button_cache_size} | Chunk cache: {chunk_cache_size} | Tire marks: {tire_mark_chunks}")
             last_debug_time = current_time
 
         # ======== EVENT HANDLING ========

@@ -6,11 +6,9 @@
 import pygame, sys, math, pickle, os, numpy as np
 
 # local imports (only what's needed for local play)
-from tools.paths import asset_path, normalize_asset_path
-import drift.config.const as const, drift.render.camera as camera, drift.core.car as car
-from drift.core.helpers import clamp, rand_name
-#from drift.ui.ui import draw_track_ui, draw_controls_hud
-from drift.render.map_chunks import ChunkedMap
+from drift.tools.paths import normalize_asset_path
+import drift.config.const as const, drift.core.car as car
+from drift.core.helpers import clamp
 
 # ======= CONFIGURATION =======
 
