@@ -12,13 +12,13 @@ Defaults match the project layout:
 USAGE EXAMPLES
 --------------
 # Basic (recommended for your current Map1.png):
-python tools/slice_map.py --input assets/track/map1/main.png --outdir assets/track/map1/chunks --tile 512 --indexing zero
+python drift.tools.slice_map.py --input assets/track/map1/main.png --outdir assets/track/map1/chunks --tile 512 --indexing zero
 
 # With file prefix (loader supports this too):
-python tools/slice_map.py --prefix Map1_
+python drift.tools.slice_map.py --prefix Map1_
 
 # Centered indexing (origin ~ image center; produces negative/positive indices):
-python tools/slice_map.py --indexing center
+python drift.tools.slice_map.py --indexing center
 
 Notes:
 - Edge tiles are padded to the tile size using --pad R,G,B (default 28,28,28).
@@ -26,8 +26,7 @@ Notes:
 """
 import argparse, json, math, os, sys
 import drift.config.const as const
-from packages.build.dist.DriftRace._internal.tools.paths import asset_path
-from tools.paths import normalize_asset_path
+from drift.tools.paths import asset_path, normalize_asset_path
 
 # Use pygame for zero-deps in your project (already installed). Pillow is optional.
 try:

@@ -5,7 +5,7 @@ Provides rough, aggressive gear shift sounds for drift racing.
 
 import pygame, time, threading
 from typing import List
-from tools.paths import asset_path
+from drift.tools.paths import asset_path
 
 
 class GearShiftSound:

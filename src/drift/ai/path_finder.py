@@ -2,7 +2,7 @@ import pygame, math
 from PIL import Image
 
 from drift.config import const
-from tools.paths import normalize_asset_path
+from drift.tools.paths import normalize_asset_path
 
 def discover_track(map_path, start_pos=(1000, 450), start_angle=0, sample_rate=8, max_iterations=10000):
     """
