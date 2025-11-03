@@ -79,3 +79,8 @@ desktop.ini
 
 # --- SDL2/Windows runtime (only if dropped locally during bundling) ---
 # *.dll
+
+# --- Development assets ---
+dev_assets/Diffuse/
+dev_assets/Light_Spray/
+dev_assets/Shadow_Map/
