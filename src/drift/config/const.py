@@ -75,14 +75,21 @@ CAR_SPRITES = {
         "paths": [
             "cars/ae86/Shadow_Map/Image{i:04}.png",
             "cars/ae86/Diffuse/Image{i:04}.png", 
-            "cars/ae86/Light_Spray/{i:04}.png"
+            "cars/ae86/Light_Spray/Image{i:04}.png"
         ]
     },
     "m5": {
         "paths": [
             "cars/m5/Shadow_Map/Image{i:04}.png",
             "cars/m5/Diffuse/Image{i:04}.png",
-            "cars/m5/Light_Spray/{i:04}.png"
+            "cars/m5/Light_Spray/Image{i:04}.png"
+        ]
+    },
+    "911": {
+        "paths": [
+            "cars/911/Shadow_Map/Image{i:04}.png",
+            "cars/911/Diffuse/Image{i:04}.png",
+            "cars/911/Light_Spray/Image{i:04}.png"
         ]
     }
 }
