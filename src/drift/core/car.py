@@ -37,7 +37,7 @@ BRAKE_COEFF = 600.0  # braking strength (N/kg) opposing wheel long. speed in whe
 CORNERING_STIFFNESS = 2  # lateral force per unit lateral speed (wheel frame)
 LATERAL_FORCE_MAX = 2000.0  # clamp for lateral force magnitude (visual + stability)
 ANGULAR_DAMP = 25.0  # simple yaw damping (increased to prevent unwanted rotation)
-INERTIA_Z = MASS * (CAR_LEN**2 + CAR_WID**2) / 6.0  # rough box inertia
+INERTIA_Z = MASS * (CAR_LEN**2 + CAR_WID**2) / 12.0  # rough box inertia
 
 # New: rolling resistance and aerodynamic drag
 GRAVITY = 9.81
@@ -147,11 +147,12 @@ class Car:
 
 
             lat_grip = (100-abs(wheel_speed_lat))/(100-20)
-            long_grip = (100-abs(longitudinal_force))/(100-20)
+            long_grip = (200-abs(longitudinal_force))/(200-50)
 
             has_grip = clamp(clamp(lat_grip, 0.0, 1.0) * clamp(long_grip, 0.0, 1.0), 0.1, 1.0)
+            has_grip = has_grip**0.5
 
-            lateral_force = -wheel_speed_lat * CORNERING_STIFFNESS*5 * has_grip
+            lateral_force = -wheel_speed_lat * CORNERING_STIFFNESS*10 * has_grip
             lateral_force = clamp(lateral_force, -LATERAL_FORCE_MAX, LATERAL_FORCE_MAX)
 
             # Back to body frame (rotate by wheel angle)

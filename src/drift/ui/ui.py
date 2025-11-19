@@ -28,12 +28,25 @@ def draw_car(surface, x, y, angle, name,
     if car_sprites_list is None:
         car_sprites_list = []
     for i, car_sprite in enumerate(car_sprites_list):
-        if i == 2 and not lights_on:  # light spray
-            continue
-        show_angle = (-angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
-        sprite_index = round(show_angle * 64) % 64
-        sprite_size = (car_sprite[sprite_index].get_width(), car_sprite[sprite_index].get_height())
-        surface.blit(car_sprite[sprite_index], (int(x - sprite_size[0] // 2), int(y - sprite_size[1] // 2)))
+        if i == 2:  # light spray
+            if not lights_on:
+                continue
+            show_angle = (-angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
+            sprite_index = round(show_angle * 64) % 64
+            sprite_size = (car_sprite[sprite_index].get_width(), car_sprite[sprite_index].get_height())
+            surface.blit(car_sprite[sprite_index],
+                         (int(x - sprite_size[0] // 2), int(y - sprite_size[1] // 2)),
+                         special_flags=pygame.BLEND_RGB_ADD)
+        elif i == 0:  # shadow (shadown mask to be made)
+            show_angle = (-angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
+            sprite_index = round(show_angle * 64) % 64
+            sprite_size = (car_sprite[sprite_index].get_width(), car_sprite[sprite_index].get_height())
+            surface.blit(car_sprite[sprite_index], (int(x - sprite_size[0] // 2), int(y - sprite_size[1] // 2)))
+        else:
+            show_angle = (-angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
+            sprite_index = round(show_angle * 64) % 64
+            sprite_size = (car_sprite[sprite_index].get_width(), car_sprite[sprite_index].get_height())
+            surface.blit(car_sprite[sprite_index], (int(x - sprite_size[0] // 2), int(y - sprite_size[1] // 2)))
 
     # Draw oriented collision rectangle overlay
     ca, sa = math.cos(angle), math.sin(angle)
@@ -179,19 +192,19 @@ def draw_header(surface, font_big, font_small, title_str: str, fps: float, host_
 
 def draw_footer(surface: str, font_small, code=None):
     # footer background
-    pygame.draw.rect(surface, const.TRACK_BORDER_COLOR, (0, const.BOTTOM_LINE_Y, const.WINDOW_WIDTH, const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y))
-    pygame.draw.line(surface, const.WHITE, (0, const.BOTTOM_LINE_Y), (const.WINDOW_WIDTH, const.BOTTOM_LINE_Y))
+    pygame.draw.rect(surface, const.TRACK_BORDER_COLOR, (0, const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y, const.WINDOW_WIDTH, const.BOTTOM_LINE_Y))
+    pygame.draw.line(surface, const.WHITE, (0, const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y), (const.WINDOW_WIDTH, const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y))
     
     # relay endpoint
     relay = get_cached_text(font_small, f"Relay: {const.RELAY_PUBLIC_ENDPOINT}", const.GREY_180,
                             cache_key=(id(font_small), "relay", const.RELAY_PUBLIC_ENDPOINT))
-    surface.blit(relay, (const.WINDOW_WIDTH // 2 - relay.get_width() // 2, const.BOTTOM_LINE_Y + 5))
+    surface.blit(relay, (const.WINDOW_WIDTH // 2 - relay.get_width() // 2, const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y + 5))
 
     # room code
     room_label = code if code else "Offline"
     code_text = get_cached_text(font_small, f"Room Code: {room_label}", const.WHITE_240,
                                  cache_key=(id(font_small), "room_code", room_label))
-    surface.blit(code_text, (10, const.BOTTOM_LINE_Y + 5))
+    surface.blit(code_text, (10, const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y + 5))
 
 def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size, buttons, 
                   error_msg, my_car, cam, joysticks, font_big, font_medium, font_small,

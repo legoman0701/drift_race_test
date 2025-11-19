@@ -383,6 +383,9 @@ def main():
     screen = pygame.display.set_mode((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
     clock = pygame.time.Clock()
     
+    # Fullscreen state tracking
+    is_fullscreen = False
+    
     # Show loading screen and load assets
     loaded_assets = load_assets_with_progress(screen, clock)
     
@@ -594,6 +597,18 @@ def main():
                 const.DEBUG = not const.DEBUG
                 invalidate_ui_text_cache('debug')  # Clear cached debug text
                 print(f"Debug mode {'enabled' if const.DEBUG else 'disabled'}")
+            if ev.type == pygame.KEYDOWN and ev.key == const.FULLSCREEN_KEY:
+                # Toggle fullscreen mode
+                is_fullscreen = not is_fullscreen
+                if is_fullscreen:
+                    screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+                    const.WINDOW_WIDTH, const.WINDOW_HEIGHT = screen.get_size()
+                    cam.zoom = 2.0
+                else:
+                    const.WINDOW_WIDTH, const.WINDOW_HEIGHT = const.WINDOW_WIDTH_W, const.WINDOW_HEIGHT_W
+                    screen = pygame.display.set_mode((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
+                    cam.zoom = 1.0
+                print(f"Fullscreen mode {'enabled' if is_fullscreen else 'disabled'}")
             if ev.type == pygame.KEYDOWN and ev.key == pygame.K_n:
                 if I_AM_HOST and stage1 == "game":
                     # Randomly assign car type for AI cars
