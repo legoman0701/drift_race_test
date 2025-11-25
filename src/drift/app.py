@@ -160,7 +160,7 @@ flags = const.FLAGS
 
 # ======= LOADING SCREEN =======
 
-def draw_loading_screen(screen, progress, total_steps, current_task="Loading..."):
+def draw_loading_screen(screen, progress, total_steps, current_task="Loading...", gpu_display=None):
     """Draw a loading screen with circular progress bar from 7π/4 to π/4"""
     screen.fill(const.GREY_20)  # Dark background
     
@@ -222,9 +222,16 @@ def draw_loading_screen(screen, progress, total_steps, current_task="Loading..."
     percent_rect = percent_text.get_rect(center=(center_x, center_y))
     screen.blit(percent_text, percent_rect)
     
-    pygame.display.flip()
+    # Present the loading screen (GPU or software path)
+    if gpu_display is not None:
+        try:
+            gpu_display.present(screen)
+        except Exception:
+            pass
+    else:
+        pygame.display.flip()
 
-def load_assets_with_progress(screen, clock):
+def load_assets_with_progress(screen, clock, gpu_display=None):
     """Load all game assets with progress tracking"""
     
     # Define loading steps
@@ -242,7 +249,7 @@ def load_assets_with_progress(screen, clock):
     
     for step, (task_name, step_key) in enumerate(loading_steps):
         # Update loading screen
-        draw_loading_screen(screen, step, total_steps, task_name)
+        draw_loading_screen(screen, step, total_steps, task_name, gpu_display)
         clock.tick(60)  # Maintain smooth animation
         
         # Handle pygame events to prevent "not responding"
@@ -276,7 +283,7 @@ def load_assets_with_progress(screen, clock):
             time.sleep(0.1)
     
     # Show 100% completion briefly
-    draw_loading_screen(screen, total_steps, total_steps, "Complete!")
+    draw_loading_screen(screen, total_steps, total_steps, "Complete!", gpu_display)
     pygame.time.wait(500)
     
     return loaded_data
@@ -379,12 +386,35 @@ def main():
 
     pygame.init()
     pygame.joystick.init()
-    pygame.display.set_caption(f"Drift Race v{const.VERSION}")
-    screen = pygame.display.set_mode((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
+    
+    gpu_display = None
+    use_gpu = False  # Set to True to enable GPU rendering else Use software rendering (better sometimes)
+    
+    if use_gpu:
+        try:
+            from drift.render.gpu_display import GPUDisplay
+            gpu_display = GPUDisplay((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), f"Drift Race v{const.VERSION}")
+            print("✓ GPU display initialized via pygame._sdl2")
+            try:
+                if hasattr(gpu_display.renderer, 'get_info'):
+                    info = gpu_display.renderer.get_info()
+                    print(f"  Renderer: {info.name if hasattr(info, 'name') else 'unknown'}")
+            except Exception:
+                pass
+            screen = gpu_display.win.get_surface()
+        except Exception as e:
+            print(f"✗ GPU display initialization failed: {e}")
+            print("  Using software rendering fallback")
+            gpu_display = None
+    
+    if gpu_display is None:
+        pygame.display.set_caption(f"Drift Race v{const.VERSION}")
+        screen = pygame.display.set_mode((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
+    
     clock = pygame.time.Clock()
     
     # Show loading screen and load assets
-    loaded_assets = load_assets_with_progress(screen, clock)
+    loaded_assets = load_assets_with_progress(screen, clock, gpu_display)
     
     # Create fonts after pygame.init()
     font_small = pygame.font.SysFont(None, const.FONT_SMALL_SIZE)
@@ -398,7 +428,7 @@ def main():
     chunk_map = loaded_assets["chunk_map"]
     engine_sound = loaded_assets["engine_sound"]
     audio_controller = loaded_assets["audio_controller"]
-
+    
     stage1 = "lobby" # lobby | game | error
     stage2 = "" # new_game | join_game | settings
     stage3 = "" # key_binds
@@ -764,8 +794,17 @@ def main():
                 code = new_code
                 remotes = new_remotes
 
-        screen.blit(final_surf, (0,0)) # world surface (cars, ai, map...)
-        screen.blit(ui_surf, (0,0)) # top and bottom borders
+        if gpu_display is not None:
+            try:
+                gpu_display.present(final_surf, ui_surf)
+            except Exception:
+                print("gpu failed, fallback to software blit (fix pls)")
+                screen.blit(final_surf, (0,0))
+                screen.blit(ui_surf, (0,0))
+                pygame.display.flip()
+        else:
+            screen.blit(final_surf, (0,0)) # world surface (cars, ai, map...)
+            screen.blit(ui_surf, (0,0)) # top and bottom borders
         
         if const.AI_PATH_FOLLOW and stage1 == "game":
             try:
@@ -778,7 +817,8 @@ def main():
                 #pygame.draw.rect(world_surf, TRACK_COLOR, camera_rect)
                 screen.blit(visible_ai_debug_surface, (0, 0))
             except Exception: pass
-        pygame.display.flip()
+        if gpu_display is None:
+            pygame.display.flip()
 
 if __name__ == "__main__":
     main()
