@@ -17,6 +17,11 @@ class GPUDisplay:
             raise ImportError("pygame._sdl2.video is not available")
         self.size = size
         
+        # Streaming textures for dynamic content (can be updated)
+        self._world_texture = None
+        self._ui_texture = None
+        self._last_sizes = (None, None)
+        
         self.win = None
         
         if hasattr(Window, "from_display"):
@@ -79,11 +84,16 @@ class GPUDisplay:
             print(f"GPU: Hardware-accelerated rendering active")
 
     def present(self, *surfaces: pygame.Surface) -> None:
-        self.renderer.clear()
+        """Present surfaces directly using window surface (fastest method)."""
+        # Get the window's framebuffer surface
+        window_surf = self.win.get_surface()
+        
+        # Blit all surfaces to window surface (CPU blit, then GPU present)
         for surf in surfaces:
-            tex = Texture.from_surface(self.renderer, surf)
-            tex.draw(dstrect=None, srcrect=None)
-        self.renderer.present()
+            window_surf.blit(surf, (0, 0))
+        
+        # Update the window with GPU flip
+        self.win.flip()
 
     def size(self) -> Tuple[int, int]:
         return self.size

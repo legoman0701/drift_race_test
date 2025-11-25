@@ -388,7 +388,7 @@ def main():
     pygame.joystick.init()
     
     gpu_display = None
-    use_gpu = False  # Set to True to enable GPU rendering else Use software rendering (better sometimes)
+    use_gpu = True  # Set to True to enable GPU rendering with texture reuse
     
     if use_gpu:
         try:
