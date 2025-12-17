@@ -1,0 +1,23 @@
+{
+    "model": "ae86",
+    "manufacturer": "Toyota",
+    "type": "drift",
+    "year": 1983,
+    "engine": {
+        "sound": "cars/ae86/sound"
+    },
+    "dimensions": {
+        "CAR_LEN": 38.0,
+        "CAR_WID": 20.0
+    },
+    "performance": {
+        "ENGINE_ACC": 450.0,
+        "MASS": 5,
+        "BRAKE_COEFF": 600.0,
+        "CORNERING_STIFFNESS": 2
+    },
+    "drivetrain": {
+        "layout": "RWD",
+        "gear_ratios": [3.166, 1.481, 1.1, 0.8]
+    }
+}
