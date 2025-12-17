@@ -9,7 +9,8 @@ SEND_HZ = 60.0       # client -> relay state rate
 PING_HZ = 1/5        # keepalive (~5 s)
 
 # ======= DISPLAY & WINDOW =======
-WINDOW_WIDTH, WINDOW_HEIGHT = 1000, 700
+WINDOW_WIDTH, WINDOW_HEIGHT = 1200, 900
+WINDOW_WIDTH_W, WINDOW_HEIGHT_W = 1200, 900
 FPS = 300
 FLAGS = pygame.HWSURFACE | pygame.DOUBLEBUF
 
