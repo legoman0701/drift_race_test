@@ -302,7 +302,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, remotes, ai_cars, soc
                         stage2 = "" # Close new_game UI
                         is_host_flag_ref[0] = is_host
                         my_car.name = my_name # update car with new name
-                        my_car.car_type = setup["selected_car"] # update car selected car type
+                        my_car.set_car_type(setup["selected_car"]) # update car selected car type
                         my_car.x = const.WINDOW_WIDTH // 2
                         my_car.y = const.WINDOW_HEIGHT // 2
                     else:
@@ -327,7 +327,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, remotes, ai_cars, soc
                         else:
                             stage2 = "" # Close new_game UI
                             my_car.name = my_name # update car with new name
-                            my_car.car_type = setup["selected_car"] # update car selected car type
+                            my_car.set_car_type(setup["selected_car"]) # update car selected car type
                             my_car.x = const.WINDOW_WIDTH // 2
                             my_car.y = const.WINDOW_HEIGHT // 2
         elif stage1 == "game": # in game
@@ -377,7 +377,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, remotes, ai_cars, soc
                     
                     # Update car with new name and selected car type
                     my_car.name = my_name
-                    my_car.car_type = setup["selected_car"]
+                    my_car.set_car_type(setup["selected_car"])
         elif stage1 == "lobby" and stage2 == "join_game" and _join_game_rects_cache:
             action = handle_join_game_click(ev.pos, _join_game_rects_cache)
 
@@ -385,12 +385,12 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, remotes, ai_cars, soc
                 # Get game setup and start joining
                 setup = get_game_setup()
                 if setup["username"]:  # Only proceed if username is entered
-                    stage1, my_name, code, sock, is_host, host_name = join_new_game(my_id)
+                    stage1, my_name, code, sock, is_host, host_name, error = join_new_game(my_id)
                     stage2 = ""  # Close new_game UI
                     
                     # Update car with new name and selected car type
                     my_car.name = my_name
-                    my_car.car_type = setup["selected_car"]
+                    my_car.set_car_type(setup["selected_car"])
         elif stage1 == "game" and stage2 == "settings" and stage3 == "key_binds" and _key_binds_rects_cache:
             handle_key_binds_click(ev.pos, _key_binds_rects_cache)
     

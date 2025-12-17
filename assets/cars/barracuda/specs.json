@@ -1,10 +1,10 @@
 {
-    "model": "ae86",
-    "manufacturer": "Toyota",
+    "model": "Barracuda",
+    "manufacturer": "Plymouth",
     "type": "drift",
-    "year": 1983,
+    "year": 1970,
     "engine": {
-        "sound": "cars/ae86/sound"
+        "sound": "cars/barracuda/sound"
     },
     "dimensions": {
         "CAR_LEN": 38.0,
@@ -17,7 +17,7 @@
         "CORNERING_STIFFNESS": 2
     },
     "drivetrain": {
-        "layout": "RWD",
+        "layout": "FWD",
         "gear_ratios": [3.166, 1.481, 1.1, 0.8]
     }
 }

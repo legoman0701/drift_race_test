@@ -69,6 +69,13 @@ class Car:
         with open(spec_path, "r", encoding="utf-8") as fh:
             self.specs = json.load(fh)
         
+    def set_car_type(self, car_type):
+        """Change car type at runtime and reload specs."""
+        self.car_type = car_type
+        spec_path = normalize_asset_path("cars", self.car_type, "specs.json")
+        with open(spec_path, "r", encoding="utf-8") as fh:
+            self.specs = json.load(fh)
+
     def step(self, inputs, dt, players, bounds, compute_debug=False):        
         CAR_LEN = self.specs["dimensions"]["CAR_LEN"]
         CAR_WID  = self.specs["dimensions"]["CAR_WID"]
@@ -98,17 +105,25 @@ class Car:
         drift_angle = ((math.atan2(vel_dir_f, vel_dir_r) - math.pi/2 + math.pi) % (2*math.pi) - math.pi)
         self.drift_ratio = clamp(abs(drift_angle) * clamp(abs(body_forward_speed) - 10.0, 0.0, 1.0), 0.0, 1.0)
 
-        # Wheel configuration (local positions in body frame)
+        # Wheel configuration (local positions in body frame) - compute from current car dimensions
+        wheel_x_off = CAR_LEN * 0.35
+        wheel_y_off = CAR_WID * 0.45
         wheel_local_positions = [
-            ( +WHEEL_X_OFF, +WHEEL_Y_OFF),  # Front Left (FL)
-            ( +WHEEL_X_OFF, -WHEEL_Y_OFF),  # Front Right (FR)
-            ( -WHEEL_X_OFF, +WHEEL_Y_OFF),  # Rear Left (RL)
-            ( -WHEEL_X_OFF, -WHEEL_Y_OFF),  # Rear Right (RR)
+            ( +wheel_x_off, +wheel_y_off),  # Front Left (FL)
+            ( +wheel_x_off, -wheel_y_off),  # Front Right (FR)
+            ( -wheel_x_off, +wheel_y_off),  # Rear Left (RL)
+            ( -wheel_x_off, -wheel_y_off),  # Rear Right (RR)
         ]
 
         wheel_steer_angle = 0
+        steer_bias = 0.0
+        if TRANSMITION_SETUP == "RWD":
+            steer_bias = const.STEER_BIAS 
+        if TRANSMITION_SETUP == "AWD" or TRANSMITION_SETUP == "FWD":
+            steer_bias = const.STEER_BIAS*0.2
+
         if vel_dir_f > 0:
-            wheel_steer_angle = -drift_angle*0.8* (const.STEER_BIAS if TRANSMITION_SETUP == "RWD" else 0.0)
+            wheel_steer_angle = -drift_angle*0.8* steer_bias
 
         if TRANSMITION_SETUP == "RWD" and vel_dir_f > 0:
             wheel_steer_angle += (steering_input * MAX_STEER_ANGLE)/clamp(speed_norm/50, 1.0, 5.0)

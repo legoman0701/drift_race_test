@@ -5,7 +5,7 @@ VERSION = "0.6_alpha6"
 
 # ======= NETWORK =======
 RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
-SEND_HZ = 60.0       # client -> relay state rate
+SEND_HZ = 30.0       # client -> relay state rate
 PING_HZ = 1/5        # keepalive (~5 s)
 
 # ======= DISPLAY & WINDOW =======
@@ -79,11 +79,11 @@ CAR_SPRITES = {
             "cars/ae86/Light_Spray/Image{i:04}.png"
         ]
     },
-    "m5": {
+    "barracuda": {
         "paths": [
-            "cars/m5/Shadow_Map/Image{i:04}.png",
-            "cars/m5/Diffuse/Image{i:04}.png",
-            "cars/m5/Light_Spray/Image{i:04}.png"
+            "cars/barracuda/Shadow_Map/Image{i:04}.png",
+            "cars/barracuda/Diffuse/Image{i:04}.png",
+            "cars/barracuda/Light_Spray/Image{i:04}.png"
         ]
     },
     "911": {

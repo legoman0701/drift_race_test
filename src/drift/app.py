@@ -621,7 +621,7 @@ def main():
                 available_types = list(const.CAR_SPRITES.keys())
                 current_index = available_types.index(my_car.car_type)
                 next_index = (current_index + 1) % len(available_types)
-                my_car.car_type = available_types[next_index]
+                my_car.set_car_type(available_types[next_index])
             if ev.type == pygame.KEYDOWN and ev.key == const.DEBUG_TOGGLE_KEY:
                 # Toggle debug mode
                 const.DEBUG = not const.DEBUG
@@ -642,7 +642,7 @@ def main():
             if ev.type == pygame.KEYDOWN and ev.key == pygame.K_n:
                 if I_AM_HOST and stage1 == "game":
                     # Randomly assign car type for AI cars
-                    ai_car_type = random.choice(["ae86", "m5"])
+                    ai_car_type = random.choice(["ae86", "barracuda", "911"])
                     ai_cars.append(
                         car.Car(
                             random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200),
