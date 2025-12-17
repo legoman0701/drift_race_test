@@ -1,7 +1,7 @@
 import pygame, string, math
 
 # ======= APPLICATION INFO =======
-VERSION = "0.7_alpha"
+VERSION = "0.6_alpha6"
 
 # ======= NETWORK =======
 RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
