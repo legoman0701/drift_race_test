@@ -10,7 +10,7 @@ PING_HZ = 1/5        # keepalive (~5 s)
 
 # ======= DISPLAY & WINDOW =======
 WINDOW_WIDTH, WINDOW_HEIGHT = 1000, 700
-FPS = 75
+FPS = 300
 FLAGS = pygame.HWSURFACE | pygame.DOUBLEBUF
 
 # UI scale factor (1.0 = original, 1.5 = 150%)
