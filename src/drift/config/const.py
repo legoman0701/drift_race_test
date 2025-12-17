@@ -18,7 +18,7 @@ UI_SCALE = 1
 
 # UI layout positions
 TOP_LINE_Y = 30
-BOTTOM_LINE_Y = WINDOW_HEIGHT - 20
+BOTTOM_LINE_Y = 20
 TITLE_Y = 3
 NAVBAR_Y = 10
 RELAY_Y = WINDOW_HEIGHT - 16
@@ -114,6 +114,7 @@ JOIN_KEY = pygame.K_j                   # join game
 
 # Debug controls
 DEBUG_TOGGLE_KEY = pygame.K_F3          # toggle debug mode
+FULLSCREEN_KEY = pygame.K_f             # toggle fullscreen mode
 
 # ======= USERNAME & ROOM CODE =======
 ROOM_ALPHABET = string.ascii_uppercase + string.digits
