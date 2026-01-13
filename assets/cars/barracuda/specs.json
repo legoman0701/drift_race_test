@@ -17,7 +17,7 @@
         "CORNERING_STIFFNESS": 2
     },
     "drivetrain": {
-        "layout": "FWD",
+        "layout": "RWD",
         "gear_ratios": [3.166, 1.481, 1.1, 0.8]
     }
 }
