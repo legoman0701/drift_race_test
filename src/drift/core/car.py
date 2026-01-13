@@ -37,7 +37,7 @@ BRAKE_COEFF = 600.0  # braking strength (N/kg) opposing wheel long. speed in whe
 CORNERING_STIFFNESS = 2  # lateral force per unit lateral speed (wheel frame)
 LATERAL_FORCE_MAX = 2000.0  # clamp for lateral force magnitude (visual + stability)
 ANGULAR_DAMP = 25.0  # simple yaw damping (increased to prevent unwanted rotation)
-INERTIA_Z = MASS * (CAR_LEN**2 + CAR_WID**2) / 6.0  # rough box inertia
+INERTIA_Z = MASS * (CAR_LEN**2 + CAR_WID**2) / 24.0  # rough box inertia
 
 # New: rolling resistance and aerodynamic drag
 GRAVITY = 9.81
@@ -60,6 +60,8 @@ class Car:
         self.car_type = car_type
         self.drift_points = [(0,0),(0,0)]
         self.drift_points_old = [(0,0),(0,0)]
+        # Target angle steering system
+        self.target_angle = 0.0
         # Per-wheel debug data populated each step
         self.wheel_debug = {
             "wheels": []  # list of dicts per wheel
@@ -87,8 +89,27 @@ class Car:
 
         # Inputs
         throttle_input = clamp(inputs.get("th", 0.0), -1.0, 1.0)
-        steering_input = clamp(inputs.get("st", 0.0), -1.0, 1.0)
+        raw_steering_input = clamp(inputs.get("st", 0.0), -1.0, 1.0)
         brake_input = clamp(inputs.get("br", 0.0), 0.0, 1.0)
+        
+        # Update target angle based on steering input
+        target_angle_change_rate = 2.0  # radians per second
+        self.target_angle += raw_steering_input * target_angle_change_rate * dt
+        # Normalize target angle to [-pi, pi]
+        self.target_angle = ((self.target_angle + math.pi) % (2 * math.pi)) - math.pi
+        
+        # Clamp target angle to maximum difference from current angle
+        max_angle_difference = math.radians(45)  # Maximum 45 degrees difference
+        angle_diff = ((self.target_angle - self.angle + math.pi) % (2 * math.pi)) - math.pi
+        if abs(angle_diff) > max_angle_difference:
+            # Clamp to maximum allowed difference
+            self.target_angle = self.angle + math.copysign(max_angle_difference, angle_diff)
+            # Normalize again
+            self.target_angle = ((self.target_angle + math.pi) % (2 * math.pi)) - math.pi
+        
+        # Calculate steering input to reach target angle
+        angle_error = ((self.target_angle - self.angle + math.pi) % (2 * math.pi)) - math.pi
+        steering_input = clamp(angle_error * 2.0, -1.0, 1.0)  # P controller with gain 2.0
 
         # Orientation and basis vectors
         forward_x, forward_y = math.cos(self.angle), math.sin(self.angle)
@@ -119,8 +140,8 @@ class Car:
         steer_bias = 0.0
         if TRANSMITION_SETUP == "RWD":
             steer_bias = const.STEER_BIAS 
-        if TRANSMITION_SETUP == "AWD" or TRANSMITION_SETUP == "FWD":
-            steer_bias = const.STEER_BIAS*0.2
+        if TRANSMITION_SETUP == "AWD":
+            steer_bias = const.STEER_BIAS*0.1
 
         if vel_dir_f > 0:
             wheel_steer_angle = -drift_angle*0.8* steer_bias

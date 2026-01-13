@@ -33,22 +33,8 @@ def read_inputs(joysticks, car, cam, mouse_follow_mode: bool, ai_path_mode: bool
     if raw_st != 0:
         raw_st = 1.0 if raw_st > 0 else -1.0
 
-    # --- Steering smoothing (keyboard only) ---
-    # Exponential smoothing for more natural steering feel
-    if not hasattr(read_inputs, "_smoothed_st"):
-        read_inputs._smoothed_st = 0.0
-    
-    # Smoothly approach target steering value
-    if read_inputs._smoothed_st < raw_st:
-        read_inputs._smoothed_st += 0.03
-    else:
-        read_inputs._smoothed_st -= 0.03
-    
-    # Avoid tiny float drift
-    if abs(read_inputs._smoothed_st) < 1e-3:
-        read_inputs._smoothed_st = 0.0
-    
-    st = read_inputs._smoothed_st
+    # Use raw steering input (target angle system handles smoothing)
+    st = raw_st
 
     # --- Mouse following mode ---
     if mouse_follow_mode:

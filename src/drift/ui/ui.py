@@ -84,6 +84,35 @@ def draw_wheel_debug(surface: pygame.Surface, car, offx: int = 0, offy: int = 0)
     global _debug_font_cache
     if not hasattr(car, "wheel_debug"):
         return
+    
+    # Draw target angle visualization - large circle with arrow
+    if hasattr(car, "target_angle"):
+        cx, cy = int(car.x - offx), int(car.y - offy)
+        circle_radius = 100
+        # Draw circle around car
+        pygame.draw.circle(surface, (100, 255, 100), (cx, cy), circle_radius, 2)
+        
+        # Draw arrow pointing at target angle
+        arrow_len = circle_radius - 5
+        target_x = cx + math.cos(car.target_angle) * arrow_len
+        target_y = cy + math.sin(car.target_angle) * arrow_len
+        # Main arrow line
+        pygame.draw.line(surface, (100, 255, 100), (cx, cy), (int(target_x), int(target_y)), 3)
+        # Arrowhead
+        arrow_size = 15
+        arrow_angle = 0.5  # radians
+        left_x = target_x - math.cos(car.target_angle - arrow_angle) * arrow_size
+        left_y = target_y - math.sin(car.target_angle - arrow_angle) * arrow_size
+        right_x = target_x - math.cos(car.target_angle + arrow_angle) * arrow_size
+        right_y = target_y - math.sin(car.target_angle + arrow_angle) * arrow_size
+        pygame.draw.line(surface, (100, 255, 100), (int(target_x), int(target_y)), (int(left_x), int(left_y)), 3)
+        pygame.draw.line(surface, (100, 255, 100), (int(target_x), int(target_y)), (int(right_x), int(right_y)), 3)
+        
+        # Draw current angle indicator (shorter line)
+        current_x = cx + math.cos(car.angle) * (circle_radius * 0.6)
+        current_y = cy + math.sin(car.angle) * (circle_radius * 0.6)
+        pygame.draw.line(surface, (255, 100, 100), (cx, cy), (int(current_x), int(current_y)), 2)
+    
     wheels = car.wheel_debug.get("wheels", [])
 
     # Scale factors for arrow lengths
