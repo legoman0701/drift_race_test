@@ -115,7 +115,8 @@ JOIN_KEY = pygame.K_j                   # join game
 
 # Debug controls
 DEBUG_TOGGLE_KEY = pygame.K_F3          # toggle debug mode
-FULLSCREEN_KEY = pygame.K_f             # toggle fullscreen mode
+# FULLSCREEN_KEY = pygame.K_f             # toggle fullscreen mode
+FULLSCREEN_KEY = []                     # disabled
 
 # ======= USERNAME & ROOM CODE =======
 ROOM_ALPHABET = string.ascii_uppercase + string.digits
