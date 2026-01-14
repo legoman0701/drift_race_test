@@ -597,7 +597,7 @@ def main():
             # print(f"[DEBUG] FPS: {current_fps:.1f} | Text cache: {text_cache_size} | Button cache: {button_cache_size} | Chunk cache: {chunk_cache_size} | Tire marks: {tire_mark_chunks}")
             last_debug_time = current_time
 
-        # ======== EVENT HANDLING ========
+        # ======== EVENT HANDLING ======== (keyboard, mouse, window, custom)
 
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
@@ -670,6 +670,17 @@ def main():
 
             ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name = handle_game_events(screen, ev, stage1, stage2, stage3, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name)
             I_AM_HOST = host_ref[0]
+
+        # ======== INPUT HANDLING ======== (controller buttons)
+
+        if joysticks and joysticks[0] != []:
+            js = joysticks[0]
+            if js.get_button(2):
+                # Cycle through available car types
+                available_types = list(const.CAR_SPRITES.keys())
+                current_index = available_types.index(my_car.car_type)
+                next_index = (current_index + 1) % len(available_types)
+                my_car.set_car_type(available_types[next_index])
 
         # ======== NETWORKING ========
 
