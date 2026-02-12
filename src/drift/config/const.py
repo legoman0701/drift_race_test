@@ -112,6 +112,7 @@ RESET_KEY = pygame.K_r                  # reset car position
 CHANGE_CAR_KEY = pygame.K_c             # change car
 HOST_KEY = pygame.K_h                   # host game
 JOIN_KEY = pygame.K_j                   # join game
+AI_KEY = pygame.K_n                     # add AI car
 
 # Debug controls
 DEBUG_TOGGLE_KEY = pygame.K_F3          # toggle debug mode
