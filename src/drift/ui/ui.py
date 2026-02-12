@@ -9,10 +9,10 @@ from drift.core.inputs import read_inputs
 from drift.core.rpm import calc_engine_rpm
 from drift.ui.ui_helpers import get_cached_text, invalidate_ui_text_cache
 from drift.ui.draw_stage import (
-    draw_new_game, draw_join_game, draw_settings, draw_error,
+    draw_mode1, draw_mode2, draw_new_game, draw_join_game, draw_settings, draw_error,
     handle_new_game_click, handle_new_game_keypress, host_new_game, draw_key_binds,
     handle_join_game_click, handle_join_game_keypress, join_new_game,
-    handle_key_binds_click, handle_key_binds_keypress,
+    handle_key_binds_click, handle_key_binds_keypress, draw_game,
     get_game_setup, reset_game_setup, set_error_message, clear_error_message
 )
 from drift.config.settings import settings_manager
@@ -20,6 +20,7 @@ from drift.config.settings import settings_manager
 _car_name_font_cache = {} # car name cache
 _new_game_rects_cache = None # new game rects cache
 _join_game_rects_cache = None # join game rects cache
+_game_rects_cache = None # game rects cache
 _key_binds_rects_cache = None # key binds rects cache
 
 def draw_car(surface, x, y, angle, name,
@@ -237,7 +238,7 @@ def draw_footer(surface: str, font_small, code=None):
 
 def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size, buttons, 
                   error_msg, my_car, cam, joysticks, font_big, font_medium, font_small,
-                  ai_path_mode_controls, engine_state, fps, dt, host_name=None, car_sprites_cache=None):
+                  ai_path_mode_controls, engine_state, fps, dt, is_host, host_name=None, car_sprites_cache=None):
     """Draw UI elements based on current stage levels (stage1, stage2, stage3).
     
     Stage levels:
@@ -245,12 +246,13 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
     - stage2: settings | new_game | join_game
     - stage3: key_binds
     """
-    global _new_game_rects_cache, _join_game_rects_cache, _key_binds_rects_cache
+    global _new_game_rects_cache, _join_game_rects_cache, _key_binds_rects_cache, _game_rects_cache
 
     button_results = []
     # click detection
     new_game_rects = None
     join_game_rects = None
+    game_rects = None
     key_binds_rects = None
     
     # Stage 1: Main stages
@@ -293,8 +295,47 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
                 draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
         else:
             _key_binds_rects_cache = None  # Clear cache when not in settings
-            # draw_game()
+            game_rects = draw_game(ui_surf, font_big, font_medium, is_host)
+            _game_rects_cache = game_rects
             draw_header(ui_surf, font_big, font_small, "In Game", fps, host_name)
+            draw_controls_hud(ui_surf, ai_path_mode_controls, joysticks, my_car, cam, font_small, dt, engine_state, 7000)
+        draw_footer(ui_surf, font_small, code)
+
+    elif stage1 == "mode1":
+        _new_game_rects_cache = None  # Clear cache when in game
+        _join_game_rects_cache = None  # Clear cache when in game
+        if stage2 == "settings": 
+            if stage3 == "key_binds":
+                key_binds_rects = draw_key_binds(ui_surf, font_small)
+                _key_binds_rects_cache = key_binds_rects  # Cache for event handling
+                draw_header(ui_surf, font_big, font_small, "Key Bindings", fps, host_name)
+            else:
+                _key_binds_rects_cache = None  # Clear cache when not in key_binds
+                world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
+                draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
+        else:
+            _key_binds_rects_cache = None  # Clear cache when not in settings
+            draw_mode1(ui_surf, font_big, font_medium)
+            draw_header(ui_surf, font_big, font_small, "Mode 1", fps, host_name)
+            draw_controls_hud(ui_surf, ai_path_mode_controls, joysticks, my_car, cam, font_small, dt, engine_state, 7000)
+        draw_footer(ui_surf, font_small, code)
+
+    elif stage1 == "mode2":
+        _new_game_rects_cache = None  # Clear cache when in game
+        _join_game_rects_cache = None  # Clear cache when in game
+        if stage2 == "settings": 
+            if stage3 == "key_binds":
+                key_binds_rects = draw_key_binds(ui_surf, font_small)
+                _key_binds_rects_cache = key_binds_rects  # Cache for event handling
+                draw_header(ui_surf, font_big, font_small, "Key Bindings", fps, host_name)
+            else:
+                _key_binds_rects_cache = None  # Clear cache when not in key_binds
+                world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
+                draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
+        else:
+            _key_binds_rects_cache = None  # Clear cache when not in settings
+            draw_mode2(ui_surf, font_big, font_medium)
+            draw_header(ui_surf, font_big, font_small, "Mode 2", fps, host_name)
             draw_controls_hud(ui_surf, ai_path_mode_controls, joysticks, my_car, cam, font_small, dt, engine_state, 7000)
         draw_footer(ui_surf, font_small, code)
 
@@ -307,7 +348,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
     
     return world_surf, button_results, new_game_rects, join_game_rects
 
-def handle_game_events(screen, ev, stage1, stage2, stage3, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref, host_name=None, new_game_rects=None):
+def handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref, host_name=None, new_game_rects=None):
     """Handle game events including new game UI interactions."""
     global _new_game_rects_cache
     
@@ -359,7 +400,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, remotes, ai_cars, soc
                             my_car.set_car_type(setup["selected_car"]) # update car selected car type
                             my_car.x = const.WINDOW_WIDTH // 2
                             my_car.y = const.WINDOW_HEIGHT // 2
-        elif stage1 == "game": # in game
+        elif stage1 in ["game", "mode1", "mode2"]: # in game
             if stage2 == "" and ev.key == const.ESCAPE_KEY: 
                 stage2 = "settings" # open settings
             elif stage2 == "settings":
@@ -420,8 +461,31 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, remotes, ai_cars, soc
                     # Update car with new name and selected car type
                     my_car.name = my_name
                     my_car.set_car_type(setup["selected_car"])
+        elif stage1 == "game" and stage2 == "" and _game_rects_cache:
+            start_btn = _game_rects_cache.get("start_btn")
+            if start_btn and start_btn.collidepoint(ev.pos):
+                setup = get_game_setup()
+                if not setup["username"]: set_error_message("username missing")
+                print(f"Start button clicked - username: {setup['selected_mode']}")
+                stage1 = setup['selected_mode']  # Switch to selected game mode
+                if sock:
+                    try:
+                        sock.send(json.dumps({"t": "start_race", "code": code, "id": my_id}).encode("utf-8"))
+                    except Exception as e:
+                        print(f"Error sending start: {e}")
+
         elif stage1 == "game" and stage2 == "settings" and stage3 == "key_binds" and _key_binds_rects_cache:
             handle_key_binds_click(ev.pos, _key_binds_rects_cache)
+
+    if joysticks and joysticks[0] != []:
+        js = joysticks[0]    
+        if stage1 == "lobby": # in lobby
+            if js.get_button(6): # - to join game
+                stage2 = "join_game"
+                reset_game_setup()
+            elif js.get_button(7): # + to create game
+                stage2 = "new_game"
+                reset_game_setup()
     
     # Handle slider events in settings menu (all event types)
     if ((stage1 == "game" and stage2 == "settings" and stage3 == "") or 

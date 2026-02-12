@@ -1,6 +1,7 @@
 import pygame, json, time, math
 import drift.config.const as const
 from drift.ui.ui_helpers import invalidate_ui_text_cache, get_cached_text
+from drift.ui.button import Button
 from drift.core.helpers import rand_code
 from drift.net.communication import connect_to_relay, recv_jsons
 from drift.ui.slider import Slider
@@ -13,7 +14,7 @@ _game_setup = {
     "username_active": False,
     "selected_car": "ae86",  # Default car
     "selected_track": "track1",  # Default track
-    "selected_mode": "beta",  # Default mode
+    "selected_mode": "mode1",  # Default mode
     "room_code": "",  # For join game
     "code_active": False,  # For join game code input
     "error_message": None,  # For displaying errors
@@ -50,15 +51,42 @@ def _update_car_rotation(dt):
 def draw_lobby():         
     pass
 
-def draw_game():
-    pass
+def draw_game(ui_surf, font_big, font_medium, is_host):
+    """Draw the game lobby/waiting room with start button (host only)."""
+    
+    btn_width = const.BTN_WIDTH
+    btn_height = const.BTN_HEIGHT
+    center_x = const.WINDOW_WIDTH // 2
+    
+    # Start button (bottom center) - only if host
+    if is_host:
+        start_btn_y = const.WINDOW_HEIGHT - 150  # Bottom area
+        start_btn = Button("Start Game", center_x - btn_width // 2, start_btn_y, btn_width, btn_height, const.GREEN, ["game"])
+        start_btn.draw(ui_surf, "game")
+        
+        return {"start_btn": start_btn.rect}
+    
+    return {}
+
+def draw_mode1(ui_surf, font_big, font_medium):
+    """Draw the main game mode UI (placeholder for now)."""
+    # Placeholder text
+    text = font_big.render("Game Mode 1 - In Development", True, const.WHITE_240)
+    ui_surf.blit(text, (const.WINDOW_WIDTH // 2 - text.get_width() // 2, const.WINDOW_HEIGHT // 2 - text.get_height() // 2))
+    return {}
+
+def draw_mode2(ui_surf, font_big, font_medium):
+    """Draw the main game mode UI (placeholder for now)."""
+    # Placeholder text
+    text = font_big.render("Game Mode 2 - In Development", True, const.WHITE_240)
+    ui_surf.blit(text, (const.WINDOW_WIDTH // 2 - text.get_width() // 2, const.WINDOW_HEIGHT // 2 - text.get_height() // 2))
+    return {}
 
 def draw_error(ui_surf, error_msg, font_small):
     msg = font_small.render(error_msg, True, (255,200,200))
     ui_surf.blit(msg, (const.WINDOW_WIDTH//2 - msg.get_width()//2, const.WINDOW_HEIGHT//2))
     tip = font_small.render("Press R to restart", True, const.GREY_200)
     ui_surf.blit(tip, (const.WINDOW_WIDTH//2 - tip.get_width()//2, const.WINDOW_HEIGHT//2 + 40))
-
 
 def draw_new_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.016):
     """Draw new game setup screen with username input, car/track/mode selection.
@@ -187,26 +215,50 @@ def draw_new_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.0
     label = font_medium.render("Track", True, const.WHITE_240)
     ui_surf.blit(label, (center_x - label.get_width() // 2, y))
     
-    track_rect = pygame.Rect(center_x - btn_width // 2, y + 35, btn_width, btn_height)
-    track_color = const.GREEN if _game_setup["selected_track"] == "track1" else (80, 80, 90)
-    pygame.draw.rect(ui_surf, track_color, track_rect, 2)
-
-    track_text = font_medium.render("track1", True, const.WHITE_240)
-    ui_surf.blit(track_text, (track_rect.centerx - track_text.get_width() // 2, 
-                               track_rect.centery - track_text.get_height() // 2))
+    # Track buttons - two side by side
+    track_spacing = 20
+    track_btn_width = (btn_width - track_spacing) // 2
+    track1_rect = pygame.Rect(center_x - btn_width // 2, y + 35, track_btn_width, btn_height)
+    track2_rect = pygame.Rect(center_x - btn_width // 2 + track_btn_width + track_spacing, y + 35, track_btn_width, btn_height)
     
-    # Mode button
+    track1_color = const.GREEN if _game_setup["selected_track"] == "track1" else (80, 80, 90)
+    track2_color = const.GREEN if _game_setup["selected_track"] == "track2" else (80, 80, 90)
+    
+    pygame.draw.rect(ui_surf, track1_color, track1_rect, 2)
+    pygame.draw.rect(ui_surf, track2_color, track2_rect, 2)
+
+    track1_text = font_medium.render("Track 1", True, const.WHITE_240)
+    ui_surf.blit(track1_text, (track1_rect.centerx - track1_text.get_width() // 2, 
+                               track1_rect.centery - track1_text.get_height() // 2))
+    
+    track2_text = font_medium.render("Track 2", True, const.WHITE_240)
+    ui_surf.blit(track2_text, (track2_rect.centerx - track2_text.get_width() // 2, 
+                               track2_rect.centery - track2_text.get_height() // 2))
+    
+    # Mode selection section
     y += spacing + 35
     label = font_medium.render("Mode", True, const.WHITE_240)
     ui_surf.blit(label, (center_x - label.get_width() // 2, y))
 
-    mode_rect = pygame.Rect(center_x - btn_width // 2, y + 35, btn_width, btn_height)
-    mode_color = const.GREEN if _game_setup["selected_mode"] == "beta" else (80, 80, 90)
-    pygame.draw.rect(ui_surf, mode_color, mode_rect, 2)
+    # Mode buttons - two side by side
+    mode_spacing = 20
+    mode_btn_width = (btn_width - mode_spacing) // 2
+    mode1_rect = pygame.Rect(center_x - btn_width // 2, y + 35, mode_btn_width, btn_height)
+    mode2_rect = pygame.Rect(center_x - btn_width // 2 + mode_btn_width + mode_spacing, y + 35, mode_btn_width, btn_height)
+    
+    mode1_color = const.GREEN if _game_setup["selected_mode"] == "mode1" else (80, 80, 90)
+    mode2_color = const.GREEN if _game_setup["selected_mode"] == "mode2" else (80, 80, 90)
+    
+    pygame.draw.rect(ui_surf, mode1_color, mode1_rect, 2)
+    pygame.draw.rect(ui_surf, mode2_color, mode2_rect, 2)
 
-    mode_text = font_medium.render("beta", True, const.WHITE_240)
-    ui_surf.blit(mode_text, (mode_rect.centerx - mode_text.get_width() // 2, 
-                              mode_rect.centery - mode_text.get_height() // 2))
+    mode1_text = font_medium.render("Mode 1", True, const.WHITE_240)
+    ui_surf.blit(mode1_text, (mode1_rect.centerx - mode1_text.get_width() // 2, 
+                              mode1_rect.centery - mode1_text.get_height() // 2))
+    
+    mode2_text = font_medium.render("Mode 2", True, const.WHITE_240)
+    ui_surf.blit(mode2_text, (mode2_rect.centerx - mode2_text.get_width() // 2, 
+                              mode2_rect.centery - mode2_text.get_height() // 2))
 
     # Host Game button
     y += spacing + 50
@@ -229,8 +281,10 @@ def draw_new_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.0
         "car1_btn": car1_rect,
         "car2_btn": car2_rect,
         "car3_btn": car3_rect,
-        "track_btn": track_rect,
-        "mode_btn": mode_rect,
+        "track1_btn": track1_rect,
+        "track2_btn": track2_rect,
+        "mode1_btn": mode1_rect,
+        "mode2_btn": mode2_rect,
         "host_btn": host_btn_rect,
     }
 
@@ -415,10 +469,18 @@ def handle_new_game_click(click_pos, rects):
     elif rects["car3_btn"].collidepoint(click_pos):
         _game_setup["selected_car"] = "911"
         return "car3_selected"
-    elif rects["track_btn"].collidepoint(click_pos):
-        return "track_clicked"
-    elif rects["mode_btn"].collidepoint(click_pos):
-        return "mode_clicked"
+    elif rects["track1_btn"].collidepoint(click_pos):
+        _game_setup["selected_track"] = "track1"
+        return "track1_selected"
+    elif rects["track2_btn"].collidepoint(click_pos):
+        _game_setup["selected_track"] = "track2"
+        return "track2_selected"
+    elif rects["mode1_btn"].collidepoint(click_pos):
+        _game_setup["selected_mode"] = "mode1"
+        return "mode1_selected"
+    elif rects["mode2_btn"].collidepoint(click_pos):
+        _game_setup["selected_mode"] = "mode2"
+        return "mode2_selected"
     elif rects["host_btn"].collidepoint(click_pos):
         return "host_game"
     return None
@@ -498,7 +560,7 @@ def reset_game_setup():
     _game_setup["username_active"] = True
     _game_setup["selected_car"] = "ae86"
     _game_setup["selected_track"] = "track1"
-    _game_setup["selected_mode"] = "beta"
+    _game_setup["selected_mode"] = "mode1"
     _game_setup["room_code"] = ""
     _game_setup["code_active"] = False
     _game_setup["error_message"] = None

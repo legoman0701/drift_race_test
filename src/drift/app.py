@@ -432,7 +432,7 @@ def main():
     engine_sound = loaded_assets["engine_sound"]
     audio_controller = loaded_assets["audio_controller"]
     
-    stage1 = "lobby" # lobby | game | error
+    stage1 = "lobby" # lobby | game | error | mode1 | mode2
     stage2 = "" # new_game | join_game | settings
     stage3 = "" # key_binds
     error_msg = ""
@@ -455,6 +455,10 @@ def main():
     my_car = car.Car(spawnx, spawny, my_name, is_ai=False, car_type="ae86")
     # Local player's engine state (avoid mutating Car which may use __slots__)
     engine_state = {"gear": 0, "last_rpm": None}
+
+    # controller cooldowns
+    ctlr_btn2_time = 0.0 # i'll store last time.time() the X button was pressed (change car)
+    ctlr_btn3_time = 0.0 # same for the Y button (spawn ai car)
 
     if args.mode == "host" and args.code and args.name:
         my_name = args.name
@@ -597,7 +601,7 @@ def main():
             # print(f"[DEBUG] FPS: {current_fps:.1f} | Text cache: {text_cache_size} | Button cache: {button_cache_size} | Chunk cache: {chunk_cache_size} | Tire marks: {tire_mark_chunks}")
             last_debug_time = current_time
 
-        # ======== EVENT HANDLING ======== (keyboard, mouse, window, custom)
+        # ======== EVENT HANDLING ======== (keyboard)
 
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
@@ -614,15 +618,15 @@ def main():
                 pygame.quit()
                 sys.exit(0)
 
-            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_l:
+            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_l: # L to toggle headlights
                 lights_on = not lights_on
-            if ev.type == pygame.KEYDOWN and ev.key == const.CHANGE_CAR_KEY:
+            if ev.type == pygame.KEYDOWN and ev.key == const.CHANGE_CAR_KEY: # C to change car
                 # Cycle through available car types
                 available_types = list(const.CAR_SPRITES.keys())
                 current_index = available_types.index(my_car.car_type)
                 next_index = (current_index + 1) % len(available_types)
                 my_car.set_car_type(available_types[next_index])
-            if ev.type == pygame.KEYDOWN and ev.key == const.DEBUG_TOGGLE_KEY:
+            if ev.type == pygame.KEYDOWN and ev.key == const.DEBUG_TOGGLE_KEY: # F3 to toggle debug mode
                 # Toggle debug mode
                 const.DEBUG = not const.DEBUG
                 invalidate_ui_text_cache('debug')  # Clear cached debug text
@@ -639,7 +643,7 @@ def main():
                     screen = pygame.display.set_mode((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
                     cam.zoom = 1.0
                 print(f"Fullscreen mode {'enabled' if is_fullscreen else 'disabled'}")
-            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_n:
+            if ev.type == pygame.KEYDOWN and ev.key == const.AI_KEY: # N to add AI car
                 if I_AM_HOST and stage1 == "game":
                     # Randomly assign car type for AI cars
                     ai_car_type = random.choice(["ae86", "barracuda", "911"])
@@ -668,19 +672,40 @@ def main():
                 cam.offset[0] -= ev.rel[0] / cam.zoom
                 cam.offset[1] -= ev.rel[1] / cam.zoom
 
-            ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name = handle_game_events(screen, ev, stage1, stage2, stage3, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name)
+            ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name = handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name)
             I_AM_HOST = host_ref[0]
 
-        # ======== INPUT HANDLING ======== (controller buttons)
+        # ======== JOYSCTICK INPUTS HANDLING ======== (controller buttons)
+
+        # A: button 0, B: button 1, X: button 2, Y: button 3
+        # LB: button 4, RB: button 5
+        # -: button 6, +: button 7
+        # Left joystick: button 8 (press), Right joystick: button 9 (press)
+        # Home: button 10
 
         if joysticks and joysticks[0] != []:
             js = joysticks[0]
-            if js.get_button(2):
+            if js.get_button(2) and time.time() - ctlr_btn2_time > 0.2: # X to change car
+                ctlr_btn2_time = time.time()
                 # Cycle through available car types
                 available_types = list(const.CAR_SPRITES.keys())
                 current_index = available_types.index(my_car.car_type)
                 next_index = (current_index + 1) % len(available_types)
-                my_car.set_car_type(available_types[next_index])
+                my_car.set_car_type(    available_types[next_index])
+            if js.get_button(3) and time.time() - ctlr_btn3_time > 0.2: # Y to spawn ai car
+                ctlr_btn3_time = time.time()
+                if I_AM_HOST and stage1 == "game":
+                    # Randomly assign car type for AI cars
+                    ai_car_type = random.choice(["ae86", "barracuda", "911"])
+                    ai_cars.append(
+                        car.Car(
+                            random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200),
+                            random.randint(const.TRACK_MARGIN + 120, const.WINDOW_HEIGHT - const.TRACK_MARGIN - 120),
+                            name=f"AI-{len(ai_cars)+1}",
+                            is_ai=True,
+                            car_type=ai_car_type,
+                        )
+                    )
 
         # ======== NETWORKING ========
 
@@ -807,7 +832,7 @@ def main():
         world_surf, button_results, new_game_rects, join_game_rects = draw_stage_ui(
             ui_surf, stage1, stage2, stage3, code, world_surf, world_size, 
             settings_buttons, error_msg, my_car, cam, joysticks, font_big, font_medium, font_small,
-            controls, engine_state, fps, dt, host_name, car_sprites_cache
+            controls, engine_state, fps, dt, I_AM_HOST, host_name, car_sprites_cache
         )
         
         # Handle button results from settings menu
