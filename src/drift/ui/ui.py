@@ -304,7 +304,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
     elif stage1 == "mode1":
         _new_game_rects_cache = None  # Clear cache when in game
         _join_game_rects_cache = None  # Clear cache when in game
-        if stage2 == "settings": 
+        if stage2 == "settings":
             if stage3 == "key_binds":
                 key_binds_rects = draw_key_binds(ui_surf, font_small)
                 _key_binds_rects_cache = key_binds_rects  # Cache for event handling
@@ -474,7 +474,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, a
                     except Exception as e:
                         print(f"Error sending start: {e}")
 
-        elif stage1 == "game" and stage2 == "settings" and stage3 == "key_binds" and _key_binds_rects_cache:
+        elif stage1 in ["game", "mode1", "mode2"] and stage2 == "settings" and stage3 == "key_binds" and _key_binds_rects_cache:
             handle_key_binds_click(ev.pos, _key_binds_rects_cache)
 
     if joysticks and joysticks[0] != []:
@@ -488,7 +488,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, a
                 reset_game_setup()
     
     # Handle slider events in settings menu (all event types)
-    if ((stage1 == "game" and stage2 == "settings" and stage3 == "") or 
+    if ((stage1 in ["game", "mode1", "mode2"] and stage2 == "settings" and stage3 == "") or 
         (stage1 == "lobby" and stage2 == "settings" and stage3 == "")):
         settings_manager.handle_slider_events(ev)
 

@@ -58,7 +58,7 @@ class WorldRenderer:
         return resized
 
     def _draw_track(self, world_surf: pygame.Surface, cam, stage: str) -> None:
-        if stage != "game":
+        if stage not in ["mode1", "mode2"]:
             world_surf.fill(const.GREY_20)
             return
         # Draw only the visible track region into the world surface
@@ -85,7 +85,7 @@ class WorldRenderer:
                 pygame.draw.line(self.tire_mark, const.TIRE_MARK_SMOKE, ai_car.drift_points[0], ai_car.drift_points_old[0], 3)
                 pygame.draw.line(self.tire_mark, const.TIRE_MARK_SMOKE, ai_car.drift_points[1], ai_car.drift_points_old[1], 3)
         # Remote players only when on game stage
-        if stage == "game":
+        if stage in ["mode1", "mode2"]:
             for pid, d in remotes.items():
                 # draw_car returns rear tire points as (p2, p3)
                 # Drift point accumulation happens after car drawing below to avoid duplication.
@@ -137,7 +137,7 @@ class WorldRenderer:
         """
         Size used by physics/camera clamping.
         """
-        if stage != "game":
+        if stage not in ["mode1", "mode2"]:
             return (const.WINDOW_WIDTH, const.WINDOW_HEIGHT)
         if self.chunked_map and hasattr(self.chunked_map, "get_world_size"):
             return self.chunked_map.get_world_size()  # use finite dimensions of the chunked map
@@ -163,7 +163,7 @@ class WorldRenderer:
         """
 
         # game stage (draw chunk map)
-        if stage == "game" and self.chunked_map is not None:
+        if stage in ["mode1", "mode2"] and self.chunked_map is not None:
             # Viewport-sized canvas
             vw, vh = int(const.WINDOW_WIDTH / cam.zoom), int(const.WINDOW_HEIGHT / cam.zoom)
             world_surf = pygame.Surface((vw, vh), self.flags)
@@ -221,7 +221,7 @@ class WorldRenderer:
             return world_surf, resized, True
         
         # -------- Classic path --------
-        if stage != "game":
+        if stage not in ["mode1", "mode2"]:
             world_size = (const.WINDOW_WIDTH, const.WINDOW_HEIGHT)
         else:
             world_size = (self.track_image.get_width(), self.track_image.get_height())
@@ -254,7 +254,7 @@ class WorldRenderer:
         if const.DEBUG: draw_wheel_debug(world_surf, my_car, 0, 0)
 
         # 5) Draw network/online players' cars
-        if stage == "game" and draw_remotes:
+        if stage in ["mode1", "mode2"] and draw_remotes:
             for pid, d in remotes.items():
                 remote_car_sprites = car_sprites_cache.get(d.get("car_type", "ae86"), car_sprites_cache.get("ae86", []))
                 drift_pts = draw_car(world_surf, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
