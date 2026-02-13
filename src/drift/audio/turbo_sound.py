@@ -220,7 +220,7 @@ class MultiTrackTurboSound:
                 self.speed_tracks[speed] = str(wav_file)
                 self.speed_sounds[speed] = sound
                 
-                print(f"  Loaded: {wav_file.name} -> speed {speed:.1f}x")
+                # print(f"  Loaded: {wav_file.name} -> speed {speed:.1f}x")
                 
             except (ValueError, pygame.error) as e:
                 print(f"Warning: Could not load {wav_file}: {e}")

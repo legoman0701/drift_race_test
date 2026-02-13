@@ -559,25 +559,25 @@ def main():
         nonlocal stage3
         stage3 = "key_binds"
         
-    def switch_cursor_follow_mode():
+    def switch_cursor_follow_mode(stage1):
         const.CURSOR_FOLLOW = not const.CURSOR_FOLLOW
         if const.CURSOR_FOLLOW: const.AI_PATH_FOLLOW = False
         # stage, substage sock, code, remotes
-        try: return "game", "", sock, code, remotes
-        except Exception: return "game", "", None, None, {}
+        try: return stage1, "", sock, code, remotes
+        except Exception: return stage1, "", None, None, {}
 
-    def switch_ai_path_mode():
+    def switch_ai_path_mode(stage1):
         const.AI_PATH_FOLLOW = not const.AI_PATH_FOLLOW
         if const.AI_PATH_FOLLOW: const.CURSOR_FOLLOW = False
         # stage, substage sock, code, remotes
-        try: return "game", "", sock, code, remotes
-        except Exception: return "game", "", None, None, {}
+        try: return stage1, "", sock, code, remotes
+        except Exception: return stage1, "", None, None, {}
 
     settings_buttons = [ # to do : be able to use * like */settings for key binds
     btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"], ["mode1", "settings"], ["mode2", "settings"]] ,lambda: leave_room(sock, code, my_id, remotes)),
     btn.Button("Key Binds", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, [["lobby", "settings"], ["game", "settings"], ["mode1", "settings"], ["mode2", "settings"]], handle_key_binds),
-    btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"], ["mode1", "settings"], ["mode2", "settings"]], switch_cursor_follow_mode),
-    btn.Button("AI Path Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.65, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"], ["mode1", "settings"], ["mode2", "settings"]], switch_ai_path_mode),
+    btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["mode1", "settings"], ["mode2", "settings"]], lambda: switch_cursor_follow_mode(stage1)),
+    btn.Button("AI Path Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.65, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["mode1", "settings"], ["mode2", "settings"]], lambda: switch_ai_path_mode(stage1)),
     ]
     
     # Performance debugging
