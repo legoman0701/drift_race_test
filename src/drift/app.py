@@ -428,7 +428,7 @@ def main():
     audio_initialized = loaded_assets["audio_initialized"]
     car_sprites_cache = loaded_assets["car_sprites_cache"]
     track_image = loaded_assets["track_image"]
-    chunk_map = loaded_assets["chunk_map"]
+    chunked_map = loaded_assets["chunk_map"]
     engine_sound = loaded_assets["engine_sound"]
     audio_controller = loaded_assets["audio_controller"]
     
@@ -527,7 +527,7 @@ def main():
             I_AM_HOST = False
     
     # Renderer handles track, cars, and drift marks
-    renderer = WorldRenderer(track_image, flags, chunked_map=chunk_map)
+    renderer = WorldRenderer(track_image, flags, chunked_map=chunked_map)
 
     joysticks = [pygame.joystick.Joystick(i) for i in range(pygame.joystick.get_count())]
     for js in joysticks:
@@ -672,8 +672,11 @@ def main():
                 cam.offset[0] -= ev.rel[0] / cam.zoom
                 cam.offset[1] -= ev.rel[1] / cam.zoom
 
-            ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name = handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name)
+            ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map = handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name)
             I_AM_HOST = host_ref[0]
+            # update map changes
+            if renderer and track_image and renderer.track_image != track_image: renderer.track_image = track_image
+            if renderer and chunked_map and renderer.chunked_map != chunked_map: renderer.chunked_map = chunked_map
 
         # ======== JOYSCTICK INPUTS HANDLING ======== (controller buttons)
 

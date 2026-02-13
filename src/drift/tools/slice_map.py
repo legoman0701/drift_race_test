@@ -11,7 +11,7 @@ Defaults match the project layout:
 
 USAGE EXAMPLES
 --------------
-# Basic (recommended for your current Map1.png):
+# Basic usage with defaults:
 python drift.tools.slice_map.py --input assets/track/map1/main.png --outdir assets/track/map1/chunks --tile 512 --indexing zero
 
 # With file prefix (loader supports this too):
