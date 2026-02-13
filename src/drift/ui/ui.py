@@ -351,6 +351,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
 def handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref, host_name=None, new_game_rects=None):
     """Handle game events including new game UI interactions."""
     global _new_game_rects_cache
+    track_image, chunked_map = None, None
     
     if ev.type == pygame.KEYDOWN: # press a key
         if stage1 == "lobby": # in lobby
@@ -368,7 +369,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, a
                 if ev.key in const.RETURN_KEYS:
                     setup = get_game_setup()
                     if setup["username"]:  # Only proceed if username is entered
-                        stage1, my_name, code, sock, is_host, host_name = host_new_game(my_id)
+                        stage1, my_name, code, sock, is_host, host_name, track_image, chunked_map = host_new_game(my_id) # keyboard press
                         stage2 = "" # Close new_game UI
                         is_host_flag_ref[0] = is_host
                         my_car.name = my_name # update car with new name
@@ -392,7 +393,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, a
                         set_error_message("room code too short")
                     else: # Only proceed if username is entered
                         clear_error_message()
-                        stage1, my_name, code, sock, is_host, host_name, error = join_new_game(my_id)
+                        stage1, my_name, code, sock, is_host, host_name, error, track_image, chunked_map = join_new_game(my_id) # keyboard press
                         if error: set_error_message(error)
                         else:
                             stage2 = "" # Close new_game UI
@@ -441,7 +442,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, a
                 # Get game setup and start hosting
                 setup = get_game_setup()
                 if setup["username"]:  # Only proceed if username is entered
-                    stage1, my_name, code, sock, is_host, host_name = host_new_game(my_id)
+                    stage1, my_name, code, sock, is_host, host_name, track_image, chunked_map = host_new_game(my_id) # mouse click
                     is_host_flag_ref[0] = is_host
                     stage2 = ""  # Close new_game UI
                     
@@ -455,19 +456,21 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, a
                 # Get game setup and start joining
                 setup = get_game_setup()
                 if setup["username"]:  # Only proceed if username is entered
-                    stage1, my_name, code, sock, is_host, host_name, error = join_new_game(my_id)
+                    stage1, my_name, code, sock, is_host, host_name, error, track_image, chunked_map = join_new_game(my_id) # mouse click
                     stage2 = ""  # Close new_game UI
                     
                     # Update car with new name and selected car type
                     my_car.name = my_name
                     my_car.set_car_type(setup["selected_car"])
         elif stage1 == "game" and stage2 == "" and _game_rects_cache:
-            start_btn = _game_rects_cache.get("start_btn")
+            start_btn = _game_rects_cache.get("start_btn") # Start button
             if start_btn and start_btn.collidepoint(ev.pos):
                 setup = get_game_setup()
                 if not setup["username"]: set_error_message("username missing")
-                print(f"Start button clicked - username: {setup['selected_mode']}")
+                # print(f"Start button clicked - {setup['selected_track']}")
                 stage1 = setup['selected_mode']  # Switch to selected game mode
+                track_image = None
+                chunked_map = None
                 if sock:
                     try:
                         sock.send(json.dumps({"t": "start_race", "code": code, "id": my_id}).encode("utf-8"))
@@ -492,7 +495,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, a
         (stage1 == "lobby" and stage2 == "settings" and stage3 == "")):
         settings_manager.handle_slider_events(ev)
 
-    return ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name
+    return ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map
 
 def _get_cached_hud_font(font_small: pygame.font.Font, scale: float) -> pygame.font.Font:
     """Get or create a cached scaled font for HUD elements."""

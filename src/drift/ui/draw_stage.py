@@ -1,5 +1,7 @@
 import pygame, json, time, math
 import drift.config.const as const
+from drift.render.map_chunks import ChunkedMap
+from drift.render.map_chunks import ChunkedMap
 from drift.ui.ui_helpers import invalidate_ui_text_cache, get_cached_text
 from drift.ui.button import Button
 from drift.core.helpers import rand_code
@@ -120,6 +122,7 @@ def draw_new_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.0
                                       input_box_rect.centery - username_surf.get_height() // 2))
     
     # Car selection section
+    # new car flag
     y += spacing + 35
     label = font_medium.render("Car", True, const.WHITE_240)
     ui_surf.blit(label, (center_x - label.get_width() // 2, y))
@@ -456,6 +459,7 @@ def draw_join_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.
 
 def handle_new_game_click(click_pos, rects):
     """Handle mouse clicks on new game UI elements."""
+    # new car flag
     if rects["username_box"].collidepoint(click_pos):
         _game_setup["username_active"] = True
         _game_setup["code_active"] = False
@@ -584,6 +588,7 @@ def host_new_game(my_id):
     sock = None
     is_host = True
     host_name = my_name  # When hosting, you are the host
+    track_image, chunked_map = None, None
     
     try:
         sock = connect_to_relay()
@@ -635,10 +640,15 @@ def host_new_game(my_id):
         sock = None
         code = "Offline"
         is_host = True
+
+    try: const.MAP_NUM = int(_game_setup["selected_track"][5:]) 
+    except Exception: pass
+    track_image = pygame.image.load(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
+    chunked_map = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=const.TILE_SIZE)
     
     # Invalidate UI text cache when room code changes
     invalidate_ui_text_cache('room')
-    return ("game", my_name, code, sock, is_host, host_name)
+    return ("game", my_name, code, sock, is_host, host_name, track_image, chunked_map)
 
 def join_new_game(my_id):
     """
@@ -651,12 +661,13 @@ def join_new_game(my_id):
     is_host = False
     host_name = "Host"  # Default if not received
     error = None
+    track_image, chunked_map = None, None
     
     # Special bypass code to access offline mode
     if code == "-_--_-":
         code = "Offline"
         is_host = False
-        return ("game", my_name, code, sock, is_host, host_name, error)
+        return ("game", my_name, code, sock, is_host, host_name, error, track_image, chunked_map)
     
     try:
         sock = connect_to_relay()
@@ -714,9 +725,14 @@ def join_new_game(my_id):
         code = "Offline"
         is_host = False
 
+    try: const.MAP_NUM = int(_game_setup["selected_track"][5:]) 
+    except Exception: pass
+    track_image = pygame.image.load(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
+    chunked_map = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=const.TILE_SIZE)
+
     # Invalidate UI text cache when room code changes
     invalidate_ui_text_cache('room')
-    return ("game", my_name, code, sock, is_host, host_name, error)
+    return ("game", my_name, code, sock, is_host, host_name, error, track_image, chunked_map)
 
 def draw_settings(ui_surf, world_surf, world_size, buttons, stage_path, font_small=None):    
     # Draw buttons and handle their state

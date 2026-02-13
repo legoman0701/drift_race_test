@@ -25,7 +25,7 @@ NAVBAR_Y = 10
 RELAY_Y = WINDOW_HEIGHT - 16
 BTN_WIDTH, BTN_HEIGHT = 300, 60
 
-# Font sizes (created after pygame.init())
+# Font sizes
 FONT_SMALL_SIZE = 18
 FONT_MEDIUM_SIZE = 26
 FONT_BIG_SIZE = 36
@@ -59,6 +59,7 @@ TIRE_MARK_GROUND = (220, 220, 220, 220)    # marks on ground
 
 # ======= MAP & TRACK =======
 MAP_NUM = 1
+TOTAL_MAPS = 2 # new map flag
 TILE_SIZE = 512  # Tile size for map chunks
 TRACK_MARGIN = 40
 TRACK_BORDER_WIDTH = 4
@@ -71,6 +72,7 @@ VIEW_ANGLE = 70 * math.pi / 180.0  # radians
 
 # ======= CAR SPRITES =======
 # [shadow, diffuse (main), headlights]
+# new car flag
 CAR_SPRITES = {
     "ae86": {
         "paths": [

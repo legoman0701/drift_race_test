@@ -24,13 +24,14 @@ class ChunkedMap:
         self._cache: Dict[Tuple[int, int], pygame.Surface] = {} # {(x, y): surface}
         self._cache_access_order: Dict[Tuple[int, int], int] = {}  # Track LRU
         self._access_counter = 0
-        slice_map(input_path = asset_path("track", f"map{const.MAP_NUM}", "main.png"),
-            outdir = asset_path("track", f"map{const.MAP_NUM}", "chunks"),
-            tile = const.TILE_SIZE,
-            indexing = "zero",
-            prefix = "",
-            pad_color = (28, 28, 28, 255),
-            force = False)
+        for map_num in range(1, const.TOTAL_MAPS + 1):
+            slice_map(input_path = asset_path("track", f"map{map_num}", "main.png"),
+                outdir = asset_path("track", f"map{map_num}", "chunks"),
+                tile = const.TILE_SIZE,
+                indexing = "zero",
+                prefix = "",
+                pad_color = (28, 28, 28, 255),
+                force = False)
 
     def _load_tile(self, ix: int, iy: int) -> pygame.Surface:
         # root is already a Path object, so we can use / operator or joinpath
