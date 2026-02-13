@@ -94,7 +94,14 @@ CAR_SPRITES = {
             "cars/911/Diffuse/Image{i:04}.png",
             "cars/911/Light_Spray/Image{i:04}.png"
         ]
-    }
+    },
+    "mustang": {
+        "paths": [
+            "cars/mustang/Shadow_Map/Image{i:04}.png",
+            "cars/mustang/Diffuse/Image{i:04}.png",
+            "cars/mustang/Light_Spray/Image{i:04}.png"
+        ]
+    },
 }
 
 # ======= KEY BINDINGS =======

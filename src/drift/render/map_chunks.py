@@ -32,6 +32,36 @@ class ChunkedMap:
                 prefix = "",
                 pad_color = (28, 28, 28, 255),
                 force = False)
+        self._world_size = self._compute_world_size_from_chunks()
+
+    def _compute_world_size_from_chunks(self) -> Tuple[int, int]:
+        """Compute finite world size from available chunk indices."""
+        root_path = str(self.root)
+        max_ix, max_iy = -1, -1
+        try:
+            for name in os.listdir(root_path):
+                if not name.endswith(".png"):
+                    continue
+                stem = os.path.splitext(name)[0]
+                if "_" not in stem:
+                    continue
+                xs, ys = stem.split("_", 1)
+                ix, iy = int(xs), int(ys)
+                if ix > max_ix:
+                    max_ix = ix
+                if iy > max_iy:
+                    max_iy = iy
+        except Exception:
+            pass
+
+        if max_ix < 0 or max_iy < 0:
+            return const.WINDOW_WIDTH, const.WINDOW_HEIGHT
+
+        return (max_ix + 1) * self.tile_size, (max_iy + 1) * self.tile_size
+
+    def get_world_size(self) -> Tuple[int, int]:
+        """Return world dimensions in pixels derived from chunk coverage."""
+        return self._world_size
 
     def _load_tile(self, ix: int, iy: int) -> pygame.Surface:
         # root is already a Path object, so we can use / operator or joinpath
