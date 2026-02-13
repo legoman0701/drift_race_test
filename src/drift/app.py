@@ -646,7 +646,7 @@ def main():
             if ev.type == pygame.KEYDOWN and ev.key == const.AI_KEY: # N to add AI car
                 if I_AM_HOST and stage1 == "game":
                     # Randomly assign car type for AI cars
-                    ai_car_type = random.choice(["ae86", "barracuda", "911"])
+                    ai_car_type = random.choice(["ae86", "barracuda", "911", "mustang"]) # new car flag
                     ai_cars.append(
                         car.Car(
                             random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200),
@@ -699,7 +699,7 @@ def main():
                 ctlr_btn3_time = time.time()
                 if I_AM_HOST and stage1 == "game":
                     # Randomly assign car type for AI cars
-                    ai_car_type = random.choice(["ae86", "barracuda", "911"])
+                    ai_car_type = random.choice(["ae86", "barracuda", "911", "mustang"]) # new car flag
                     ai_cars.append(
                         car.Car(
                             random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200),
