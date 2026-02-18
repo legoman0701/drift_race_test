@@ -8,7 +8,7 @@ from drift.core.helpers import rand_code
 from drift.net.communication import connect_to_relay, recv_jsons
 from drift.ui.slider import Slider
 from drift.config.settings import settings_manager
-from drift.tools.paths import normalize_asset_path
+from drift.tools.paths import asset_path, normalize_asset_path
 
 # Game setup state (shared across new_game and join_game UI)
 _game_setup = {
@@ -70,11 +70,26 @@ def draw_game(ui_surf, font_big, font_medium, is_host):
     
     return {}
 
-def draw_mode1(ui_surf, font_big, font_medium):
-    """Draw the main game mode UI (placeholder for now)."""
-    # Placeholder text
-    text = font_big.render("Game Mode 1 - In Development", True, const.WHITE_240)
-    ui_surf.blit(text, (const.WINDOW_WIDTH // 2 - text.get_width() // 2, const.WINDOW_HEIGHT // 2 - text.get_height() // 2))
+def draw_mode1(ui_surf, font_big, font_medium, cp_rects=[]):
+    ### --- this has to be where the map is first computed ---
+    meta_path = asset_path("track", f"map{const.MAP_NUM}", "map_meta.json")
+    try:
+        with open(meta_path, "r", encoding="utf-8") as fh: meta = json.load(fh)
+        checkpoints = meta.get("checkpoints", {})
+        for cp in checkpoints:
+            rect = pygame.Rect(cp.get("x", 0), cp.get("y", 0), cp.get("width", 0), cp.get("height", 0))
+            cp_rects.append(rect)
+    except Exception as e: print(f"Error reading map metadata: {e}")
+    ### --- end ---
+
+    # draw checkpoints
+    for rect in cp_rects:
+        # screen_x = rect.x - camera_x
+        # screen_y = rect.y - camera_y
+        # rect = pygame.Rect(screen_x, screen_y, rect.width, rect.height)
+        # pygame.draw.rect(screen, (0, 255, 0), draw_rect, 2)
+        pass
+
     return {}
 
 def draw_mode2(ui_surf, font_big, font_medium):

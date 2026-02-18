@@ -18,7 +18,7 @@ class ChunkedMap:
                  max_cached_chunks: int = 64) -> None:
         
         if root is None: root = asset_path("track", f"map{const.MAP_NUM}", "chunks")
-        self.root = root
+        self.root = root # map root
         self.tile_size = tile_size
         self.default_color = default_color
         self.max_cached_chunks = max_cached_chunks
