@@ -106,10 +106,6 @@ class Car:
             self.target_angle = self.angle + math.copysign(max_angle_difference, angle_diff)
             # Normalize again
             self.target_angle = ((self.target_angle + math.pi) % (2 * math.pi)) - math.pi
-        
-        # Calculate steering input to reach target angle
-        angle_error = ((self.target_angle - self.angle + math.pi) % (2 * math.pi)) - math.pi
-        steering_input = clamp(angle_error * 2.0, -1.0, 1.0)  # P controller with gain 2.0
 
         # Orientation and basis vectors
         forward_x, forward_y = math.cos(self.angle), math.sin(self.angle)
@@ -118,6 +114,10 @@ class Car:
         # Velocity in body frame (x: forward, y: right)
         body_forward_speed = self.vx * forward_x + self.vy * forward_y
         body_lateral_speed = self.vx * right_x + self.vy * right_y
+
+        # Calculate steering input to reach target angle
+        angle_error = ((self.target_angle - self.angle + math.pi) % (2 * math.pi)) - math.pi
+        steering_input = clamp(angle_error * 2.0, -1.0, 1.0) * math.copysign(1, body_forward_speed)  # P controller with gain 2.0
 
         # Drift angle/ratio (difference between velocity vector and heading)
         speed_norm = math.sqrt(body_forward_speed**2 + body_lateral_speed**2 + 1e-4)
