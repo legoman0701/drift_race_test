@@ -1,5 +1,9 @@
 # activate or create .venv and select it
 
+param (
+    [switch]$SkipInstall
+)
+
 $ErrorActionPreference = "Stop" # stop on errors
 $env:PIP_DISABLE_PIP_VERSION_CHECK = '1'  # quiet pip's update ping
 
@@ -16,18 +20,20 @@ if (-not (Test-Path $ActivateScript)) {
     Write-Host "[INFO] Created virtual environment in $VENV"
 }
 
-# upgrade pip
-& $PythonExe -m pip install --upgrade pip setuptools wheel
-Write-Host "[INFO] Upgraded pip, setuptools, and wheel."
-
-# install dependencies
-if (Test-Path "requirements.txt") {
-    & $PipExe install -r requirements.txt
-    Write-Host "[INFO] Installed dependencies from requirements.txt."
-}
-if (Test-Path "pyproject.toml") {
-    & $PipExe install -e .
-    Write-Host "[INFO] Installed dependencies from pyproject.toml."
+if (-not $SkipInstall) {
+    # upgrade pip
+    & $PythonExe -m pip install --upgrade pip setuptools wheel
+    Write-Host "[INFO] Upgraded pip, setuptools, and wheel."
+    
+    # install dependencies
+    if (Test-Path "requirements.txt") {
+        & $PipExe install -r requirements.txt
+        Write-Host "[INFO] Installed dependencies from requirements.txt."
+    }
+    if (Test-Path "pyproject.toml") {
+        & $PipExe install -e .
+        Write-Host "[INFO] Installed dependencies from pyproject.toml."
+    }
 }
 
 # activate .venv
