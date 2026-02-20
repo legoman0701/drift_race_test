@@ -14,10 +14,11 @@ class WorldRenderer:
     - Chunk mode: when playing, we draw only the visible tiles (viewport-sized surface).
     """
 
-    def __init__(self, track_image: pygame.Surface, flags: int, chunked_map: Optional[ChunkedMap] = None) -> None:
+    def __init__(self, track_image: pygame.Surface, flags: int, chunked_map: Optional[ChunkedMap] = None, checkpoints: Optional[List[pygame.Rect]] = None) -> None:
         self.track_image = track_image
         self.flags = flags
         self.chunked_map = chunked_map
+        self.checkpoints = checkpoints
 
         # classic tire mark acc (single surface sized to the whole map)
         self.tire_mark = pygame.Surface((track_image.get_width(), track_image.get_height()), pygame.SRCALPHA)

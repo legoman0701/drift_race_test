@@ -672,11 +672,12 @@ def main():
                 cam.offset[0] -= ev.rel[0] / cam.zoom
                 cam.offset[1] -= ev.rel[1] / cam.zoom
 
-            ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map = handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name)
+            ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map, checkpoints = handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name)
             I_AM_HOST = host_ref[0]
             # update map changes
             if renderer and track_image and renderer.track_image != track_image: renderer.track_image = track_image
             if renderer and chunked_map and renderer.chunked_map != chunked_map: renderer.chunked_map = chunked_map
+            if renderer and checkpoints: renderer.checkpoints = checkpoints
 
         # ======== JOYSCTICK INPUTS HANDLING ======== (controller buttons)
 
@@ -833,7 +834,7 @@ def main():
         ui_surf.fill((0,0,0,0)) # transparent surface
         fps = clock.get_fps()
         world_surf, button_results, new_game_rects, join_game_rects = draw_stage_ui(
-            ui_surf, stage1, stage2, stage3, code, world_surf, world_size, 
+            ui_surf, stage1, stage2, stage3, code, world_surf, world_size, renderer.checkpoints,
             settings_buttons, error_msg, my_car, cam, joysticks, font_big, font_medium, font_small,
             controls, engine_state, fps, dt, I_AM_HOST, host_name, car_sprites_cache
         )
