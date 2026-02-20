@@ -236,7 +236,7 @@ def draw_footer(surface: str, font_small, code=None):
                                  cache_key=(id(font_small), "room_code", room_label))
     surface.blit(code_text, (10, const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y + 5))
 
-def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size, buttons, 
+def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size, checkpoints, buttons, 
                   error_msg, my_car, cam, joysticks, font_big, font_medium, font_small,
                   ai_path_mode_controls, engine_state, fps, dt, is_host, host_name=None, car_sprites_cache=None):
     """Draw UI elements based on current stage levels (stage1, stage2, stage3).
@@ -315,7 +315,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
                 draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
         else:
             _key_binds_rects_cache = None  # Clear cache when not in settings
-            draw_mode1(ui_surf, font_big, font_medium)
+            draw_mode1(ui_surf, font_big, font_medium, cam, checkpoints)
             draw_header(ui_surf, font_big, font_small, "Mode 1", fps, host_name)
             draw_controls_hud(ui_surf, ai_path_mode_controls, joysticks, my_car, cam, font_small, dt, engine_state, 7000)
         draw_footer(ui_surf, font_small, code)
@@ -334,7 +334,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
                 draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
         else:
             _key_binds_rects_cache = None  # Clear cache when not in settings
-            draw_mode2(ui_surf, font_big, font_medium)
+            draw_mode2(ui_surf, font_big, font_medium, cam, checkpoints)
             draw_header(ui_surf, font_big, font_small, "Mode 2", fps, host_name)
             draw_controls_hud(ui_surf, ai_path_mode_controls, joysticks, my_car, cam, font_small, dt, engine_state, 7000)
         draw_footer(ui_surf, font_small, code)
@@ -351,7 +351,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
 def handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref, host_name=None, new_game_rects=None):
     """Handle game events including new game UI interactions."""
     global _new_game_rects_cache
-    track_image, chunked_map = None, None
+    track_image, chunked_map, checkpoints = None, None, None
     
     if ev.type == pygame.KEYDOWN: # press a key
         if stage1 == "lobby": # in lobby
@@ -369,7 +369,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, a
                 if ev.key in const.RETURN_KEYS:
                     setup = get_game_setup()
                     if setup["username"]:  # Only proceed if username is entered
-                        stage1, my_name, code, sock, is_host, host_name, track_image, chunked_map = host_new_game(my_id) # keyboard press
+                        stage1, my_name, code, sock, is_host, host_name, track_image, chunked_map, checkpoints = host_new_game(my_id) # keyboard press
                         stage2 = "" # Close new_game UI
                         is_host_flag_ref[0] = is_host
                         my_car.name = my_name # update car with new name
@@ -393,7 +393,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, a
                         set_error_message("room code too short")
                     else: # Only proceed if username is entered
                         clear_error_message()
-                        stage1, my_name, code, sock, is_host, host_name, error, track_image, chunked_map = join_new_game(my_id) # keyboard press
+                        stage1, my_name, code, sock, is_host, host_name, error, track_image, chunked_map, checkpoints = join_new_game(my_id) # keyboard press
                         if error: set_error_message(error)
                         else:
                             stage2 = "" # Close new_game UI
@@ -442,7 +442,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, a
                 # Get game setup and start hosting
                 setup = get_game_setup()
                 if setup["username"]:  # Only proceed if username is entered
-                    stage1, my_name, code, sock, is_host, host_name, track_image, chunked_map = host_new_game(my_id) # mouse click
+                    stage1, my_name, code, sock, is_host, host_name, track_image, chunked_map, checkpoints = host_new_game(my_id) # mouse click
                     is_host_flag_ref[0] = is_host
                     stage2 = ""  # Close new_game UI
                     
@@ -456,7 +456,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, a
                 # Get game setup and start joining
                 setup = get_game_setup()
                 if setup["username"]:  # Only proceed if username is entered
-                    stage1, my_name, code, sock, is_host, host_name, error, track_image, chunked_map = join_new_game(my_id) # mouse click
+                    stage1, my_name, code, sock, is_host, host_name, error, track_image, chunked_map, checkpoints = join_new_game(my_id) # mouse click
                     stage2 = ""  # Close new_game UI
                     
                     # Update car with new name and selected car type
@@ -495,7 +495,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, a
         (stage1 == "lobby" and stage2 == "settings" and stage3 == "")):
         settings_manager.handle_slider_events(ev)
 
-    return ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map
+    return ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map, checkpoints
 
 def _get_cached_hud_font(font_small: pygame.font.Font, scale: float) -> pygame.font.Font:
     """Get or create a cached scaled font for HUD elements."""

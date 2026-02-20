@@ -70,33 +70,78 @@ def draw_game(ui_surf, font_big, font_medium, is_host):
     
     return {}
 
-def draw_mode1(ui_surf, font_big, font_medium, cp_rects=[]):
-    ### --- this has to be where the map is first computed ---
-    meta_path = asset_path("track", f"map{const.MAP_NUM}", "map_meta.json")
-    try:
-        with open(meta_path, "r", encoding="utf-8") as fh: meta = json.load(fh)
-        checkpoints = meta.get("checkpoints", {})
-        for cp in checkpoints:
-            rect = pygame.Rect(cp.get("x", 0), cp.get("y", 0), cp.get("width", 0), cp.get("height", 0))
-            cp_rects.append(rect)
-    except Exception as e: print(f"Error reading map metadata: {e}")
-    ### --- end ---
-
+def draw_mode1(ui_surf, font_big, font_medium, cam, cp_rects=[]):
+    # screen dimensions for culling
+    if not cp_rects:
+        return {}
+    
+    screen_rect = ui_surf.get_rect()
+    
     # draw checkpoints
     for rect in cp_rects:
-        # screen_x = rect.x - camera_x
-        # screen_y = rect.y - camera_y
-        # rect = pygame.Rect(screen_x, screen_y, rect.width, rect.height)
-        # pygame.draw.rect(screen, (0, 255, 0), draw_rect, 2)
-        pass
+        # Transform world coordinates to screen coordinates
+        # using the camera's offset and zoom
+        # The camera center is at cam.x, cam.y
+        # Screen center is at const.WINDOW_WIDTH // 2, const.WINDOW_HEIGHT // 2
+        
+        # Calculate position relative to camera center
+        rel_x = rect.x - cam.x
+        rel_y = rect.y - cam.y
+        
+        # Scale by zoom and offset by screen center
+        screen_x = int(rel_x * cam.zoom + const.WINDOW_WIDTH / 2)
+        screen_y = int(rel_y * cam.zoom + const.WINDOW_HEIGHT / 2)
+        
+        width = int(rect.width * cam.zoom)
+        height = int(rect.height * cam.zoom)
+        
+        draw_rect = pygame.Rect(screen_x, screen_y, width, height)
+        
+        # Draw only if visible on screen (culling)
+        if screen_rect.colliderect(draw_rect):
+            pygame.draw.rect(ui_surf, (0, 255, 0), draw_rect, 2)
+            
+            # Optional: Draw label ID
+            # label = font_medium.render(str(cp_rects.index(rect)), True, const.WHITE_240)
+            # ui_surf.blit(label, draw_rect.center)
 
     return {}
 
-def draw_mode2(ui_surf, font_big, font_medium):
-    """Draw the main game mode UI (placeholder for now)."""
-    # Placeholder text
-    text = font_big.render("Game Mode 2 - In Development", True, const.WHITE_240)
-    ui_surf.blit(text, (const.WINDOW_WIDTH // 2 - text.get_width() // 2, const.WINDOW_HEIGHT // 2 - text.get_height() // 2))
+def draw_mode2(ui_surf, font_big, font_medium, cam, cp_rects=[]):
+    # screen dimensions for culling
+    if not cp_rects:
+        return {}
+    
+    screen_rect = ui_surf.get_rect()
+    
+    # draw checkpoints
+    for rect in cp_rects:
+        # Transform world coordinates to screen coordinates
+        # using the camera's offset and zoom
+        # The camera center is at cam.x, cam.y
+        # Screen center is at const.WINDOW_WIDTH // 2, const.WINDOW_HEIGHT // 2
+        
+        # Calculate position relative to camera center
+        rel_x = rect.x - cam.x
+        rel_y = rect.y - cam.y
+        
+        # Scale by zoom and offset by screen center
+        screen_x = int(rel_x * cam.zoom + const.WINDOW_WIDTH / 2)
+        screen_y = int(rel_y * cam.zoom + const.WINDOW_HEIGHT / 2)
+        
+        width = int(rect.width * cam.zoom)
+        height = int(rect.height * cam.zoom)
+        
+        draw_rect = pygame.Rect(screen_x, screen_y, width, height)
+        
+        # Draw only if visible on screen (culling)
+        if screen_rect.colliderect(draw_rect):
+            pygame.draw.rect(ui_surf, (0, 255, 0), draw_rect, 2)
+            
+            # Optional: Draw label ID
+            # label = font_medium.render(str(cp_rects.index(rect)), True, const.WHITE_240)
+            # ui_surf.blit(label, draw_rect.center)
+
     return {}
 
 def draw_error(ui_surf, error_msg, font_small):
@@ -698,9 +743,19 @@ def host_new_game(my_id):
     track_image = pygame.image.load(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
     chunked_map = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=const.TILE_SIZE)
     
+    _cp_rects = []
+    meta_path = asset_path("track", f"map{const.MAP_NUM}", "map_meta.json")
+    try:
+        with open(meta_path, "r", encoding="utf-8") as fh: meta = json.load(fh)
+        checkpoints = meta.get("checkpoints", {})
+        for cp in checkpoints:
+            rect = pygame.Rect(cp.get("x", 0), cp.get("y", 0), cp.get("width", 0), cp.get("height", 0))
+            _cp_rects.append(rect)
+    except Exception as e: print(f"Error reading map metadata: {e}")
+
     # Invalidate UI text cache when room code changes
     invalidate_ui_text_cache('room')
-    return ("game", my_name, code, sock, is_host, host_name, track_image, chunked_map)
+    return ("game", my_name, code, sock, is_host, host_name, track_image, chunked_map, _cp_rects)
 
 def join_new_game(my_id):
     """
@@ -714,12 +769,6 @@ def join_new_game(my_id):
     host_name = "Host"  # Default if not received
     error = None
     track_image, chunked_map = None, None
-    
-    # Special bypass code to access offline mode
-    if code == "-_--_-":
-        code = "Offline"
-        is_host = False
-        return ("game", my_name, code, sock, is_host, host_name, error, track_image, chunked_map)
     
     try:
         sock = connect_to_relay()
@@ -781,10 +830,20 @@ def join_new_game(my_id):
     except Exception: pass
     track_image = pygame.image.load(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
     chunked_map = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=const.TILE_SIZE)
+    
+    _cp_rects = []
+    meta_path = asset_path("track", f"map{const.MAP_NUM}", "map_meta.json")
+    try:
+        with open(meta_path, "r", encoding="utf-8") as fh: meta = json.load(fh)
+        checkpoints = meta.get("checkpoints", [])
+        for cp in checkpoints:
+            rect = pygame.Rect(cp.get("x", 0), cp.get("y", 0), cp.get("width", 0), cp.get("height", 0))
+            _cp_rects.append(rect)
+    except Exception as e: print(f"Error reading map metadata: {e}")
 
     # Invalidate UI text cache when room code changes
     invalidate_ui_text_cache('room')
-    return ("game", my_name, code, sock, is_host, host_name, error, track_image, chunked_map)
+    return ("game", my_name, code, sock, is_host, host_name, error, track_image, chunked_map, _cp_rects)
 
 def draw_settings(ui_surf, world_surf, world_size, buttons, stage_path, font_small=None):    
     # Draw buttons and handle their state
