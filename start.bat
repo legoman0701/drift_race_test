@@ -25,6 +25,11 @@ if not exist "%ActivateScript%" (
 :: disable pip version check (annoying)
 set "PIP_DISABLE_PIP_VERSION_CHECK=1"
 
+if /i "%~1"=="s" (
+    echo [INFO] Skipping dependency installation.
+    goto :activate
+)
+
 :: upgrade pip
 "%PYEXE%" -m pip install --upgrade pip setuptools wheel || echo [WARN] Failed to upgrade pip. Continuing anyway.
 
@@ -39,5 +44,6 @@ if exist "pyproject.toml" (
 )
 
 :: activate the virtual environment
+:activate
 call "%ActivateScript%" || (echo [ERROR] Failed to activate virtual environment.& exit /b 1)
 echo [OK] .venv activated. to deactivate, run: deactivate
