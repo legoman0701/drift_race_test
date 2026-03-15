@@ -1,6 +1,6 @@
 import json, math
 import drift.config.const as const
-from tools.paths import normalize_asset_path
+from drift.tools.paths import normalize_asset_path
 
 # world
 WINDOW_WIDTH, WINDOW_HEIGHT = 1000, 700

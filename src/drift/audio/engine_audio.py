@@ -14,7 +14,7 @@ Uses authentic BeamNG load calculation and gain mixing with EQ filtering.
 """
 
 import pygame, json, re, os, math
-from tools.paths import asset_path, normalize_asset_path
+from drift.tools.paths import asset_path, normalize_asset_path
 # turbo import
 try: from drift.audio.turbo_sound import TurboSound, MultiTrackTurboSound  # type: ignore
 except Exception:  # pragma: no cover

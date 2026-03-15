@@ -5,7 +5,7 @@
 # global imports
 import pygame, json, time, random, sys, math, uuid, argparse, threading
 # local imports
-from tools.paths import asset_path, chdir_to_exe_folder_if_frozen, normalize_asset_path
+from drift.tools.paths import asset_path, chdir_to_exe_folder_if_frozen, normalize_asset_path
 import drift.config.const as const
 import drift.render.camera as camera
 import drift.core.car as car

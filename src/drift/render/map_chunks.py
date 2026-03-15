@@ -1,8 +1,8 @@
 import pygame
 from typing import Dict, Tuple, Optional, Iterable
 import os, drift.config.const as const
-from tools.paths import asset_path
-from tools.slice_map import slice_map
+from drift.tools.paths import asset_path
+from drift.tools.slice_map import slice_map
 
 class ChunkedMap:
     """
