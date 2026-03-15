@@ -79,16 +79,17 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
                 if is_host and isinstance(pid, str) and pid.startswith("AI-"):
                     # host owns AI locally; skip echoed server AI
                     continue
-                tx, ty, ta, tdr = float(d["x"]), float(d["y"]), float(d["a"]), float(d["drift_ratio"])
+                tx, ty, ta = float(d["x"]), float(d["y"]), float(d["a"])
+                thg = d.get("has_grip", [1.0, 1.0, 1.0, 1.0])
                 name = d.get("name", f"Player{pid}")
                 car_type = d.get("car_type", "ae86")
                 if pid not in remotes:
-                    remotes[pid] = {"x": tx, "y": ty, "a": ta, "name": name, "drift_ratio": tdr, "car_type": car_type}
+                    remotes[pid] = {"x": tx, "y": ty, "a": ta, "name": name, "has_grip": thg, "car_type": car_type}
                 else:
                     cur = remotes[pid]
                     cur["x"] += (tx - cur["x"]) * alpha_pos
                     cur["y"] += (ty - cur["y"]) * alpha_pos
-                    cur["drift_ratio"] += (tdr - cur["drift_ratio"]) * alpha_pos
+                    cur["has_grip"] = thg
                     da = ((ta - cur["a"] + math.pi) % (2 * math.pi)) - math.pi
                     cur["a"] = (cur["a"] + da * alpha_angle) % (2 * math.pi)
                     cur["name"] = name
@@ -112,7 +113,7 @@ def send_network_state(sock, code: str, my_id: str, my_car):
         "a": round(my_car.angle, 4),
         "vx": round(my_car.vx, 2),
         "vy": round(my_car.vy, 2),
-        "drift_ratio": round(my_car.drift_ratio, 2),
+        "has_grip": [round(v, 3) for v in my_car.has_grip],
         "name": my_car.name,
         "car_type": getattr(my_car, "car_type", "ae86"),
     }
@@ -133,7 +134,7 @@ def send_ai_states(sock, code: str, ai_cars):
             "a": round(ai.angle, 4),
             "vx": round(ai.vx, 2),
             "vy": round(ai.vy, 2),
-            "drift_ratio": round(ai.drift_ratio, 2),
+            "has_grip": [round(v, 3) for v in ai.has_grip],
             "name": ai.name,
             "car_type": getattr(ai, "car_type", "ae86"),
         }
