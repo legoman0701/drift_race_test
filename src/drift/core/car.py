@@ -60,6 +60,7 @@ class Car:
         self.car_type = car_type
         self.drift_points = [(0,0),(0,0)]
         self.drift_points_old = [(0,0),(0,0)]
+        self.has_grip = (1.0, 1.0, 1.0, 1.0)  # wheel grip coefficient (FL, FR, RL, RR)
         # Target angle steering system
         self.target_angle = 0.0
         # Per-wheel debug data populated each step
@@ -159,6 +160,7 @@ class Car:
         total_force_body_y = 0.0
         total_torque_z = 0.0
         wheel_debug_list = [] if compute_debug else None
+        grip_per_wheel = []
 
         for index, (wx_local, wy_local) in enumerate(wheel_local_positions):
             # Velocity at wheel contact in body frame: v + omega x r
@@ -186,6 +188,7 @@ class Car:
             long_grip = (100-abs(longitudinal_force))/(100-20)
 
             has_grip = clamp(clamp(lat_grip, 0.0, 1.0) * clamp(long_grip, 0.0, 1.0), 0.1, 1.0)
+            grip_per_wheel.append(has_grip)
 
             lateral_force = -wheel_speed_lat * CORNERING_STIFFNESS*5 * has_grip
             lateral_force = clamp(lateral_force, -LATERAL_FORCE_MAX, LATERAL_FORCE_MAX)
@@ -217,6 +220,8 @@ class Car:
                     "F_lat": lateral_force,
                     "slip": slip_angle,
                 })
+
+        self.has_grip = tuple(grip_per_wheel)
 
         # Convert total body forces to world frame
         total_force_world_x = total_force_body_x * forward_x + total_force_body_y * right_x
