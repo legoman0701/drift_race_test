@@ -60,6 +60,14 @@ class Car:
         self.car_type = car_type
         self.drift_points = [(0,0),(0,0)]
         self.drift_points_old = [(0,0),(0,0)]
+        # Target angle steering system
+        self.target_angle = 0.0
+        # Processed steering values for UI display
+        self.raw_steering_input = 0.0
+        self.processed_steering_input = 0.0
+        self.wheel_steer_angle = 0.0
+        # Collision tracking for particle effects (client-side)
+        self.last_collision = None  # {"pos": (x, y), "angle": angle, "intensity": float}
         # Per-wheel debug data populated each step
         self.wheel_debug = {
             "wheels": []  # list of dicts per wheel
@@ -240,6 +248,9 @@ class Car:
             }
         self._handle_track_bounds(dt, bounds)
 
+        # Clear previous collision
+        self.last_collision = None
+        
         # OBB vs OBB collisions with other cars (players dict contains x,y,a)
         for pid, d in players.items():
             if d["name"] == self.name:
@@ -261,6 +272,17 @@ class Car:
                     # bounce component
                     self.vx -= (1.0 + WALL_RESTITUTION) * v_dot_n * nxn
                     self.vy -= (1.0 + WALL_RESTITUTION) * v_dot_n * nyn
+                    # Record collision for particle effects
+                    collision_intensity = min(2.0, abs(v_dot_n) / 100.0)
+                    collision_angle = math.atan2(nyn, nxn)
+                    # Collision point is roughly between the two cars
+                    col_x = (self.x + d["x"]) / 2
+                    col_y = (self.y + d["y"]) / 2
+                    self.last_collision = {
+                        "pos": (col_x, col_y),
+                        "angle": collision_angle,
+                        "intensity": collision_intensity
+                    }
                 
         ca, sa = math.cos(self.angle), math.sin(self.angle)
         halfL, halfW = CAR_LEN * 0.5, CAR_WID * 0.5

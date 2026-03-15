@@ -153,6 +153,7 @@ class WorldRenderer:
                      lights_on: bool,
                      car_sprites_cache: Dict[str, List[List[pygame.Surface]]],
                      draw_remotes: bool = True,
+                     particle_system = None,
                      ) -> Tuple[pygame.Surface, bool]:
         """
         Render track, cars, and marks.
@@ -174,6 +175,27 @@ class WorldRenderer:
             # Tire marks accumulation (local + AIs)
             self._update_tire_marks_chunked(my_car, ai_cars, remotes, camera_rect)
             self._blit_tire_marks_chunked(world_surf, camera_rect)
+
+            # Particles (before cars so they appear underneath)
+            if particle_system is not None:
+                viewport_x = cam.x - (const.WINDOW_WIDTH / cam.zoom) / 2
+                viewport_y = cam.y - (const.WINDOW_HEIGHT / cam.zoom) / 2
+                for particle in particle_system.particles:
+                    if (viewport_x <= particle.x <= viewport_x + vw and 
+                        viewport_y <= particle.y <= viewport_y + vh):
+                        px = int(particle.x - viewport_x)
+                        py = int(particle.y - viewport_y)
+                        alpha = max(0, min(255, int(particle.color[3] * (1.0 - particle.age / particle.life))))
+                        if alpha > 0 and 0 <= px < vw and 0 <= py < vh:
+                            try:
+                                if particle.size == 1:
+                                    world_surf.set_at((px, py), (particle.color[0], particle.color[1], particle.color[2], alpha))
+                                else:
+                                    particle_img = particle_system._particle_surfaces[particle.size]
+                                    particle_img.fill((particle.color[0], particle.color[1], particle.color[2], alpha))
+                                    world_surf.blit(particle_img, (px - particle.size//2, py - particle.size//2))
+                            except:
+                                pass
 
             # Cars (AIs first)
             offx, offy = camera_rect.left, camera_rect.top
@@ -235,6 +257,10 @@ class WorldRenderer:
         # 2) Tire Marks
         self._update_tire_marks(my_car, ai_cars, remotes, stage)
         self._blit_visible_tire_marks(world_surf, cam)
+
+        # 2.5) Particles (before cars so they appear underneath)
+        if particle_system is not None:
+            particle_system.render_world(world_surf, None)
 
         # 3) Draw all local AI-controlled cars
         for ai_car in ai_cars:

@@ -41,20 +41,20 @@ class RacingParticleEffects:
         
         # Number of particles based on intensity and speed
         speed = math.sqrt(velocity[0]**2 + velocity[1]**2)
-        particle_count = max(1, int(intensity * (1 + speed * 0.02)))
-        particle_count = min(particle_count, 15)  # Performance cap
+        particle_count = max(1, int(intensity * (1 + speed * 0.01)))  # Reduced from 0.02
+        particle_count = min(particle_count, 8)  # Reduced from 15
         
         for _ in range(particle_count):
             # Exhaust direction with spread
-            base_angle = car_angle + math.pi + random.uniform(-0.3, 0.3)
+            base_angle = car_angle + math.pi + random.uniform(-0.2, 0.2)
             exhaust_speed = random.uniform(30, 80) * intensity
             
-            vel = (math.cos(base_angle) * exhaust_speed + random.uniform(-20, 20),
-                   math.sin(base_angle) * exhaust_speed + random.uniform(-20, 20))
+            vel = (math.cos(base_angle) * exhaust_speed + random.uniform(-8, 8),
+                   math.sin(base_angle) * exhaust_speed + random.uniform(-8, 8))
             
             # Position spread
-            particle_pos = (exhaust_pos[0] + random.uniform(-5, 5),
-                           exhaust_pos[1] + random.uniform(-5, 5))
+            particle_pos = (exhaust_pos[0] + random.uniform(-2, 2),
+                           exhaust_pos[1] + random.uniform(-2, 2))
             
             # Color based on engine temperature
             if engine_temp > 1.5:  # Hot engine - darker smoke
@@ -68,7 +68,7 @@ class RacingParticleEffects:
                 particle_pos, vel,
                 (0, 15),  # slight downward acceleration
                 random.uniform(0.8, 2.2),  # life
-                random.randint(3, 6),  # size
+                random.randint(1, 3),  # size - reduced from (3, 6)
                 (gray, gray, gray, alpha)
             )
     
@@ -85,32 +85,39 @@ class RacingParticleEffects:
         if drift_intensity < 0.3:  # Only create smoke for significant drifting
             return
         
-        # Color based on surface type
+        # Drift smoke is always white/grayscale on asphalt (0.8-1.0 range)
+        # For other surfaces, keep original colors
         if surface_type == "dirt":
             base_color = (139, 69, 19)  # Brown
             color_variance = 40
         elif surface_type == "grass":
             base_color = (34, 139, 34)  # Green
             color_variance = 30
-        else:  # asphalt
-            base_color = (200, 200, 200)  # Light gray
-            color_variance = 50
+        else:  # asphalt - white drift smoke
+            base_color = (230, 230, 230)  # Bright white/gray
+            color_variance = 25  # Reduced variance for more consistent white
         
         for tire_pos in tire_positions:
-            particle_count = max(1, int(drift_intensity * 20))
+            particle_count = max(1, int(drift_intensity * 5))  # Reduced for less particles
             
             for _ in range(particle_count):
                 # Random velocity spread
-                vel = (random.uniform(-40, 40), random.uniform(-40, 40))
+                vel = (random.uniform(-20, 20), random.uniform(-20, 20))
                 
                 # Position spread around tire
-                particle_pos = (tire_pos[0] + random.uniform(-8, 8),
-                               tire_pos[1] + random.uniform(-8, 8))
+                particle_pos = (tire_pos[0] + random.uniform(-3, 3),
+                               tire_pos[1] + random.uniform(-3, 3))
                 
-                # Color with variance
-                r = max(0, min(255, base_color[0] + random.randint(-color_variance, color_variance)))
-                g = max(0, min(255, base_color[1] + random.randint(-color_variance, color_variance)))
-                b = max(0, min(255, base_color[2] + random.randint(-color_variance, color_variance)))
+                # Color with variance - for asphalt, use grayscale range 0.8-1.0 (204-255)
+                if surface_type == "asphalt":
+                    # White drift smoke with slight variation (0.8 to 1.0 range = 204-255)
+                    gray_value = random.randint(204, 255)
+                    r = g = b = gray_value
+                else:
+                    r = max(0, min(255, base_color[0] + random.randint(-color_variance, color_variance)))
+                    g = max(0, min(255, base_color[1] + random.randint(-color_variance, color_variance)))
+                    b = max(0, min(255, base_color[2] + random.randint(-color_variance, color_variance)))
+                
                 alpha = random.randint(80, 160)
                 
                 # Acceleration based on surface (dust/smoke behavior)
@@ -122,7 +129,7 @@ class RacingParticleEffects:
                 self.particle_system.add_particle(
                     particle_pos, vel, acc,
                     random.uniform(1.0, 3.0),  # longer life for drift smoke
-                    random.randint(4, 8),  # larger particles
+                    random.randint(1, 2),  # smaller particles
                     (r, g, b, alpha)
                 )
     
@@ -140,15 +147,15 @@ class RacingParticleEffects:
         
         for _ in range(particle_count):
             # Sparks fly in hemisphere away from collision
-            spark_angle = collision_angle + random.uniform(-math.pi/2, math.pi/2)
-            spark_speed = random.uniform(50, 200) * intensity
+            spark_angle = collision_angle + random.uniform(-math.pi/3, math.pi/3)
+            spark_speed = random.uniform(80, 180) * intensity
             
             vel = (math.cos(spark_angle) * spark_speed,
                    math.sin(spark_angle) * spark_speed)
             
             # Position spread
-            particle_pos = (pos[0] + random.uniform(-3, 3),
-                           pos[1] + random.uniform(-3, 3))
+            particle_pos = (pos[0] + random.uniform(-1, 1),
+                           pos[1] + random.uniform(-1, 1))
             
             # Spark colors (yellow to orange to red)
             color_choice = random.choice([

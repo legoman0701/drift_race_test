@@ -20,6 +20,8 @@ from drift.ui.ui import handle_game_events, draw_stage_ui, invalidate_ui_text_ca
 from drift.core.rpm import calc_engine_rpm
 from drift.audio.engine_audio import EngineAudio
 from drift.render.map_chunks import ChunkedMap
+from drift.render.particles import ParticleSystem
+from drift.render.racing_effects import RacingParticleEffects
 
 # ======= CONFIGURATION =======
 
@@ -491,6 +493,10 @@ def main():
     
     # Renderer handles track, cars, and drift marks
     renderer = WorldRenderer(track_image, flags, chunked_map=chunk_map)
+    
+    # Initialize particle system for exhaust, drift, and collision effects (client-side only)
+    particle_system = ParticleSystem(max_particles=5000)
+    racing_effects = RacingParticleEffects(particle_system)
 
     joysticks = [pygame.joystick.Joystick(i) for i in range(pygame.joystick.get_count())]
     for js in joysticks:
@@ -516,6 +522,8 @@ def main():
         # Clear tire marks and chunk cache to free memory
         renderer.clear_tire_marks()
         renderer.clear_chunk_cache()
+        # Clear particle effects
+        particle_system.clear()
         return "lobby", "", None, None, remotes # stage, substage sock, code, remotes
     
     def handle_key_binds():
@@ -722,6 +730,107 @@ def main():
             if I_AM_HOST:
                 for ai in ai_cars:
                     ai.step(ai_algorithme(path_poly, ai), dt, remotes_with_ai_for_ais, world_size, compute_debug=const.DEBUG)
+            
+            # ======== PARTICLE EFFECTS (CLIENT-SIDE ONLY) ========
+            # Add exhaust effects for player car
+            speed = math.hypot(my_car.vx, my_car.vy)
+            throttle = clamp(controls.get("th", 0.0), -1.0, 1.0)
+            if throttle > 0.1 or speed > 20:  # Only show exhaust when accelerating or moving
+                exhaust_intensity = max(0.3, throttle * 1.5)
+                racing_effects.exhaust_smoke(
+                    (my_car.x, my_car.y),
+                    (my_car.vx, my_car.vy),
+                    my_car.angle,
+                    intensity=exhaust_intensity,
+                    engine_temp=1.0
+                )
+            
+            # Add drift particle effects for player car
+            if my_car.drift_ratio > 0.3:
+                # Get rear tire positions from drift_points
+                tire_positions = [my_car.drift_points[0], my_car.drift_points[1]]
+                racing_effects.tire_smoke_drift(
+                    tire_positions,
+                    my_car.drift_ratio,
+                    surface_type="asphalt"
+                )
+            
+            # Add collision effects for player car
+            if my_car.last_collision is not None:
+                racing_effects.sparks_collision(
+                    my_car.last_collision["pos"],
+                    my_car.last_collision["angle"],
+                    my_car.last_collision["intensity"]
+                )
+            
+            # Add effects for AI cars (only host simulates AIs)
+            if I_AM_HOST:
+                for ai in ai_cars:
+                    ai_speed = math.hypot(ai.vx, ai.vy)
+                    # Exhaust for AIs
+                    if ai_speed > 20:
+                        racing_effects.exhaust_smoke(
+                            (ai.x, ai.y),
+                            (ai.vx, ai.vy),
+                            ai.angle,
+                            intensity=0.5,
+                            engine_temp=1.0
+                        )
+                    # Drift particles for AIs
+                    if ai.drift_ratio > 0.3:
+                        tire_positions = [ai.drift_points[0], ai.drift_points[1]]
+                        racing_effects.tire_smoke_drift(
+                            tire_positions,
+                            ai.drift_ratio,
+                            surface_type="asphalt"
+                        )
+                    # Collision effects for AIs
+                    if ai.last_collision is not None:
+                        racing_effects.sparks_collision(
+                            ai.last_collision["pos"],
+                            ai.last_collision["angle"],
+                            ai.last_collision["intensity"]
+                        )
+            
+            # Add effects for remote players (exhaust and drift only, no collision sync)
+            for pid, remote in remotes.items():
+                remote_speed = math.hypot(remote.get("vx", 0), remote.get("vy", 0))
+                # Exhaust for remote players
+                if remote_speed > 20:
+                    racing_effects.exhaust_smoke(
+                        (remote["x"], remote["y"]),
+                        (remote.get("vx", 0), remote.get("vy", 0)),
+                        remote.get("a", 0),
+                        intensity=0.5,
+                        engine_temp=1.0
+                    )
+                # Drift particles for remote players
+                drift_ratio = remote.get("drift_ratio", 0)
+                if drift_ratio > 0.3:
+                    # Approximate rear tire positions for remote cars
+                    ca, sa = math.cos(remote.get("a", 0)), math.sin(remote.get("a", 0))
+                    car_len = 38.0  # Default CAR_LEN
+                    car_wid = 20.0  # Default CAR_WID
+                    rear_offset = -car_len * 0.35
+                    left_offset = car_wid * 0.45
+                    right_offset = -car_wid * 0.45
+                    tire_left = (
+                        remote["x"] + rear_offset * ca - left_offset * sa,
+                        remote["y"] + rear_offset * sa + left_offset * ca
+                    )
+                    tire_right = (
+                        remote["x"] + rear_offset * ca - right_offset * sa,
+                        remote["y"] + rear_offset * sa + right_offset * ca
+                    )
+                    racing_effects.tire_smoke_drift(
+                        [tire_left, tire_right],
+                        drift_ratio,
+                        surface_type="asphalt"
+                    )
+            
+            # Update particle system with camera for viewport culling
+            particle_system.update(dt, cam, world_size)
+            
             cam.update(my_car, world_size)
         else:
             # In menus: set default controls to prevent undefined variable errors
@@ -730,8 +839,14 @@ def main():
         # ======== RENDERING ========
 
         if not skip_physics:
-            # draw track, drift marks and cars (online & local)
-            world_surf, resized, is_viewport = renderer.render_world(cam, stage1, my_car, ai_cars, remotes, lights_on, car_sprites_cache)
+            # draw track, drift marks, particles, and cars (online & local)
+            # Pass particle system to renderer so particles are drawn before cars
+            world_surf, resized, is_viewport = renderer.render_world(
+                cam, stage1, my_car, ai_cars, remotes, lights_on, car_sprites_cache,
+                draw_remotes=True,
+                particle_system=particle_system if stage1 == "game" else None
+            )
+            
             if resized and not is_viewport:
                 path_poly = path_finder.discover_track(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png"))
 

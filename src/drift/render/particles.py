@@ -270,6 +270,74 @@ class ParticleSystem:
                         surface.blit(particle_surf, (p['x'] - size//2, p['y'] - size//2))
         
         return surface
+    
+    def render_world(self, world_surface: pygame.Surface, viewport: Optional[Tuple[float, float, float, float]] = None):
+        """
+        Render particles directly to a world-coordinate surface.
+        Particles are positioned at their world coordinates.
+        
+        Args:
+            world_surface: The surface to render particles on (in world coordinates)
+            viewport: Optional (x, y, width, height) viewport for culling. If None, renders all particles.
+        """
+        if not self.particles:
+            return
+        
+        # Viewport culling bounds
+        if viewport:
+            view_left, view_top, view_width, view_height = viewport
+            view_right = view_left + view_width
+            view_bottom = view_top + view_height
+            cull = True
+        else:
+            cull = False
+        
+        # Group particles by size for batch rendering
+        particles_by_size = {}
+        
+        for particle in self.particles:
+            # Viewport culling if enabled
+            if cull and not (view_left <= particle.x <= view_right and 
+                           view_top <= particle.y <= view_bottom):
+                continue
+            
+            # Group by size
+            if particle.size not in particles_by_size:
+                particles_by_size[particle.size] = []
+            
+            # Calculate alpha fade based on age
+            alpha = max(0, min(255, int(particle.color[3] * (1.0 - particle.age / particle.life))))
+            
+            particles_by_size[particle.size].append({
+                'x': int(particle.x),
+                'y': int(particle.y),
+                'r': particle.color[0],
+                'g': particle.color[1],
+                'b': particle.color[2],
+                'a': alpha
+            })
+        
+        # Render particles grouped by size
+        for size, size_particles in particles_by_size.items():
+            if size == 1:
+                # Optimize 1x1 pixels - draw directly
+                for p in size_particles:
+                    if p['a'] > 0:
+                        try:
+                            world_surface.set_at((p['x'], p['y']), (p['r'], p['g'], p['b'], p['a']))
+                        except IndexError:
+                            pass  # Skip out-of-bounds particles
+            else:
+                # Use pre-allocated surfaces for larger particles
+                particle_surf = self._particle_surfaces[size]
+                
+                for p in size_particles:
+                    if p['a'] > 0:
+                        # Fill the particle surface with the color
+                        particle_surf.fill((p['r'], p['g'], p['b'], p['a']))
+                        
+                        # Blit to world surface
+                        world_surface.blit(particle_surf, (p['x'] - size//2, p['y'] - size//2))
 
     def add_exhaust_effect(self, pos: Tuple[float, float], velocity: Tuple[float, float], 
                           intensity: float = 1.0) -> None:
