@@ -4,6 +4,7 @@ from typing import Dict, Tuple, List, Optional
 # local
 import drift.config.const as const
 from drift.ui.ui import draw_car, draw_wheel_debug
+from drift.ui.draw_stage import get_palette_colors
 from drift.render.map_chunks import ChunkedMap, TireMarkGrid
 
 
@@ -186,10 +187,12 @@ class WorldRenderer:
 
             # Player
             my_car_sprites = car_sprites_cache.get(my_car.car_type, car_sprites_cache.get("ae86", []))
+            palette_colors = get_palette_colors()
             draw_car(world_surf, my_car.x - offx, my_car.y - offy, my_car.angle, my_car.name,
                      color_body=const.COLOR_MY_CAR,
                      car_sprites_list=my_car_sprites,
-                     lights_on=lights_on)
+                     lights_on=lights_on,
+                     palette_colors=palette_colors)
             # Per-wheel debug overlay for local car
             if const.DEBUG: draw_wheel_debug(world_surf, my_car, offx, offy)
 
@@ -246,10 +249,12 @@ class WorldRenderer:
 
         # 4) Player Car
         my_car_sprites = car_sprites_cache.get(my_car.car_type, car_sprites_cache.get("ae86", []))
+        palette_colors = get_palette_colors()
         draw_car(world_surf, my_car.x, my_car.y, my_car.angle, my_car.name,
                  color_body=const.COLOR_MY_CAR,
                  car_sprites_list=my_car_sprites,
-                 lights_on=lights_on)
+                 lights_on=lights_on,
+                 palette_colors=palette_colors)
         # Per-wheel debug overlay for local car
         if const.DEBUG: draw_wheel_debug(world_surf, my_car, 0, 0)
 

@@ -452,7 +452,9 @@ def main():
 
     spawnx = random.uniform(const.WINDOW_WIDTH*0.3, const.WINDOW_WIDTH*0.7)
     spawny = random.uniform(const.WINDOW_HEIGHT*0.3, const.WINDOW_HEIGHT*0.7)
-    my_car = car.Car(spawnx, spawny, my_name, is_ai=False, car_type="ae86")
+    # Use FORCE_CAR_TYPE if set for testing, otherwise default to ae86
+    initial_car_type = const.FORCE_CAR_TYPE if const.FORCE_CAR_TYPE else "ae86"
+    my_car = car.Car(spawnx, spawny, my_name, is_ai=False, car_type=initial_car_type)
     # Local player's engine state (avoid mutating Car which may use __slots__)
     engine_state = {"gear": 0, "last_rpm": None}
 
@@ -723,7 +725,7 @@ def main():
                     controls = None
             if controls is None:
                 controls = read_inputs(joysticks, my_car, cam, const.CURSOR_FOLLOW, const.AI_PATH_FOLLOW)
-            my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG)
+            my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG, cursor_follow=const.CURSOR_FOLLOW, cam=cam)
             # Update engine audio based on RPM and throttle with enhanced drift characteristics
             try:
                 if engine_sound is not None and audio_controller is not None and audio_initialized:
@@ -793,7 +795,7 @@ def main():
         ui_surf = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), pygame.SRCALPHA)
         ui_surf.fill((0,0,0,0)) # transparent surface
         fps = clock.get_fps()
-        world_surf, button_results, new_game_rects, join_game_rects = draw_stage_ui(
+        world_surf, button_results, new_game_rects, join_game_rects, palette_picker_rects = draw_stage_ui(
             ui_surf, stage1, stage2, stage3, code, world_surf, world_size, 
             settings_buttons, error_msg, my_car, cam, joysticks, font_big, font_medium, font_small,
             controls, engine_state, fps, dt, host_name, car_sprites_cache

@@ -1,4 +1,4 @@
-import pygame, json, time, math
+import pygame, json, time, math, random
 import drift.config.const as const
 from drift.ui.ui_helpers import invalidate_ui_text_cache, get_cached_text
 from drift.core.helpers import rand_code
@@ -11,7 +11,7 @@ from drift.tools.paths import normalize_asset_path
 _game_setup = {
     "username": "",
     "username_active": False,
-    "selected_car": "ae86",  # Default car
+    "selected_car": const.FORCE_CAR_TYPE if const.FORCE_CAR_TYPE else "ae86",  # Default car (or forced for testing)
     "selected_track": "track1",  # Default track
     "selected_mode": "beta",  # Default mode
     "room_code": "",  # For join game
@@ -27,6 +27,14 @@ _key_binds_state = {
 
 # Car rotation state for selection screens
 _car_rotation_angle = 0.0  # Global rotation angle for all car sprites
+
+# Color palette state for car customization
+_color_palette = {
+    "color1": (255, 0, 0),    # Red channel replacement
+    "color2": (0, 255, 0),    # Green channel replacement
+    "color3": (0, 0, 255),    # Blue channel replacement
+    "active_picker": None,    # Which color is being edited (1, 2, 3, or None)
+}
 
 def _load_car_specs(car_type):
     """Load car specifications from JSON file."""
@@ -46,6 +54,152 @@ def _update_car_rotation(dt):
     _car_rotation_angle += (math.pi / 4) * dt
     if _car_rotation_angle >= 2 * math.pi:
         _car_rotation_angle -= 2 * math.pi
+
+def get_palette_colors():
+    """Get current color palette as tuple of 3 RGB tuples."""
+    return (_color_palette["color1"], _color_palette["color2"], _color_palette["color3"])
+
+def draw_color_palette_picker(ui_surf, font_small):
+    """Draw color palette picker UI in top right corner.
+    
+    Controls:
+    - Click a color box to select it
+    - R/F: Adjust red channel (+/-)
+    - T/G: Adjust green channel (+/-)
+    - Y/H: Adjust blue channel (+/-)
+    - Hold SHIFT for faster adjustment (20 vs 5)
+    - ESC: Deselect color
+    
+    Returns:
+        dict: Rectangles for each color picker for click detection
+    """
+    # Position in top right corner
+    padding = 10
+    box_size = 40
+    spacing = 10
+    
+    x_start = const.WINDOW_WIDTH - (box_size * 3 + spacing * 2 + padding)
+    y_start = const.TOP_LINE_Y + padding
+    
+    rects = {}
+    
+    # Calculate background size
+    if _color_palette["active_picker"] is not None:
+        bg_height = 55 + box_size + 25
+    else:
+        bg_height = 25 + box_size + 25
+    
+    bg_width = box_size * 3 + spacing * 2 + 20
+    
+    # Draw semi-transparent background
+    bg_surf = pygame.Surface((bg_width, bg_height), pygame.SRCALPHA)
+    bg_surf.fill((20, 20, 26, 220))
+    ui_surf.blit(bg_surf, (x_start - 10, y_start))
+    
+    # Draw label
+    label = font_small.render("Palette Colors:", True, const.WHITE_240)
+    ui_surf.blit(label, (x_start, y_start + 5))
+    
+    # Draw controls hint if a color is selected
+    if _color_palette["active_picker"] is not None:
+        hint_y = y_start + 25
+        hint_text = ["R/F:Red T/G:Grn Y/H:Blu", "SHIFT: Fast ESC: Done", "Click: Random color"]
+        for i, hint in enumerate(hint_text):
+            hint_surf = font_small.render(hint, True, const.GREY_180)
+            ui_surf.blit(hint_surf, (x_start, hint_y + i * 15))
+        y_boxes = y_start + 55
+    else:
+        hint_text = "Click box: Random color"
+        hint_surf = font_small.render(hint_text, True, const.GREY_180)
+        ui_surf.blit(hint_surf, (x_start, y_start + 20))
+        y_boxes = y_start + 40
+    
+    # Draw 3 color boxes
+    for i in range(1, 4):
+        x_pos = x_start + (i - 1) * (box_size + spacing)
+        color_key = f"color{i}"
+        color = _color_palette[color_key]
+        
+        # Color box
+        rect = pygame.Rect(x_pos, y_boxes, box_size, box_size)
+        pygame.draw.rect(ui_surf, color, rect)
+        pygame.draw.rect(ui_surf, const.WHITE if _color_palette["active_picker"] == i else const.GREY_180, rect, 2)
+        
+        # Label below box
+        num_label = font_small.render(str(i), True, const.WHITE_240)
+        ui_surf.blit(num_label, (x_pos + box_size//2 - num_label.get_width()//2, y_boxes + box_size + 5))
+        
+        rects[i] = rect
+    
+    return rects
+
+def handle_palette_picker_click(pos, rects):
+    """Handle click on palette picker.
+    
+    Clicking a color box generates a random color and selects that box.
+    
+    Returns:
+        int or None: Color number (1, 2, 3) if clicked, None otherwise
+    """
+    from drift.ui.ui import invalidate_palette_cache
+    
+    for color_num, rect in rects.items():
+        if rect.collidepoint(pos):
+            # Generate random color
+            random_color = (
+                random.randint(0, 255),
+                random.randint(0, 255),
+                random.randint(0, 255)
+            )
+            color_key = f"color{color_num}"
+            _color_palette[color_key] = random_color
+            _color_palette["active_picker"] = color_num
+            invalidate_palette_cache()  # Clear cache so changes are visible
+            return color_num
+    return None
+
+def handle_palette_picker_keypress(ev):
+    """Handle keyboard input for palette color adjustment.
+    
+    Uses arrow keys to adjust RGB values of active color.
+    """
+    from drift.ui.ui import invalidate_palette_cache
+    
+    active = _color_palette["active_picker"]
+    if active is None:
+        return
+    
+    color_key = f"color{active}"
+    r, g, b = _color_palette[color_key]
+    
+    step = 5 if not (ev.mod & pygame.KMOD_SHIFT) else 20
+    
+    color_changed = False
+    if ev.key == pygame.K_r:
+        r = min(255, r + step)
+        color_changed = True
+    elif ev.key == pygame.K_f:
+        r = max(0, r - step)
+        color_changed = True
+    elif ev.key == pygame.K_t:
+        g = min(255, g + step)
+        color_changed = True
+    elif ev.key == pygame.K_g:
+        g = max(0, g - step)
+        color_changed = True
+    elif ev.key == pygame.K_y:
+        b = min(255, b + step)
+        color_changed = True
+    elif ev.key == pygame.K_h:
+        b = max(0, b - step)
+        color_changed = True
+    elif ev.key == pygame.K_ESCAPE:
+        _color_palette["active_picker"] = None
+        return
+    
+    if color_changed:
+        _color_palette[color_key] = (r, g, b)
+        invalidate_palette_cache()  # Clear cache so changes are visible immediately
 
 def draw_lobby():         
     pass

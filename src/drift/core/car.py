@@ -10,6 +10,7 @@ TRANSMITION_SETUP_DICT = {
     "RWD": [2, 3], # rear wheels drive
     "FWD": [0, 1], # front wheels drive
     "AWD": [0, 1, 2, 3], # all wheels drive
+    "AWDS": [0, 1, 2, 3], # all wheels drive with rear steering
 }
 # car
 CAR_LEN = 38.0
@@ -78,7 +79,7 @@ class Car:
         with open(spec_path, "r", encoding="utf-8") as fh:
             self.specs = json.load(fh)
 
-    def step(self, inputs, dt, players, bounds, compute_debug=False):        
+    def step(self, inputs, dt, players, bounds, compute_debug=False, cursor_follow=False, cam=None):        
         CAR_LEN = self.specs["dimensions"]["CAR_LEN"]
         CAR_WID  = self.specs["dimensions"]["CAR_WID"]
         ENGINE_ACC      = self.specs["performance"]["ENGINE_ACC"]
@@ -92,20 +93,34 @@ class Car:
         raw_steering_input = clamp(inputs.get("st", 0.0), -1.0, 1.0)
         brake_input = clamp(inputs.get("br", 0.0), 0.0, 1.0)
         
-        # Update target angle based on steering input
-        target_angle_change_rate = 2.0  # radians per second
-        self.target_angle += raw_steering_input * target_angle_change_rate * dt
-        # Normalize target angle to [-pi, pi]
-        self.target_angle = ((self.target_angle + math.pi) % (2 * math.pi)) - math.pi
-        
-        # Clamp target angle to maximum difference from current angle
-        max_angle_difference = math.radians(45)  # Maximum 45 degrees difference
-        angle_diff = ((self.target_angle - self.angle + math.pi) % (2 * math.pi)) - math.pi
-        if abs(angle_diff) > max_angle_difference:
-            # Clamp to maximum allowed difference
-            self.target_angle = self.angle + math.copysign(max_angle_difference, angle_diff)
-            # Normalize again
+        # Update target angle based on steering mode
+        if cursor_follow and cam is not None:
+            # Mouse/cursor mode: directly set target angle to point at cursor
+            import pygame
+            mouse_pos = pygame.mouse.get_pos()
+            # Convert mouse position to world coordinates
+            world_mouse_x = mouse_pos[0] + cam.x - const.WINDOW_WIDTH / 2
+            world_mouse_y = mouse_pos[1] + cam.y - const.WINDOW_HEIGHT / 2
+            
+            # Calculate angle from car to mouse
+            dx = world_mouse_x - self.x
+            dy = world_mouse_y - self.y
+            self.target_angle = math.atan2(dy, dx)
+        else:
+            # Keyboard/joystick mode: accumulate steering input
+            target_angle_change_rate = 3.0  # radians per second
+            self.target_angle += raw_steering_input * target_angle_change_rate * dt
+            # Normalize target angle to [-pi, pi]
             self.target_angle = ((self.target_angle + math.pi) % (2 * math.pi)) - math.pi
+            
+            # Clamp target angle to maximum difference from current angle
+            max_angle_difference = math.radians(45)  # Maximum 45 degrees difference
+            angle_diff = ((self.target_angle - self.angle + math.pi) % (2 * math.pi)) - math.pi
+            if abs(angle_diff) > max_angle_difference:
+                # Clamp to maximum allowed difference
+                self.target_angle = self.angle + math.copysign(max_angle_difference, angle_diff)
+                # Normalize again
+                self.target_angle = ((self.target_angle + math.pi) % (2 * math.pi)) - math.pi
         
         # Calculate steering input to reach target angle
         angle_error = ((self.target_angle - self.angle + math.pi) % (2 * math.pi)) - math.pi
@@ -142,6 +157,8 @@ class Car:
             steer_bias = const.STEER_BIAS 
         if TRANSMITION_SETUP == "AWD":
             steer_bias = const.STEER_BIAS*0.1
+        if TRANSMITION_SETUP == "AWDS":
+            steer_bias = const.STEER_BIAS*0.1
 
         if vel_dir_f > 0:
             wheel_steer_angle = -drift_angle*0.8* steer_bias
@@ -165,20 +182,26 @@ class Car:
             wheel_speed_x_body = body_forward_speed - self.v_angle * wy_local
             wheel_speed_y_body = body_lateral_speed + self.v_angle * wx_local
 
-            # Wheel heading relative to body (front wheels steer)
-            local_wheel_angle = wheel_steer_angle if index in (0, 1) else 0.0
+            # Wheel heading relative to body (front wheels steer, rear wheels steer for AWDS)
+            if index in (0, 1):  # Front wheels
+                local_wheel_angle = wheel_steer_angle
+            elif TRANSMITION_SETUP == "AWDS":  # Rear wheels with AWDS (All-Wheel Steering)
+                local_wheel_angle = wheel_steer_angle * -0.2  # Opposite direction, 20% of front
+            else:  # Rear wheels for other drivetrains
+                local_wheel_angle = 0.0
             cwa, swa = math.cos(local_wheel_angle), math.sin(local_wheel_angle)
 
             # Transform to wheel frame (longitudinal x, lateral y)
             wheel_speed_long = wheel_speed_x_body * cwa + wheel_speed_y_body * swa
             wheel_speed_lat  = -wheel_speed_x_body * swa + wheel_speed_y_body * cwa
             
-            # Longitudinal force: engine power ONLY on rear wheels (RWD)
-            # Front wheels (index 0, 1) have no engine power
-            # Rear wheels (index 2, 3) get full engine power
-            if index in TRANSMITION_SETUP_DICT[TRANSMITION_SETUP]:  # Rear wheels only
-                longitudinal_force = throttle_input * ENGINE_ACC / (2.0 if TRANSMITION_SETUP == "AWD" else 1.0)
-            else:  # Front wheels
+            # Longitudinal force: engine power distribution based on drivetrain
+            # Front wheels (index 0, 1) have no engine power for RWD
+            # Rear wheels (index 2, 3) get full engine power for RWD
+            # All wheels get power for AWD/AWDS (divided by 2 to balance)
+            if index in TRANSMITION_SETUP_DICT[TRANSMITION_SETUP]:  # Powered wheels
+                longitudinal_force = throttle_input * ENGINE_ACC / (2.0 if TRANSMITION_SETUP in ("AWD", "AWDS") else 1.0)
+            else:  # Non-powered wheels
                 longitudinal_force = 0
 
 

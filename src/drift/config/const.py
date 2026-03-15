@@ -92,8 +92,29 @@ CAR_SPRITES = {
             "cars/911/Diffuse/Image{i:04}.png",
             "cars/911/Light_Spray/Image{i:04}.png"
         ]
+    },
+    "GTR34": {
+        "paths": [
+            "cars/GTR34/Shadow_Map/Image{i:04}.png",
+            "cars/GTR34/Diffuse/Image{i:04}.png",
+            "cars/GTR34/Light_Spray/Image{i:04}.png",
+            "cars/GTR34/Palette/Image{i:04}.png"
+        ]
     }
 }
+
+# ======= TESTING OVERRIDES =======
+# Set to a car type (e.g., "GTR34") to force that car for testing, or None to use normal selection
+FORCE_CAR_TYPE = "GTR34"  # Set to None to disable
+
+# Color Palette System:
+# - When in-game, a palette picker appears in top right corner
+# - Click a color box (1, 2, 3) to select it
+# - Use R/F (red), T/G (green), Y/H (blue) keys to adjust RGB values
+# - Hold SHIFT for faster adjustment (20 vs 5 per press)
+# - ESC to deselect color
+# - Palette layer (4th sprite layer) maps: Red->Color1, Green->Color2, Blue->Color3
+# - Final result is multiplied with Diffuse layer for realistic coloring
 
 # ======= KEY BINDINGS =======
 # Menu controls
