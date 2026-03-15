@@ -788,8 +788,11 @@ def join_new_game(my_id):
             for msg in recv_jsons(sock):
                 if msg.get("t") == "join_ok":
                     join_ok_received = True
-                    # Extract host_name from relay response
+                    # Extract host_name and track from relay response
                     host_name = msg.get("host_name", "Host")
+                    server_track = msg.get("track")
+                    if server_track:
+                        _game_setup["selected_track"] = server_track
                     break
                 if msg.get("t") == "error":
                     error = msg.get("msg", "relay error")

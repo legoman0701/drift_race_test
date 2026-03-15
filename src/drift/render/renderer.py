@@ -255,7 +255,7 @@ class WorldRenderer:
         if const.DEBUG: draw_wheel_debug(world_surf, my_car, 0, 0)
 
         # 5) Draw network/online players' cars
-        if stage in ["mode1", "mode2"] and draw_remotes:
+        if stage in ["game", "mode1", "mode2"] and draw_remotes:
             for pid, d in remotes.items():
                 remote_car_sprites = car_sprites_cache.get(d.get("car_type", "ae86"), car_sprites_cache.get("ae86", []))
                 drift_pts = draw_car(world_surf, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
