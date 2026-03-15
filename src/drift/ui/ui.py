@@ -297,7 +297,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
             _key_binds_rects_cache = None  # Clear cache when not in settings
             game_rects = draw_game(ui_surf, font_big, font_medium, is_host)
             _game_rects_cache = game_rects
-            draw_header(ui_surf, font_big, font_small, "In Game", fps, host_name)
+            draw_header(ui_surf, font_big, font_small, "Waiting Room", fps, host_name)
             draw_controls_hud(ui_surf, ai_path_mode_controls, joysticks, my_car, cam, font_small, dt, engine_state, 7000)
         draw_footer(ui_surf, font_small, code)
 
@@ -394,6 +394,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, a
                     else: # Only proceed if username is entered
                         clear_error_message()
                         stage1, my_name, code, sock, is_host, host_name, error, track_image, chunked_map, checkpoints = join_new_game(my_id) # keyboard press
+                        is_host_flag_ref[0] = is_host
                         if error: set_error_message(error)
                         else:
                             stage2 = "" # Close new_game UI
@@ -457,6 +458,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, a
                 setup = get_game_setup()
                 if setup["username"]:  # Only proceed if username is entered
                     stage1, my_name, code, sock, is_host, host_name, error, track_image, chunked_map, checkpoints = join_new_game(my_id) # mouse click
+                    is_host_flag_ref[0] = is_host
                     stage2 = ""  # Close new_game UI
                     
                     # Update car with new name and selected car type
@@ -473,7 +475,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, a
                 chunked_map = None
                 if sock:
                     try:
-                        sock.send(json.dumps({"t": "start_race", "code": code, "id": my_id}).encode("utf-8"))
+                        sock.send(json.dumps({"t": "start_race", "code": code, "id": my_id, "mode": setup['selected_mode']}).encode("utf-8")) # client -> server
                     except Exception as e:
                         print(f"Error sending start: {e}")
 

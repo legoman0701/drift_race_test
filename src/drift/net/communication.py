@@ -39,12 +39,35 @@ def connect_to_relay() -> socket.socket:
 
 
 def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str, is_host: bool):
+    result = {"error": None, "start_mode": None, "start_track": None, "host_name": None, "host_id": None}
     players = {}
     for msg in recv_jsons(sock):
         t = msg.get("t")
         if t == "join_ok":
-            pass
+            host_name = msg.get("host_name")
+            if isinstance(host_name, str):
+                result["host_name"] = host_name
+            host_id = msg.get("host_id")
+            if isinstance(host_id, str):
+                result["host_id"] = host_id
+        elif t == "start_race":
+            mode = msg.get("mode")
+            if isinstance(mode, str) and mode:
+                result["start_mode"] = mode
+            track = msg.get("track")
+            if isinstance(track, str) and track:
+                result["start_track"] = track
         elif t == "world": # Placeholder for receiving authoritative world state from server
+            host_name = msg.get("host_name")
+            if isinstance(host_name, str):
+                result["host_name"] = host_name
+            host_id = msg.get("host_id")
+            if isinstance(host_id, str):
+                result["host_id"] = host_id
+            if msg.get("race_started"):
+                mode = msg.get("mode")
+                if isinstance(mode, str) and mode:
+                    result["start_mode"] = mode
             players = msg.get("players", {}) or {}
             POS_SMOOTHING_MULTIPLIER = 300.0
             ANGLE_SMOOTHING_MULTIPLIER = 300.0
@@ -74,8 +97,9 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
                 if pid not in players:
                     remotes.pop(pid, None)
         elif t == "error":
-            return msg.get("msg", "error")
-    return None
+            result["error"] = msg.get("msg", "error")
+            return result
+    return result
 
 
 def send_network_state(sock, code: str, my_id: str, my_car):
