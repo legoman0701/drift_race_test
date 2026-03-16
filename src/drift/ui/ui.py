@@ -21,7 +21,7 @@ _car_name_font_cache = {} # car name cache
 _new_game_rects_cache = None # new game rects cache
 _join_game_rects_cache = None # join game rects cache
 _game_rects_cache = None # game rects cache
-_key_binds_rects_cache = None # key binds rects cache
+_controls_rects_cache = None # controls rects cache
 
 def draw_car(surface, x, y, angle, name,
              color_body=const.COLOR_BODY_DEFAULT,
@@ -237,7 +237,7 @@ def draw_footer(surface: str, font_small, code=None):
     surface.blit(code_text, (10, const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y + 5))
 
 def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size, checkpoints, buttons, 
-                  error_msg, my_car, cam, joysticks, font_big, font_medium, font_small,
+                  error_msg, my_car, cam, gamepad, font_big, font_medium, font_small,
                   ai_path_mode_controls, engine_state, fps, dt, is_host, host_name=None, car_sprites_cache=None):
     """Draw UI elements based on current stage levels (stage1, stage2, stage3).
     
@@ -246,20 +246,20 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
     - stage2: settings | new_game | join_game
     - stage3: key_binds
     """
-    global _new_game_rects_cache, _join_game_rects_cache, _key_binds_rects_cache, _game_rects_cache
+    global _new_game_rects_cache, _join_game_rects_cache, _controls_rects_cache, _game_rects_cache
 
     button_results = []
     # click detection
     new_game_rects = None
     join_game_rects = None
     game_rects = None
-    key_binds_rects = None
+    controls_rects = None
     
     # Stage 1: Main stages
     if stage1 == "lobby":
         if stage2 == "settings":
             if stage3 == "key_binds":
-                draw_header(ui_surf, font_big, font_small, "Key Bindings", fps, host_name)
+                draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name)
             else:
                 world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
                 draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
@@ -286,19 +286,19 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
         _join_game_rects_cache = None  # Clear cache when in game
         if stage2 == "settings": 
             if stage3 == "key_binds":
-                key_binds_rects = draw_key_binds(ui_surf, font_small)
-                _key_binds_rects_cache = key_binds_rects  # Cache for event handling
-                draw_header(ui_surf, font_big, font_small, "Key Bindings", fps, host_name)
+                controls_rects = draw_key_binds(ui_surf, font_small)
+                _controls_rects_cache = controls_rects  # Cache for event handling
+                draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name)
             else:
-                _key_binds_rects_cache = None  # Clear cache when not in key_binds
+                _controls_rects_cache = None  # Clear cache when not in key_binds
                 world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
                 draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
         else:
-            _key_binds_rects_cache = None  # Clear cache when not in settings
+            _controls_rects_cache = None  # Clear cache when not in settings
             game_rects = draw_game(ui_surf, font_big, font_medium, is_host)
             _game_rects_cache = game_rects
             draw_header(ui_surf, font_big, font_small, "Waiting Room", fps, host_name)
-            draw_controls_hud(ui_surf, ai_path_mode_controls, joysticks, my_car, cam, font_small, dt, engine_state, 7000)
+            draw_controls_hud(ui_surf, ai_path_mode_controls, gamepad, my_car, cam, font_small, dt, engine_state, 7000)
         draw_footer(ui_surf, font_small, code)
 
     elif stage1 == "mode1":
@@ -306,18 +306,18 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
         _join_game_rects_cache = None  # Clear cache when in game
         if stage2 == "settings":
             if stage3 == "key_binds":
-                key_binds_rects = draw_key_binds(ui_surf, font_small)
-                _key_binds_rects_cache = key_binds_rects  # Cache for event handling
-                draw_header(ui_surf, font_big, font_small, "Key Bindings", fps, host_name)
+                controls_rects = draw_key_binds(ui_surf, font_small)
+                _controls_rects_cache = controls_rects  # Cache for event handling
+                draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name)
             else:
-                _key_binds_rects_cache = None  # Clear cache when not in key_binds
+                _controls_rects_cache = None  # Clear cache when not in key_binds
                 world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
                 draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
         else:
-            _key_binds_rects_cache = None  # Clear cache when not in settings
+            _controls_rects_cache = None  # Clear cache when not in settings
             draw_mode1(ui_surf, font_big, font_medium, cam, checkpoints)
             draw_header(ui_surf, font_big, font_small, "Mode 1", fps, host_name)
-            draw_controls_hud(ui_surf, ai_path_mode_controls, joysticks, my_car, cam, font_small, dt, engine_state, 7000)
+            draw_controls_hud(ui_surf, ai_path_mode_controls, gamepad, my_car, cam, font_small, dt, engine_state, 7000)
         draw_footer(ui_surf, font_small, code)
 
     elif stage1 == "mode2":
@@ -325,18 +325,18 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
         _join_game_rects_cache = None  # Clear cache when in game
         if stage2 == "settings": 
             if stage3 == "key_binds":
-                key_binds_rects = draw_key_binds(ui_surf, font_small)
-                _key_binds_rects_cache = key_binds_rects  # Cache for event handling
-                draw_header(ui_surf, font_big, font_small, "Key Bindings", fps, host_name)
+                controls_rects = draw_key_binds(ui_surf, font_small)
+                _controls_rects_cache = controls_rects  # Cache for event handling
+                draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name)
             else:
-                _key_binds_rects_cache = None  # Clear cache when not in key_binds
+                _controls_rects_cache = None  # Clear cache when not in key_binds
                 world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
                 draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
         else:
-            _key_binds_rects_cache = None  # Clear cache when not in settings
+            _controls_rects_cache = None  # Clear cache when not in settings
             draw_mode2(ui_surf, font_big, font_medium, cam, checkpoints)
             draw_header(ui_surf, font_big, font_small, "Mode 2", fps, host_name)
-            draw_controls_hud(ui_surf, ai_path_mode_controls, joysticks, my_car, cam, font_small, dt, engine_state, 7000)
+            draw_controls_hud(ui_surf, ai_path_mode_controls, gamepad, my_car, cam, font_small, dt, engine_state, 7000)
         draw_footer(ui_surf, font_small, code)
 
     elif stage1 == "error":
@@ -348,7 +348,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
     
     return world_surf, button_results, new_game_rects, join_game_rects
 
-def handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref, host_name=None, new_game_rects=None):
+def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref, host_name=None, new_game_rects=None):
     """Handle game events including new game UI interactions."""
     global _new_game_rects_cache
     track_image, chunked_map, checkpoints = None, None, None
@@ -477,11 +477,13 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, a
                     except Exception as e:
                         print(f"Error sending start: {e}")
 
-        elif stage1 in ["game", "mode1", "mode2"] and stage2 == "settings" and stage3 == "key_binds" and _key_binds_rects_cache:
-            handle_key_binds_click(ev.pos, _key_binds_rects_cache)
+        elif stage1 in ["game", "mode1", "mode2"] and stage2 == "settings" and stage3 == "key_binds" and _controls_rects_cache:
+            res = handle_key_binds_click(ev.pos, _controls_rects_cache, gamepad)
+            if res.startswith("gp_connected_"):
+                stage2 = "" ; stage3 = "" # close controls & settings to confirm connection
 
-    if joysticks and joysticks[0] != []:
-        js = joysticks[0]
+    if gamepad and gamepad.joystick:
+        js = gamepad.joystick
         if stage1 == "lobby": # in lobby
             if stage2 == "": # main lobby
                 if js.get_button(6): # - -> join game (j)
@@ -550,7 +552,7 @@ def _get_cached_hud_font(font_small: pygame.font.Font, scale: float) -> pygame.f
         _hud_font_cache[font_size] = pygame.font.SysFont(None, font_size)
     return _hud_font_cache[font_size]
 
-def draw_controls_hud(ui_surf: pygame.Surface, ai_path_mode_controls, joysticks, my_car, cam, font_small, dt, engine_state, rpm_redline: float = 7000.0) -> None:
+def draw_controls_hud(ui_surf: pygame.Surface, ai_path_mode_controls, gamepad, my_car, cam, font_small, dt, engine_state, rpm_redline: float = 7000.0) -> None:
     """Draw bottom-right HUD with RPM gauge, steering wheel, throttle and brake bars.
 
     Parameters
@@ -565,7 +567,7 @@ def draw_controls_hud(ui_surf: pygame.Surface, ai_path_mode_controls, joysticks,
     if const.AI_PATH_FOLLOW and ai_path_mode_controls is not None: 
         inp = ai_path_mode_controls
     else: 
-        inp = read_inputs(joysticks, my_car, cam, const.CURSOR_FOLLOW, const.AI_PATH_FOLLOW)
+        inp = read_inputs(gamepad, my_car, cam, const.CURSOR_FOLLOW, const.AI_PATH_FOLLOW)
 
     th = clamp(inp.get("th", 0.0), -1.0, 1.0)
     br = clamp(inp.get("br", 0.0), 0.0, 1.0)

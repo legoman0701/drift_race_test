@@ -26,6 +26,8 @@ _game_setup = {
 _key_binds_state = {
     "waiting_for_key": None,  # Which bind is waiting for input (e.g., "UP_KEY")
     "selected_bind": None,  # Currently selected/hovered bind
+    "selected_gamepad": None,  # Index of the active/connected gamepad
+    "active_joystick_object": None,  # Active pygame joystick object selected from UI
 }
 
 # Car rotation state for selection screens
@@ -899,8 +901,52 @@ def draw_key_binds(ui_surf, font_small):
     """Draw key binds configuration page with dynamic layout.
     
     Returns:
-        dict: Rectangles for click detection {bind_name: rect}
+        dict: Rectangles for click detection {bind_name: rect, "gp_0": rect, ...}
     """
+    # list every gamepad connected to the hardware
+    count = pygame.joystick.get_count()
+    joysticks = [pygame.joystick.Joystick(i) for i in range(count)]
+
+    # Display connected gamepads at the top
+    center_x = const.WINDOW_WIDTH // 2
+    gp_y = int(const.WINDOW_HEIGHT * 0.08)
+    gp_row_height = font_small.get_height() + 8
+    gp_rects = {}  # {"gp_0": rect, "gp_1": rect, ...}
+
+    gp_title = get_cached_text(font_small, f"Connected Gamepads ({count})", const.WHITE_240,
+                               cache_key=("key_binds", "gp_title", count))
+    ui_surf.blit(gp_title, (center_x - gp_title.get_width() // 2, gp_y))
+
+    row_y = gp_y + gp_title.get_height() + 6
+    if count == 0:
+        no_gp = get_cached_text(font_small, "No gamepads detected", const.GREY_180,
+                                cache_key=("key_binds", "no_gp"))
+        no_gp_rect = pygame.Rect(center_x - no_gp.get_width() // 2 - 8, row_y,
+                                 no_gp.get_width() + 16, gp_row_height)
+        pygame.draw.rect(ui_surf, (50, 50, 60), no_gp_rect)
+        pygame.draw.rect(ui_surf, const.GREY_180, no_gp_rect, 1)
+        ui_surf.blit(no_gp, (no_gp_rect.centerx - no_gp.get_width() // 2,
+                              no_gp_rect.centery - no_gp.get_height() // 2))
+        gp_rects["gp_none"] = no_gp_rect
+    else:
+        for i, js in enumerate(joysticks):
+            is_selected = _key_binds_state["selected_gamepad"] == i
+            js_label = f"[{i}]  {js.get_name()}"
+            if is_selected:
+                js_label += "  [connected]"
+            js_text = get_cached_text(font_small, js_label, const.WHITE_240 if is_selected else const.GREY_180,
+                                      cache_key=("key_binds", "gp", i, js.get_name(), is_selected))
+            js_rect = pygame.Rect(center_x - js_text.get_width() // 2 - 8,
+                                  row_y + i * gp_row_height + 5 * i,
+                                  js_text.get_width() + 16, gp_row_height)
+            bg_color = (40, 80, 40) if is_selected else (50, 50, 60)
+            border_color = (100, 200, 100) if is_selected else const.GREY_180
+            pygame.draw.rect(ui_surf, bg_color, js_rect)
+            pygame.draw.rect(ui_surf, border_color, js_rect, 2 if is_selected else 1)
+            ui_surf.blit(js_text, (js_rect.centerx - js_text.get_width() // 2,
+                                   js_rect.centery - js_text.get_height() // 2))
+            gp_rects[f"gp_{i}"] = js_rect
+
     # Define key bindings to display (order matters for UI)
     key_binds = [
         ("UP_KEY", "Accelerate"),
@@ -915,7 +961,6 @@ def draw_key_binds(ui_surf, font_small):
     total_btn = len(key_binds)
     
     # Layout calculations
-    center_x = const.WINDOW_WIDTH // 2
     label_width = 150
     key_box_width = 120
     key_box_height = 40
@@ -1000,25 +1045,32 @@ def draw_key_binds(ui_surf, font_small):
         # Store rect for click detection
         bind_rects[bind_name] = key_box_rect
     
-    return bind_rects
+    return {**bind_rects, **gp_rects}
 
-def handle_key_binds_click(click_pos, bind_rects):
-    """Handle mouse clicks on key bind rectangles.
+def handle_key_binds_click(click_pos, all_rects, gamepad):
+    """Handle mouse clicks on key bind rectangles and gamepad rows.
     
     Args:
         click_pos: (x, y) tuple of click position
-        bind_rects: dict of {bind_name: rect} from draw_key_binds
+        all_rects: merged dict returned by draw_key_binds
+        gamepad: Gamepad object
     
     Returns:
-        str: The bind name that was clicked, or None
+        str: The bind name clicked, "gp_connected_N" for a gamepad, or None
     """
-    for bind_name, rect in bind_rects.items():
-        if rect.collidepoint(click_pos):
-            # Start waiting for new key input
-            _key_binds_state["waiting_for_key"] = bind_name
-            _key_binds_state["selected_bind"] = bind_name
-            invalidate_ui_text_cache('all')  # Clear cache to update UI
-            return bind_name
+    for name, rect in all_rects.items():
+        if not rect.collidepoint(click_pos): continue
+        if name.startswith("gp_") and name != "gp_none":
+            idx = int(name[3:])
+            gamepad.connect_gamepad(idx)
+            _key_binds_state["selected_gamepad"] = idx
+            invalidate_ui_text_cache('all')
+            return f"gp_connected_{idx}"
+        elif not name.startswith("gp_"):
+            _key_binds_state["waiting_for_key"] = name
+            _key_binds_state["selected_bind"] = name
+            invalidate_ui_text_cache('all')
+            return name
     return None
 
 def handle_key_binds_keypress(event):
