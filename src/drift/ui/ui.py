@@ -355,38 +355,36 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, a
     
     if ev.type == pygame.KEYDOWN: # press a key
         if stage1 == "lobby": # in lobby
-            if stage2 == "" and ev.key == const.HOST_KEY:  # h
-                stage2 = "new_game" # host a room - open new game UI
-                reset_game_setup()  # Reset to defaults when opening
-            elif stage2 == "" and ev.key == const.JOIN_KEY:  # j
-                stage2 = "join_game" # join a room - open join game UI
-                reset_game_setup()  # Reset to defaults when opening
-            elif stage2 == "new_game": # in new_game UI
+            if stage2 == "": # main lobby
+                if ev.key == const.HOST_KEY: # h
+                    stage2 = "new_game" # host a room - open new game UI
+                    reset_game_setup()  # Reset to defaults when opening
+                if ev.key == const.JOIN_KEY: # j
+                    stage2 = "join_game" # join a room - open join game UI
+                    reset_game_setup()  # Reset to defaults when opening
+            elif stage2 == "new_game": # hosting game
                 handle_new_game_keypress(ev)
                 if ev.key == const.ESCAPE_KEY: # esc
                     stage2 = "" # go back to lobby
                     reset_game_setup()
                 if ev.key in const.RETURN_KEYS:
                     setup = get_game_setup()
-                    if setup["username"]:  # Only proceed if username is entered
-                        stage1, my_name, code, sock, is_host, host_name, track_image, chunked_map, checkpoints = host_new_game(my_id) # keyboard press
-                        stage2 = "" # Close new_game UI
-                        is_host_flag_ref[0] = is_host
-                        my_car.name = my_name # update car with new name
-                        my_car.set_car_type(setup["selected_car"]) # update car selected car type
-                        my_car.x = const.WINDOW_WIDTH // 2
-                        my_car.y = const.WINDOW_HEIGHT // 2
-                    else:
-                        set_error_message("username missing")
-            elif stage2 == "join_game": # in join_game UI
+                    if not setup["username"]: setup["username"] = "Player" + str(my_id)[:4]
+                    stage1, my_name, code, sock, is_host, host_name, track_image, chunked_map, checkpoints = host_new_game(my_id) # keyboard press
+                    stage2 = "" # Close new_game UI
+                    is_host_flag_ref[0] = is_host
+                    my_car.name = my_name # update car with new name
+                    my_car.set_car_type(setup["selected_car"]) # update car selected car type
+                    my_car.x = const.WINDOW_WIDTH // 2
+                    my_car.y = const.WINDOW_HEIGHT // 2
+            elif stage2 == "join_game": # joining game
                 handle_join_game_keypress(ev)
                 if ev.key == const.ESCAPE_KEY: # esc to go back to lobby
                     stage2 = ""
                     reset_game_setup()
                 if ev.key in const.RETURN_KEYS:
                     setup = get_game_setup()
-                    if not setup["username"]:
-                        set_error_message("username missing")
+                    if not setup["username"]: setup["username"] = "Player" + str(my_id)[:4]
                     elif not setup["room_code"]:
                         set_error_message("room code missing")
                     elif len(setup["room_code"]) < 4:
@@ -483,14 +481,60 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, a
             handle_key_binds_click(ev.pos, _key_binds_rects_cache)
 
     if joysticks and joysticks[0] != []:
-        js = joysticks[0]    
+        js = joysticks[0]
         if stage1 == "lobby": # in lobby
-            if js.get_button(6): # - to join game
-                stage2 = "join_game"
-                reset_game_setup()
-            elif js.get_button(7): # + to create game
-                stage2 = "new_game"
-                reset_game_setup()
+            if stage2 == "": # main lobby
+                if js.get_button(6): # - -> join game (j)
+                    stage2 = "join_game"
+                    reset_game_setup()
+                elif js.get_button(7): # + -> host game (h)
+                    stage2 = "new_game"
+                    reset_game_setup()
+            elif stage2 == "new_game": # hosting game
+                if js.get_button(8): # left stick press -> cancel (esc)
+                    stage2 = "" # go back to lobby
+                    reset_game_setup()
+                elif js.get_button(9): # right stick press -> confirm (enter)
+                    setup = get_game_setup()
+                    if not setup["username"]: setup["username"] = "Player" + str(my_id)[:4]
+                    stage1, my_name, code, sock, is_host, host_name, track_image, chunked_map, checkpoints = host_new_game(my_id) # keyboard press
+                    stage2 = "" # Close new_game UI
+                    is_host_flag_ref[0] = is_host
+                    my_car.name = my_name # update car with new name
+                    my_car.set_car_type(setup["selected_car"]) # update car selected car type
+                    my_car.x = const.WINDOW_WIDTH // 2
+                    my_car.y = const.WINDOW_HEIGHT // 2
+            elif stage2 == "join_game": # joining game
+                if js.get_button(8): # left stick press -> cancel (esc)
+                    stage2 = "" # go back to lobby
+                    reset_game_setup()
+                elif js.get_button(9): # right stick press -> confirm (enter)
+                    setup = get_game_setup()
+                    if not setup["room_code"]: set_error_message("room code missing")
+                    elif len(setup["room_code"]) < 4: set_error_message("room code too short")
+                    else: # Only proceed if username is entered
+                        if not setup["username"]: setup["username"] = "Player" + str(my_id)[:4]
+                        clear_error_message()
+                        stage1, my_name, code, sock, is_host, host_name, error, track_image, chunked_map, checkpoints = join_new_game(my_id) # keyboard press
+                        is_host_flag_ref[0] = is_host
+                        if error: set_error_message(error)
+                        else:
+                            stage2 = "" # Close join_game UI
+                            my_car.name = my_name # update car with new name
+                            my_car.set_car_type(setup["selected_car"]) # update car selected car type
+                            my_car.x = const.WINDOW_WIDTH // 2
+                            my_car.y = const.WINDOW_HEIGHT // 2
+        elif stage1 in ["game", "mode1", "mode2"]: # in game
+            if stage2 == "": # main game screen
+                if js.get_button(8): # left stick press -> open settings (esc)
+                    stage2 = "settings"
+            elif stage2 == "settings": # in settings menu
+                if stage3 == "key_binds": # do not handle joystick buttons yet
+                    if js.get_button(8): # left stick press -> back (esc)
+                        stage3 = ""
+                elif stage3 == "":
+                    if js.get_button(8): # left stick press -> close settings (esc)
+                        stage2 = ""
     
     # Handle slider events in settings menu (all event types)
     if ((stage1 in ["game", "mode1", "mode2"] and stage2 == "settings" and stage3 == "") or 
