@@ -79,17 +79,10 @@ for car in AVAILABLE_CARS:
         "paths": [ # [shadow, diffuse (main), headlights]
             f"cars/{car}/Shadow_Map/Image{{i:04}}.png",
             f"cars/{car}/Diffuse/Image{{i:04}}.png", 
-            f"cars/{car}/Light_Spray/Image{{i:04}}.png"
+            f"cars/{car}/Light_Spray/Image{{i:04}}.png",
+            f"cars/{car}/Palette/Image{{i:04}}.png"
         ]
     },
-    "GTR34": {
-        "paths": [
-            "cars/GTR34/Shadow_Map/Image{i:04}.png",
-            "cars/GTR34/Diffuse/Image{i:04}.png",
-            "cars/GTR34/Light_Spray/Image{i:04}.png",
-            "cars/GTR34/Palette/Image{i:04}.png"
-        ]
-    }
 
 # ======= CONTROLS =======
 # Menu controls

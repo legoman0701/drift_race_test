@@ -14,15 +14,25 @@ from drift.ui.draw_stage import (
     handle_new_game_click, handle_new_game_keypress, host_new_game, draw_key_binds,
     handle_join_game_click, handle_join_game_keypress, join_new_game,
     handle_key_binds_click, handle_key_binds_keypress, draw_game,
-    get_game_setup, reset_game_setup, set_error_message, clear_error_message
+    get_game_setup, reset_game_setup, set_error_message, clear_error_message,
+    handle_palette_picker_click, handle_palette_picker_keypress,
+    draw_color_palette_picker
 )
 from drift.config.settings import settings_manager
 
 _car_name_font_cache = {} # car name cache
+_palette_cache = {} # palette color sprite cache
 _new_game_rects_cache = None # new game rects cache
 _join_game_rects_cache = None # join game rects cache
+_key_binds_rects_cache = None # key binds rects cache
+_palette_picker_rects_cache = None # palette picker rects cache
 _game_rects_cache = None # game rects cache
 _controls_rects_cache = None # controls rects cache
+
+def invalidate_palette_cache():
+    """Clear the palette color sprite cache so changes are visible immediately."""
+    global _palette_cache
+    _palette_cache.clear()
 
 def draw_car(surface, x, y, angle, name,
              color_body=const.COLOR_BODY_DEFAULT,
@@ -347,7 +357,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
     - stage2: settings | new_game | join_game
     - stage3: key_binds
     """
-    global _new_game_rects_cache, _join_game_rects_cache, _key_binds_rects_cache, _palette_picker_rects_cache
+    global _new_game_rects_cache, _join_game_rects_cache, _key_binds_rects_cache, _palette_picker_rects_cache, _game_rects_cache, _controls_rects_cache
 
     button_results = []
     # click detection
@@ -417,6 +427,8 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
         else:
             _controls_rects_cache = None  # Clear cache when not in settings
             draw_mode1(ui_surf, font_big, font_medium, cam, checkpoints)
+            palette_picker_rects = draw_color_palette_picker(ui_surf, font_small)
+            _palette_picker_rects_cache = palette_picker_rects
             draw_header(ui_surf, font_big, font_small, "Mode 1", fps, host_name)
             draw_controls_hud(ui_surf, ai_path_mode_controls, gamepad, my_car, cam, font_small, dt, engine_state, 7000)
         draw_footer(ui_surf, font_small, code)
@@ -436,6 +448,8 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
         else:
             _controls_rects_cache = None  # Clear cache when not in settings
             draw_mode2(ui_surf, font_big, font_medium, cam, checkpoints)
+            palette_picker_rects = draw_color_palette_picker(ui_surf, font_small)
+            _palette_picker_rects_cache = palette_picker_rects
             draw_header(ui_surf, font_big, font_small, "Mode 2", fps, host_name)
             draw_controls_hud(ui_surf, ai_path_mode_controls, gamepad, my_car, cam, font_small, dt, engine_state, 7000)
         draw_footer(ui_surf, font_small, code)
@@ -449,7 +463,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
     
     return world_surf, button_results, new_game_rects, join_game_rects, palette_picker_rects
 
-def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref, host_name=None, new_game_rects=None):
+def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref, host_name=None, new_game_rects=None, track_image=None, chunked_map=None, checkpoints=None):
     """Handle game events including new game UI interactions."""
     global _new_game_rects_cache, _palette_picker_rects_cache
     
@@ -475,6 +489,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                     is_host_flag_ref[0] = is_host
                     my_car.name = my_name # update car with new name
                     my_car.set_car_type(setup["selected_car"]) # update car selected car type
+                    invalidate_palette_cache()  # Reset sprite cache for newly selected car
                     my_car.x = const.WINDOW_WIDTH // 2
                     my_car.y = const.WINDOW_HEIGHT // 2
             elif stage2 == "join_game": # joining game
@@ -497,8 +512,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                         else:
                             stage2 = "" # Close new_game UI
                             my_car.name = my_name # update car with new name
-                            my_car.set_car_type(setup["selected_car"]) # update car selected car type
-                            my_car.x = const.WINDOW_WIDTH // 2
+                            my_car.set_car_type(setup["selected_car"]) # update car selected car type                            invalidate_palette_cache()  # Reset sprite cache for newly selected car                            my_car.x = const.WINDOW_WIDTH // 2
                             my_car.y = const.WINDOW_HEIGHT // 2
         elif stage1 in ["game", "mode1", "mode2"]: # in game
             if stage2 == "" and ev.key == const.ESCAPE_KEY: 
@@ -551,6 +565,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                     # Update car with new name and selected car type
                     my_car.name = my_name
                     my_car.set_car_type(setup["selected_car"])
+                    invalidate_palette_cache()  # Reset sprite cache for newly selected car
         elif stage1 == "lobby" and stage2 == "join_game" and _join_game_rects_cache:
             action = handle_join_game_click(ev.pos, _join_game_rects_cache)
 
@@ -565,6 +580,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                     # Update car with new name and selected car type
                     my_car.name = my_name
                     my_car.set_car_type(setup["selected_car"])
+                    invalidate_palette_cache()  # Reset sprite cache for newly selected car
         elif stage1 == "game" and stage2 == "" and _game_rects_cache:
             start_btn = _game_rects_cache.get("start_btn") # Start button
             if start_btn and start_btn.collidepoint(ev.pos):
@@ -580,6 +596,8 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                     except Exception as e:
                         print(f"Error sending start: {e}")
 
+        elif stage1 in ["mode1", "mode2"] and stage2 == "" and _palette_picker_rects_cache:
+            handle_palette_picker_click(ev.pos, _palette_picker_rects_cache)
         elif stage1 in ["game", "mode1", "mode2"] and stage2 == "settings" and stage3 == "key_binds" and _controls_rects_cache:
             res = handle_key_binds_click(ev.pos, _controls_rects_cache, gamepad)
             if res and res.startswith("gp_connected_"):

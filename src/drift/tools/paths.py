@@ -99,3 +99,46 @@ def get_available_cars():
             
     # Sort alphabetically so the order in your UI is always consistent
     return sorted(available_cars)
+
+def get_available_sprite_layers(car_type: str):
+    """
+    Auto-detects available sprite layers for a car by scanning its directory.
+    Returns ordered list of sprite layer paths.
+    
+    Standard layer order: Shadow_Map, Diffuse, Light_Spray, Palette
+    Each layer should have 64 frames: Image0000.png to Image0063.png
+    
+    Args:
+        car_type: Car folder name (e.g., 'ae86', '911')
+    
+    Returns:
+        List of path templates with {i:04d} placeholder for frame numbers
+    """
+    car_dir = assets_dir() / "cars" / car_type
+    
+    if not car_dir.exists():
+        print(f"Warning: Car directory '{car_dir}' not found!")
+        return []
+    
+    # Standard layer folders in expected order
+    layer_folders = ["Shadow_Map", "Diffuse", "Light_Spray", "Palette"]
+    available_layers = []
+    
+    for layer_folder in layer_folders:
+        layer_path = car_dir / layer_folder
+        
+        # Check if the layer folder exists
+        if layer_path.exists() and layer_path.is_dir():
+            # Verify at least one frame image exists
+            test_frame = layer_path / "Image0000.png"
+            if test_frame.exists():
+                # Use relative path from assets for consistency
+                path_template = f"cars/{car_type}/{layer_folder}/Image{{i:04d}}.png"
+                available_layers.append(path_template)
+            else:
+                print(f"Warning: No Image0000.png found in {layer_path}")
+    
+    if not available_layers:
+        print(f"Warning: No valid sprite layers found for car '{car_type}'")
+    
+    return available_layers

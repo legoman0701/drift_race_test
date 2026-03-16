@@ -1,7 +1,6 @@
 import pygame, json, time, math, random
 import drift.config.const as const
 from drift.render.map_chunks import ChunkedMap
-from drift.render.map_chunks import ChunkedMap
 from drift.ui.ui_helpers import invalidate_ui_text_cache, get_cached_text
 from drift.ui.button import Button
 from drift.core.helpers import rand_code
@@ -10,11 +9,13 @@ from drift.ui.slider import Slider
 from drift.config.settings import settings_manager
 from drift.tools.paths import asset_path, normalize_asset_path
 
+AVAILABLE_CARS = const.AVAILABLE_CARS
+
 # Game setup state (shared across new_game and join_game UI)
 _game_setup = {
     "username": "",
     "username_active": False,
-    "selected_car": const.FORCE_CAR_TYPE if const.FORCE_CAR_TYPE else "ae86",  # Default car (or forced for testing)
+    "selected_car": const.AVAILABLE_CARS[0] if const.AVAILABLE_CARS else "AE86",  # Default car
     "selected_track": "track1",  # Default track
     "selected_mode": "mode1",  # Default mode
     "room_code": "",  # For join game
@@ -317,10 +318,13 @@ def _draw_rotating_car(ui_surf, car_id, rect, font_medium, car_sprites_cache, ro
                 show_angle = (-rotation_angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
                 sprite_index = round(show_angle * 64) % 64
                 sprite = main_sprite[sprite_index]
-                
-                sprite_x = rect.centerx - sprite.get_width() // 2
-                sprite_y = rect.y + 20  # Padding from top
-                ui_surf.blit(sprite, (sprite_x, sprite_y))
+                # Center the sprite in the rect (draw_car centers on x,y)
+                cx = rect.centerx
+                cy = rect.y + 20 + sprite.get_height() // 2 - 20
+                from drift.ui.ui import draw_car
+                draw_car(ui_surf, cx, cy, rotation_angle, None,
+                         car_sprites_list=sprites,
+                         palette_colors=get_palette_colors())
     
     # draw car's name
     manufacturer, model = _load_car_specs(car_id)
@@ -656,10 +660,14 @@ def handle_new_game_click(click_pos, rects):
     if "car_up_btn" in rects and rects["car_up_btn"].collidepoint(click_pos):
         new_idx = (current_idx - 1) % len(AVAILABLE_CARS)
         _game_setup["selected_car"] = AVAILABLE_CARS[new_idx]
+        from drift.ui.ui import invalidate_palette_cache
+        invalidate_palette_cache()
         return "car_changed"
     elif "car_down_btn" in rects and rects["car_down_btn"].collidepoint(click_pos):
         new_idx = (current_idx + 1) % len(AVAILABLE_CARS)
         _game_setup["selected_car"] = AVAILABLE_CARS[new_idx]
+        from drift.ui.ui import invalidate_palette_cache
+        invalidate_palette_cache()
         return "car_changed"
     return None
 
@@ -684,10 +692,14 @@ def handle_join_game_click(click_pos, rects):
     if "car_up_btn" in rects and rects["car_up_btn"].collidepoint(click_pos):
         new_idx = (current_idx - 1) % len(AVAILABLE_CARS)
         _game_setup["selected_car"] = AVAILABLE_CARS[new_idx]
+        from drift.ui.ui import invalidate_palette_cache
+        invalidate_palette_cache()
         return "car_changed"
     elif "car_down_btn" in rects and rects["car_down_btn"].collidepoint(click_pos):
         new_idx = (current_idx + 1) % len(AVAILABLE_CARS)
         _game_setup["selected_car"] = AVAILABLE_CARS[new_idx]
+        from drift.ui.ui import invalidate_palette_cache
+        invalidate_palette_cache()
         return "car_changed"
     
     return None
@@ -748,6 +760,8 @@ def reset_game_setup():
     _game_setup["room_code"] = ""
     _game_setup["code_active"] = False
     _game_setup["error_message"] = None
+    from drift.ui.ui import invalidate_palette_cache
+    invalidate_palette_cache()  # Init sprite cache for default car
 
 def set_error_message(message):
     """Set an error message to display in the UI."""

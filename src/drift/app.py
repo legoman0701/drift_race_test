@@ -5,7 +5,7 @@
 # global imports
 import pygame, json, time, random, sys, math, uuid, argparse, threading
 # local imports
-from drift.tools.paths import asset_path, chdir_to_exe_folder_if_frozen, get_available_cars, normalize_asset_path
+from drift.tools.paths import asset_path, chdir_to_exe_folder_if_frozen, get_available_cars, normalize_asset_path, get_available_sprite_layers
 import drift.config.const as const
 import drift.render.camera as camera
 import drift.core.car as car
@@ -16,7 +16,7 @@ from drift.core.helpers import clamp, rand_name
 from drift.ai.ai import ai_algorithme
 from drift.core.inputs import read_inputs
 from drift.net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, recv_jsons
-from drift.ui.ui import handle_game_events, draw_stage_ui, invalidate_ui_text_cache
+from drift.ui.ui import handle_game_events, draw_stage_ui, invalidate_ui_text_cache, invalidate_palette_cache
 from drift.core.rpm import calc_engine_rpm
 from drift.audio.engine_audio import EngineAudio
 from drift.render.map_chunks import ChunkedMap
@@ -329,11 +329,15 @@ def load_all_car_sprites():
     """Load sprites for all car types"""
     def load_car_sprites(car_type):
         """Load sprites for a specific car type."""
-        if car_type not in const.CAR_SPRITES:
-            car_type = "ae86"  # Default fallback
+        sprite_layers = get_available_sprite_layers(car_type)
+        if not sprite_layers:
+            # Fallback to first available car if this one has no sprites
+            fallback = const.AVAILABLE_CARS[0] if const.AVAILABLE_CARS else None
+            if fallback and fallback != car_type:
+                sprite_layers = get_available_sprite_layers(fallback)
         
         car_sprites = []
-        for path_template in const.CAR_SPRITES[car_type]["paths"]:
+        for path_template in sprite_layers:
             sprite_list = []
             for i in range(64):
                 try:
@@ -341,7 +345,6 @@ def load_all_car_sprites():
                     sprite_list.append(img)
                 except Exception as e:
                     print(f"Warning: Could not load {path_template.format(i=i)}: {e}")
-                    # Create a placeholder surface if sprite fails to load
                     placeholder = pygame.Surface((32, 32), pygame.SRCALPHA)
                     placeholder.fill((255, 0, 255, 128))  # Magenta placeholder
                     sprite_list.append(placeholder)
@@ -440,6 +443,7 @@ def main():
     remotes = {}
     ai_cars = []
     path_poly = []
+    checkpoints = []
 
     my_name = rand_name()
     my_id = str(uuid.uuid4())[:8]
@@ -453,9 +457,8 @@ def main():
 
     spawnx = random.uniform(const.WINDOW_WIDTH*0.3, const.WINDOW_WIDTH*0.7)
     spawny = random.uniform(const.WINDOW_HEIGHT*0.3, const.WINDOW_HEIGHT*0.7)
-    # Use FORCE_CAR_TYPE if set for testing, otherwise default to ae86
-    initial_car_type = const.FORCE_CAR_TYPE if const.FORCE_CAR_TYPE else "ae86"
-    my_car = car.Car(spawnx, spawny, my_name, is_ai=False, car_type=initial_car_type)
+    default_car = const.AVAILABLE_CARS[0] if const.AVAILABLE_CARS else "AE86"
+    my_car = car.Car(spawnx, spawny, my_name, is_ai=False, car_type=default_car)
     # Local player's engine state (avoid mutating Car which may use __slots__)
     engine_state = {"gear": 0, "last_rpm": None}
 
@@ -631,9 +634,14 @@ def main():
             if ev.type == pygame.KEYDOWN and ev.key == const.CHANGE_CAR_KEY: # C to change car
                 # Cycle through available car types
                 available_types = list(const.CAR_SPRITES.keys())
-                current_index = available_types.index(my_car.car_type)
+                lower_types = [t.lower() for t in available_types]
+                try:
+                    current_index = available_types.index(my_car.car_type)
+                except ValueError:
+                    current_index = lower_types.index(my_car.car_type.lower()) if my_car.car_type.lower() in lower_types else 0
                 next_index = (current_index + 1) % len(available_types)
                 my_car.set_car_type(available_types[next_index])
+                invalidate_palette_cache()  # Recalculate colored sprites for new car type
             if ev.type == pygame.KEYDOWN and ev.key == const.DEBUG_TOGGLE_KEY: # F3 to toggle debug mode
                 # Toggle debug mode
                 const.DEBUG = not const.DEBUG
@@ -680,7 +688,7 @@ def main():
                 cam.offset[0] -= ev.rel[0] / cam.zoom
                 cam.offset[1] -= ev.rel[1] / cam.zoom
 
-            ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map, checkpoints = handle_game_events(screen, ev, stage1, stage2, stage3, gp, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name)
+            ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map, checkpoints = handle_game_events(screen, ev, stage1, stage2, stage3, gp, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name, track_image=track_image, chunked_map=chunked_map, checkpoints=checkpoints)
             I_AM_HOST = host_ref[0]
             # update map changes
             if renderer and track_image and renderer.track_image != track_image: renderer.track_image = track_image
@@ -704,6 +712,7 @@ def main():
                 current_index = available_types.index(my_car.car_type)
                 next_index = (current_index + 1) % len(available_types)
                 my_car.set_car_type(    available_types[next_index])
+                invalidate_palette_cache()  # Recalculate colored sprites for new car type
             if js.get_button(3) and time.time() - ctlr_btn3_time > 0.2: # Y to spawn ai car
                 ctlr_btn3_time = time.time()
                 if I_AM_HOST and stage1 in ["game", "mode1", "mode2"] and stage2 == "":
@@ -789,7 +798,7 @@ def main():
                 except Exception:
                     controls = None
             if controls is None:
-                controls = read_inputs(joysticks, my_car, cam, const.CURSOR_FOLLOW, const.AI_PATH_FOLLOW)
+                controls = read_inputs(gp, my_car, cam, const.CURSOR_FOLLOW, const.AI_PATH_FOLLOW)
             my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG, cursor_follow=const.CURSOR_FOLLOW, cam=cam)
             # Update engine audio based on RPM and throttle with enhanced drift characteristics
             try:
@@ -861,9 +870,9 @@ def main():
         ui_surf.fill((0,0,0,0)) # transparent surface
         fps = clock.get_fps()
         world_surf, button_results, new_game_rects, join_game_rects, palette_picker_rects = draw_stage_ui(
-            ui_surf, stage1, stage2, stage3, code, world_surf, world_size, 
-            settings_buttons, error_msg, my_car, cam, joysticks, font_big, font_medium, font_small,
-            controls, engine_state, fps, dt, host_name, car_sprites_cache
+            ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
+            checkpoints, settings_buttons, error_msg, my_car, cam, gp, font_big, font_medium, font_small,
+            controls, engine_state, fps, dt, I_AM_HOST, host_name, car_sprites_cache
         )
         
         # Handle button results from settings menu

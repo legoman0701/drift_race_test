@@ -205,7 +205,8 @@ class WorldRenderer:
                     drift_pts = draw_car(world_surf, d["x"] - offx, d["y"] - offy, d["a"], d.get("name", f"Player{pid}"),
                                          color_body=const.COLOR_BODY_REMOTE,
                                          car_sprites_list=remote_car_sprites,
-                                         lights_on=lights_on)
+                                         lights_on=lights_on,
+                                         palette_colors=d.get("palette"))
                     if d.get("drift_ratio", 0.0) > 0.8 and pid in self._drift_points_old_remotes and drift_pts is not None:
                         old_pts = self._drift_points_old_remotes[pid]
                         # convert local back to world for the tire grid
@@ -266,7 +267,8 @@ class WorldRenderer:
                 drift_pts = draw_car(world_surf, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
                                      color_body=const.COLOR_BODY_REMOTE,
                                      car_sprites_list=remote_car_sprites,
-                                     lights_on=lights_on)
+                                     lights_on=lights_on,
+                                     palette_colors=d.get("palette"))
                 if d.get("drift_ratio", 0.0) > 0.8 and pid in self._drift_points_old_remotes and drift_pts is not None:
                     old_pts = self._drift_points_old_remotes[pid]
                     pygame.draw.line(self.tire_mark, const.TIRE_MARK_SMOKE, drift_pts[0], old_pts[0], 3)

@@ -83,8 +83,10 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
                 thg = d.get("has_grip", [1.0, 1.0, 1.0, 1.0])
                 name = d.get("name", f"Player{pid}")
                 car_type = d.get("car_type", "ae86")
+                raw_palette = d.get("palette")
+                palette = tuple(tuple(c) for c in raw_palette) if raw_palette and len(raw_palette) == 3 else None
                 if pid not in remotes:
-                    remotes[pid] = {"x": tx, "y": ty, "a": ta, "name": name, "has_grip": thg, "car_type": car_type}
+                    remotes[pid] = {"x": tx, "y": ty, "a": ta, "name": name, "has_grip": thg, "car_type": car_type, "palette": palette}
                 else:
                     cur = remotes[pid]
                     cur["x"] += (tx - cur["x"]) * alpha_pos
@@ -94,6 +96,7 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
                     cur["a"] = (cur["a"] + da * alpha_angle) % (2 * math.pi)
                     cur["name"] = name
                     cur["car_type"] = car_type
+                    cur["palette"] = palette
             for pid in list(remotes.keys()):
                 if pid not in players:
                     remotes.pop(pid, None)
@@ -104,6 +107,8 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
 
 
 def send_network_state(sock, code: str, my_id: str, my_car):
+    from drift.ui.draw_stage import get_palette_colors
+    palette = get_palette_colors()
     pkt = {
         "t": "state",
         "code": code,
@@ -116,6 +121,7 @@ def send_network_state(sock, code: str, my_id: str, my_car):
         "has_grip": [round(v, 3) for v in my_car.has_grip],
         "name": my_car.name,
         "car_type": getattr(my_car, "car_type", "ae86"),
+        "palette": [list(c) for c in palette],
     }
     try:
         sock.send(json.dumps(pkt).encode("utf-8"))
