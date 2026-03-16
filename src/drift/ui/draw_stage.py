@@ -1,4 +1,5 @@
 import pygame, json, time, math
+from drift.config.const import AVAILABLE_CARS
 import drift.config.const as const
 from drift.render.map_chunks import ChunkedMap
 from drift.render.map_chunks import ChunkedMap
@@ -152,6 +153,29 @@ def draw_error(ui_surf, error_msg, font_small):
     tip = font_small.render("Press R to restart", True, const.GREY_200)
     ui_surf.blit(tip, (const.WINDOW_WIDTH//2 - tip.get_width()//2, const.WINDOW_HEIGHT//2 + 40))
 
+def _draw_rotating_car(ui_surf, car_id, rect, font_medium, car_sprites_cache, rotation_angle):
+    """Helper to draw a rotating car sprite and its text centered in a given rect."""
+    # draw cars' sprites
+    if car_sprites_cache and car_id in car_sprites_cache:
+        sprites = car_sprites_cache[car_id]
+        if sprites:
+            main_sprite = sprites[1] if len(sprites) > 1 else sprites[0]
+            if main_sprite:
+                show_angle = (-rotation_angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
+                sprite_index = round(show_angle * 64) % 64
+                sprite = main_sprite[sprite_index]
+                
+                sprite_x = rect.centerx - sprite.get_width() // 2
+                sprite_y = rect.y + 20  # Padding from top
+                ui_surf.blit(sprite, (sprite_x, sprite_y))
+    
+    # draw car's name
+    manufacturer, model = _load_car_specs(car_id)
+    text_surf = font_medium.render(f"{manufacturer} {model}", True, const.WHITE_240)
+    text_x = rect.centerx - text_surf.get_width() // 2
+    text_y = rect.top + text_surf.get_height() - 5
+    ui_surf.blit(text_surf, (text_x, text_y))
+
 def draw_new_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.016):
     """Draw new game setup screen with username input, car/track/mode selection.
     This creates a clean new page with solid background color."""
@@ -188,105 +212,62 @@ def draw_new_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.0
     label = font_medium.render("Car", True, const.WHITE_240)
     ui_surf.blit(label, (center_x - label.get_width() // 2, y))
     
-    # Car buttons - now with sprites instead of text - new car flag
+    # dimension
     car_spacing = 30
     car_btn_width = (btn_width - car_spacing) // 2
     car_btn_height = btn_height + 40  # Extra height for car sprite and manufacturer text
-    car1_rect = pygame.Rect(center_x - btn_width // 4 - car_btn_width - car_spacing, y + 35, car_btn_width, car_btn_height)
-    car2_rect = pygame.Rect(center_x - btn_width // 4, y + 35, car_btn_width, car_btn_height)
-    car3_rect = pygame.Rect(center_x - btn_width // 4 + car_btn_width + car_spacing, y + 35, car_btn_width, car_btn_height)
-    car4_rect = pygame.Rect(center_x - btn_width // 4 + 2 * (car_btn_width + car_spacing), y + 35, car_btn_width, car_btn_height)
+    sidebar_width = 40
+    total_width = car_btn_width + sidebar_width
+    start_x = center_x - total_width // 2
+    car_box_y = y + 35
     
-    # rect colors - new car flag
-    car1_color = const.GREEN if _game_setup["selected_car"] == "ae86" else (80, 80, 90)
-    car2_color = const.GREEN if _game_setup["selected_car"] == "barracuda" else (80, 80, 90)
-    car3_color = const.GREEN if _game_setup["selected_car"] == "911" else (80, 80, 90)
-    car4_color = const.GREEN if _game_setup["selected_car"] == "mustang" else (80, 80, 90)
+    # Get current car index
+    selected_car = _game_setup.get("selected_car", AVAILABLE_CARS[0])
+    try: current_index = AVAILABLE_CARS.index(selected_car)
+    except ValueError: current_index = 0
+
+    # 1. Main Display Box (Green Border)
+    main_car_rect = pygame.Rect(start_x, car_box_y, car_btn_width, car_btn_height)
+    pygame.draw.rect(ui_surf, const.GREEN, main_car_rect, 2)
     
-    # draw rects - new car flag
-    pygame.draw.rect(ui_surf, car1_color, car1_rect, 2)
-    pygame.draw.rect(ui_surf, car2_color, car2_rect, 2)
-    pygame.draw.rect(ui_surf, car3_color, car3_rect, 2)
-    pygame.draw.rect(ui_surf, car4_color, car4_rect, 2)
+    # Use the helper to draw the rotating car inside the centered box
+    _draw_rotating_car(ui_surf, selected_car, main_car_rect, font_medium, car_sprites_cache, _car_rotation_angle)
+
+    # 2. Sidebar Layout (White Borders) attached to the right edge
+    sidebar_x = main_car_rect.right
+    section_height = car_btn_height // 3
     
-    # Draw car sprites if available - new car flag
-    if car_sprites_cache:
-        # ae86 car sprite
-        ae86_sprites = car_sprites_cache.get("ae86", [])
-        if ae86_sprites:
-            # Use only the main diffuse sprite (index 1)
-            main_sprite = ae86_sprites[1] if len(ae86_sprites) > 1 else ae86_sprites[0] if ae86_sprites else None
-            if main_sprite:
-                # Calculate sprite angle and index for rotation
-                show_angle = (-_car_rotation_angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
-                sprite_index = round(show_angle * 64) % 64
-                sprite = main_sprite[sprite_index]
-                sprite_size = (sprite.get_width(), sprite.get_height())
-                # Position sprite in upper part of button
-                sprite_x = car1_rect.centerx - sprite_size[0] // 2
-                sprite_y = car1_rect.y + 10
-                ui_surf.blit(sprite, (sprite_x, sprite_y))
-        # barracuda car sprite
-        barracuda_sprites = car_sprites_cache.get("barracuda", [])
-        if barracuda_sprites:
-            # Use only the main diffuse sprite (index 1)
-            main_sprite = barracuda_sprites[1] if len(barracuda_sprites) > 1 else barracuda_sprites[0] if barracuda_sprites else None
-            if main_sprite:
-                # Calculate sprite angle and index for rotation
-                show_angle = (-_car_rotation_angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
-                sprite_index = round(show_angle * 64) % 64
-                sprite = main_sprite[sprite_index]
-                sprite_size = (sprite.get_width(), sprite.get_height())
-                # Position sprite in upper part of button
-                sprite_x = car2_rect.centerx - sprite_size[0] // 2
-                sprite_y = car2_rect.y + 10
-                ui_surf.blit(sprite, (sprite_x, sprite_y))
-        # 911 car sprite
-        p911_sprites = car_sprites_cache.get("911", [])
-        if p911_sprites:
-            # Use only the main diffuse sprite (index 1)
-            main_sprite = p911_sprites[1] if len(p911_sprites) > 1 else p911_sprites[0] if p911_sprites else None
-            if main_sprite:
-                # Calculate sprite angle and index for rotation
-                show_angle = (-_car_rotation_angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
-                sprite_index = round(show_angle * 64) % 64
-                sprite = main_sprite[sprite_index]
-                sprite_size = (sprite.get_width(), sprite.get_height())
-                # Position sprite in upper part of button
-                sprite_x = car3_rect.centerx - sprite_size[0] // 2
-                sprite_y = car3_rect.y + 10
-                ui_surf.blit(sprite, (sprite_x, sprite_y))
-        # mustang car sprite
-        mustang_sprites = car_sprites_cache.get("mustang", [])
-        if mustang_sprites:
-            # Use only the main diffuse sprite (index 1)
-            main_sprite = mustang_sprites[1] if len(mustang_sprites) > 1 else mustang_sprites[0] if mustang_sprites else None
-            if main_sprite:
-                # Calculate sprite angle and index for rotation
-                show_angle = (-_car_rotation_angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
-                sprite_index = round(show_angle * 64) % 64
-                sprite = main_sprite[sprite_index]
-                sprite_size = (sprite.get_width(), sprite.get_height())
-                # Position sprite in upper part of button
-                sprite_x = car4_rect.centerx - sprite_size[0] // 2
-                sprite_y = car4_rect.y + 10
-                ui_surf.blit(sprite, (sprite_x, sprite_y))
+    # Define the 3 clickable/display zones
+    up_rect = pygame.Rect(sidebar_x, car_box_y, sidebar_width, section_height)
+    # Middle rect takes remaining height to ensure it perfectly aligns with the bottom
+    counter_rect = pygame.Rect(sidebar_x, car_box_y + section_height, sidebar_width, car_btn_height - 2 * section_height)
+    down_rect = pygame.Rect(sidebar_x, main_car_rect.bottom - section_height, sidebar_width, section_height)
     
-    # Draw manufacturer and model text underneath sprites - new car flag
-    ae86_manufacturer, ae86_model = _load_car_specs("ae86")
-    barracuda_manufacturer, barracuda_model = _load_car_specs("barracuda")
-    p911_manufacturer, p911_model = _load_car_specs("911")
-    mustang_manufacturer, mustang_model = _load_car_specs("mustang")
+    # Draw Sidebar outlines
+    pygame.draw.rect(ui_surf, const.WHITE_240, up_rect, 2)
+    pygame.draw.rect(ui_surf, const.WHITE_240, counter_rect, 2)
+    pygame.draw.rect(ui_surf, const.WHITE_240, down_rect, 2)
     
-    # CAR TEXTS - new car flag
-    ae86_text = font_medium.render(f"{ae86_manufacturer} {ae86_model}", True, const.WHITE_240) # ae86 text
-    ui_surf.blit(ae86_text, (car1_rect.centerx - ae86_text.get_width() // 2, car1_rect.bottom - ae86_text.get_height() - 5))
-    barracuda_text = font_medium.render(f"{barracuda_manufacturer} {barracuda_model}", True, const.WHITE_240) # barracuda text
-    ui_surf.blit(barracuda_text, (car2_rect.centerx - barracuda_text.get_width() // 2, car2_rect.bottom - barracuda_text.get_height() - 5))
-    p911_text = font_medium.render(f"{p911_manufacturer} {p911_model}", True, const.WHITE_240) # 911 text
-    ui_surf.blit(p911_text, (car3_rect.centerx - p911_text.get_width() // 2, car3_rect.bottom - p911_text.get_height() - 5))
-    mustang_text = font_medium.render(f"{mustang_manufacturer} {mustang_model}", True, const.WHITE_240) # mustang text
-    ui_surf.blit(mustang_text, (car4_rect.centerx - mustang_text.get_width() // 2, car4_rect.bottom - mustang_text.get_height() - 5))
+    # Draw Up Arrow (^)
+    arrow_offset_x = 8
+    arrow_offset_y = 6
+    pygame.draw.lines(ui_surf, const.WHITE_240, False, [
+        (up_rect.centerx - arrow_offset_x, up_rect.centery + arrow_offset_y),
+        (up_rect.centerx, up_rect.centery - arrow_offset_y),
+        (up_rect.centerx + arrow_offset_x, up_rect.centery + arrow_offset_y)
+    ], 2)
+    
+    # Draw Down Arrow (v)
+    pygame.draw.lines(ui_surf, const.WHITE_240, False, [
+        (down_rect.centerx - arrow_offset_x, down_rect.centery - arrow_offset_y),
+        (down_rect.centerx, down_rect.centery + arrow_offset_y),
+        (down_rect.centerx + arrow_offset_x, down_rect.centery - arrow_offset_y)
+    ], 2)
+    
+    # Draw Counter Text
+    counter_text = font_medium.render(f"{current_index + 1}/{len(AVAILABLE_CARS)}", True, const.WHITE_240)
+    ui_surf.blit(counter_text, (counter_rect.centerx - counter_text.get_width() // 2, 
+                                counter_rect.centery - counter_text.get_height() // 2))
 
     # Track selection section
     y += spacing + 75  # Extra space to account for taller car buttons
@@ -354,12 +335,10 @@ def draw_new_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.0
         ui_surf.blit(error_surf, (center_x - error_surf.get_width() // 2, y))
     
     # Store rects for click detection (returned for event handling)
-    return { # new car flag
+    return {
         "username_box": input_box_rect,
-        "car1_btn": car1_rect,
-        "car2_btn": car2_rect,
-        "car3_btn": car3_rect,
-        "car4_btn": car4_rect,
+        "car_up_btn": up_rect,
+        "car_down_btn": down_rect,
         "track1_btn": track1_rect,
         "track2_btn": track2_rect,
         "mode1_btn": mode1_rect,
@@ -368,147 +347,103 @@ def draw_new_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.0
     }
 
 def draw_join_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.016):
-    """Draw join game screen with username input, car selection, and code input.
-    This creates a clean new page with solid background color."""
-    
-    # Update car rotation
     _update_car_rotation(dt)
-    
-    # Fill background with solid color (dark background)
     ui_surf.fill(const.GREY_20)
     
-    # Button dimensions
+    # scales
     btn_width = const.BTN_WIDTH
     btn_height = const.BTN_HEIGHT
-    center_x = const.WINDOW_WIDTH // 2
-    
-    y_start = const.WINDOW_HEIGHT * 0.1
+    center_x = const.WINDOW_WIDTH // 2    
+    y_start = const.WINDOW_HEIGHT * 0.08
     spacing = btn_height + 30
     
-    # Username section
+    # --- Username section ---
     y = y_start
     label = font_medium.render("Username", True, const.WHITE_240)
     ui_surf.blit(label, (center_x - label.get_width() // 2, y))
     
-    # Username input box
     input_box_rect = pygame.Rect(center_x - btn_width // 2, y + 35, btn_width, btn_height)
     input_color = (100, 200, 100) if _game_setup["username_active"] else (80, 80, 90)
     pygame.draw.rect(ui_surf, input_color, input_box_rect, 2)
     
-    # Username text (only show if username exists, no placeholder)
     if _game_setup["username"]:
         username_surf = font_medium.render(_game_setup["username"], True, const.WHITE_240)
         ui_surf.blit(username_surf, (input_box_rect.centerx - username_surf.get_width() // 2, 
                                       input_box_rect.centery - username_surf.get_height() // 2))
     
-    # Car selection section
+    # --- Car section ---
     y += spacing + 35
     label = font_medium.render("Car", True, const.WHITE_240)
     ui_surf.blit(label, (center_x - label.get_width() // 2, y))
     
-    # Car buttons - now with sprites instead of text - new car flag
+    # dimension
     car_spacing = 30
     car_btn_width = (btn_width - car_spacing) // 2
     car_btn_height = btn_height + 40  # Extra height for car sprite and manufacturer text
-    car1_rect = pygame.Rect(center_x - btn_width // 4 - car_btn_width - car_spacing, y + 35, car_btn_width, car_btn_height)
-    car2_rect = pygame.Rect(center_x - btn_width // 4, y + 35, car_btn_width, car_btn_height)
-    car3_rect = pygame.Rect(center_x - btn_width // 4 + car_btn_width + car_spacing, y + 35, car_btn_width, car_btn_height)
-    car4_rect = pygame.Rect(center_x - btn_width // 4 + 2 * (car_btn_width + car_spacing), y + 35, car_btn_width, car_btn_height)
+    sidebar_width = 40
+    total_width = car_btn_width + sidebar_width
+    start_x = center_x - total_width // 2
+    car_box_y = y + 35
     
-    # rect colors - new car flag
-    car1_color = const.GREEN if _game_setup["selected_car"] == "ae86" else (80, 80, 90)
-    car2_color = const.GREEN if _game_setup["selected_car"] == "barracuda" else (80, 80, 90)
-    car3_color = const.GREEN if _game_setup["selected_car"] == "911" else (80, 80, 90)
-    car4_color = const.GREEN if _game_setup["selected_car"] == "mustang" else (80, 80, 90)
-    
-    # draw rects - new car flag
-    pygame.draw.rect(ui_surf, car1_color, car1_rect, 2)
-    pygame.draw.rect(ui_surf, car2_color, car2_rect, 2)
-    pygame.draw.rect(ui_surf, car3_color, car3_rect, 2)
-    pygame.draw.rect(ui_surf, car4_color, car4_rect, 2)
+    # Get current car index
+    selected_car = _game_setup.get("selected_car", AVAILABLE_CARS[0])
+    try: current_index = AVAILABLE_CARS.index(selected_car)
+    except ValueError: current_index = 0
 
-    # Draw car sprites if available - new car flag
-    if car_sprites_cache:
-        # ae86 car sprite
-        ae86_sprites = car_sprites_cache.get("ae86", [])
-        if ae86_sprites:
-            # Use only the main diffuse sprite (index 1)
-            main_sprite = ae86_sprites[1] if len(ae86_sprites) > 1 else ae86_sprites[0] if ae86_sprites else None
-            if main_sprite:
-                # Calculate sprite angle and index for rotation
-                show_angle = (-_car_rotation_angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
-                sprite_index = round(show_angle * 64) % 64
-                sprite = main_sprite[sprite_index]
-                sprite_size = (sprite.get_width(), sprite.get_height())
-                # Position sprite in upper part of button
-                sprite_x = car1_rect.centerx - sprite_size[0] // 2
-                sprite_y = car1_rect.y + 10
-                ui_surf.blit(sprite, (sprite_x, sprite_y))
-        # barracuda car sprite
-        barracuda_sprites = car_sprites_cache.get("barracuda", [])
-        if barracuda_sprites:
-            # Use only the main diffuse sprite (index 1)
-            main_sprite = barracuda_sprites[1] if len(barracuda_sprites) > 1 else barracuda_sprites[0] if barracuda_sprites else None
-            if main_sprite:
-                # Calculate sprite angle and index for rotation
-                show_angle = (-_car_rotation_angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
-                sprite_index = round(show_angle * 64) % 64
-                sprite = main_sprite[sprite_index]
-                sprite_size = (sprite.get_width(), sprite.get_height())
-                # Position sprite in upper part of button
-                sprite_x = car2_rect.centerx - sprite_size[0] // 2
-                sprite_y = car2_rect.y + 10
-                ui_surf.blit(sprite, (sprite_x, sprite_y))
-        # 911 car sprite
-        p911_sprites = car_sprites_cache.get("911", [])
-        if p911_sprites:
-            # Use only the main diffuse sprite (index 1)
-            main_sprite = p911_sprites[1] if len(p911_sprites) > 1 else p911_sprites[0] if p911_sprites else None
-            if main_sprite:
-                # Calculate sprite angle and index for rotation
-                show_angle = (-_car_rotation_angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
-                sprite_index = round(show_angle * 64) % 64
-                sprite = main_sprite[sprite_index]
-                sprite_size = (sprite.get_width(), sprite.get_height())
-                # Position sprite in upper part of button
-                sprite_x = car3_rect.centerx - sprite_size[0] // 2
-                sprite_y = car3_rect.y + 10
-                ui_surf.blit(sprite, (sprite_x, sprite_y))
-        # mustang car sprite
-        mustang_sprites = car_sprites_cache.get("mustang", [])
-        if mustang_sprites:
-            # Use only the main diffuse sprite (index 1)
-            main_sprite = mustang_sprites[1] if len(mustang_sprites) > 1 else mustang_sprites[0] if mustang_sprites else None
-            if main_sprite:
-                # Calculate sprite angle and index for rotation
-                show_angle = (-_car_rotation_angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
-                sprite_index = round(show_angle * 64) % 64
-                sprite = main_sprite[sprite_index]
-                sprite_size = (sprite.get_width(), sprite.get_height())
-                # Position sprite in upper part of button
-                sprite_x = car4_rect.centerx - sprite_size[0] // 2
-                sprite_y = car4_rect.y + 10
-                ui_surf.blit(sprite, (sprite_x, sprite_y))
+    # 1. Main Display Box (Green Border)
+    main_car_rect = pygame.Rect(start_x, car_box_y, car_btn_width, car_btn_height)
+    pygame.draw.rect(ui_surf, const.GREEN, main_car_rect, 2)
     
-    # Draw manufacturer and model text underneath sprites - new car flag
-    ae86_manufacturer, ae86_model = _load_car_specs("ae86")
-    barracuda_manufacturer, barracuda_model = _load_car_specs("barracuda")
-    p911_manufacturer, p911_model = _load_car_specs("911")
-    mustang_manufacturer, mustang_model = _load_car_specs("mustang")
+    # Use the helper to draw the rotating car inside the centered box
+    _draw_rotating_car(ui_surf, selected_car, main_car_rect, font_medium, car_sprites_cache, _car_rotation_angle)
 
-    # CAR TEXTS - new car flag
-   
-    ae86_text = font_medium.render(f"{ae86_manufacturer} {ae86_model}", True, const.WHITE_240) # ae86 text
-    ui_surf.blit(ae86_text, (car1_rect.centerx - ae86_text.get_width() // 2, car1_rect.bottom - ae86_text.get_height() - 5))
-    barracuda_text = font_medium.render(f"{barracuda_manufacturer} {barracuda_model}", True, const.WHITE_240) # barracuda text
-    ui_surf.blit(barracuda_text, (car2_rect.centerx - barracuda_text.get_width() // 2, car2_rect.bottom - barracuda_text.get_height() - 5))
-    p911_text = font_medium.render(f"{p911_manufacturer} {p911_model}", True, const.WHITE_240) # 911 text
-    ui_surf.blit(p911_text, (car3_rect.centerx - p911_text.get_width() // 2, car3_rect.bottom - p911_text.get_height() - 5))
-    mustang_text = font_medium.render(f"{mustang_manufacturer} {mustang_model}", True, const.WHITE_240) # mustang text
-    ui_surf.blit(mustang_text, (car4_rect.centerx - mustang_text.get_width() // 2, car4_rect.bottom - mustang_text.get_height() - 5))
+    # 2. Sidebar Layout (White Borders) attached to the right edge
+    sidebar_x = main_car_rect.right
+    section_height = car_btn_height // 3
+    
+    # Define the 3 clickable/display zones
+    up_rect = pygame.Rect(sidebar_x, car_box_y, sidebar_width, section_height)
+    # Middle rect takes remaining height to ensure it perfectly aligns with the bottom
+    counter_rect = pygame.Rect(sidebar_x, car_box_y + section_height, sidebar_width, car_btn_height - 2 * section_height)
+    down_rect = pygame.Rect(sidebar_x, main_car_rect.bottom - section_height, sidebar_width, section_height)
+    
+    # Draw Sidebar outlines
+    pygame.draw.rect(ui_surf, const.WHITE_240, up_rect, 2)
+    pygame.draw.rect(ui_surf, const.WHITE_240, counter_rect, 2)
+    pygame.draw.rect(ui_surf, const.WHITE_240, down_rect, 2)
+    
+    # Draw Up Arrow (^) - Scaled down slightly for the smaller box
+    arrow_offset_x = 8
+    arrow_offset_y = 6
+    pygame.draw.lines(ui_surf, const.WHITE_240, False, [
+        (up_rect.centerx - arrow_offset_x, up_rect.centery + arrow_offset_y),
+        (up_rect.centerx, up_rect.centery - arrow_offset_y),
+        (up_rect.centerx + arrow_offset_x, up_rect.centery + arrow_offset_y)
+    ], 2)
+    
+    # Draw Down Arrow (v)
+    pygame.draw.lines(ui_surf, const.WHITE_240, False, [
+        (down_rect.centerx - arrow_offset_x, down_rect.centery - arrow_offset_y),
+        (down_rect.centerx, down_rect.centery + arrow_offset_y),
+        (down_rect.centerx + arrow_offset_x, down_rect.centery - arrow_offset_y)
+    ], 2)
+    
+    # Draw Counter Text
+    counter_text = font_medium.render(f"{current_index + 1}/{len(AVAILABLE_CARS)}", True, const.WHITE_240)
+    ui_surf.blit(counter_text, (counter_rect.centerx - counter_text.get_width() // 2, 
+                                counter_rect.centery - counter_text.get_height() // 2))
+
+    # Add the buttons to the rects dictionary so we can click them later
+    rects_to_return = {
+        "username_box": input_box_rect,
+        "car_up_btn": up_rect,
+        "car_down_btn": down_rect
+        # (Make sure to include your other existing return rects here!)
+    }
+
     
     # Code section
-    y += spacing + 75  # Extra space to account for taller car buttons
+    y += spacing + 75
     label = font_medium.render("Room Code", True, const.WHITE_240)
     ui_surf.blit(label, (center_x - label.get_width() // 2, y))
     
@@ -516,6 +451,7 @@ def draw_join_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.
     code_box_rect = pygame.Rect(center_x - btn_width // 2, y + 35, btn_width, btn_height)
     code_color = (100, 200, 100) if _game_setup.get("code_active", False) else (80, 80, 90)
     pygame.draw.rect(ui_surf, code_color, code_box_rect, 2)
+    rects_to_return["code_box"] = code_box_rect
     
     # Code text (only show if code exists, no placeholder)
     if _game_setup.get("room_code", ""):
@@ -527,88 +463,80 @@ def draw_join_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.
     y += spacing + 50
     join_btn_rect = pygame.Rect(center_x - btn_width // 2, y, btn_width, btn_height)
     pygame.draw.rect(ui_surf, const.GREEN, join_btn_rect)
+    rects_to_return["join_btn"] = join_btn_rect
     
     join_text = font_big.render("Join", True, const.WHITE_240)
     ui_surf.blit(join_text, (join_btn_rect.centerx - join_text.get_width() // 2, 
                               join_btn_rect.centery - join_text.get_height() // 2))
     
-    # Error message area
+    # Error message
     y += btn_height + 10
     if _game_setup["error_message"]:
         error_surf = font_medium.render(_game_setup["error_message"], True, (255, 100, 100))
         ui_surf.blit(error_surf, (center_x - error_surf.get_width() // 2, y))
     
-    # Store rects for click detection (returned for event handling)
-    return { # new car flag
-        "username_box": input_box_rect,
-        "car1_btn": car1_rect,
-        "car2_btn": car2_rect,
-        "car3_btn": car3_rect,
-        "car4_btn": car4_rect,
-        "code_box": code_box_rect,
-        "join_btn": join_btn_rect,
-    }
+    return rects_to_return
 
 def handle_new_game_click(click_pos, rects):
     """Handle mouse clicks on new game UI elements."""
-    # new car flag
-    if rects["username_box"].collidepoint(click_pos):
+    if "username_box" in rects and rects["username_box"].collidepoint(click_pos):
         _game_setup["username_active"] = True
         _game_setup["code_active"] = False
         return "username_clicked"
-    elif rects["car1_btn"].collidepoint(click_pos):
-        _game_setup["selected_car"] = "ae86"
-        return "car1_selected"
-    elif rects["car2_btn"].collidepoint(click_pos):
-        _game_setup["selected_car"] = "barracuda"
-        return "car2_selected"
-    elif rects["car3_btn"].collidepoint(click_pos):
-        _game_setup["selected_car"] = "911"
-        return "car3_selected"
-    elif rects["car4_btn"].collidepoint(click_pos):
-        _game_setup["selected_car"] = "mustang"
-        return "car4_selected"
-    elif rects["track1_btn"].collidepoint(click_pos):
+    elif "track1_btn" in rects and rects["track1_btn"].collidepoint(click_pos):
         _game_setup["selected_track"] = "track1"
         return "track1_selected"
-    elif rects["track2_btn"].collidepoint(click_pos):
+    elif "track2_btn" in rects and rects["track2_btn"].collidepoint(click_pos):
         _game_setup["selected_track"] = "track2"
         return "track2_selected"
-    elif rects["mode1_btn"].collidepoint(click_pos):
+    elif "mode1_btn" in rects and rects["mode1_btn"].collidepoint(click_pos):
         _game_setup["selected_mode"] = "mode1"
         return "mode1_selected"
-    elif rects["mode2_btn"].collidepoint(click_pos):
+    elif "mode2_btn" in rects and rects["mode2_btn"].collidepoint(click_pos):
         _game_setup["selected_mode"] = "mode2"
         return "mode2_selected"
-    elif rects["host_btn"].collidepoint(click_pos):
+    elif "host_btn" in rects and rects["host_btn"].collidepoint(click_pos):
         return "host_game"
+    # car selection
+    current_car = _game_setup.get("selected_car", AVAILABLE_CARS[0])
+    current_idx = AVAILABLE_CARS.index(current_car) if current_car in AVAILABLE_CARS else 0
+    if "car_up_btn" in rects and rects["car_up_btn"].collidepoint(click_pos):
+        new_idx = (current_idx - 1) % len(AVAILABLE_CARS)
+        _game_setup["selected_car"] = AVAILABLE_CARS[new_idx]
+        return "car_changed"
+    elif "car_down_btn" in rects and rects["car_down_btn"].collidepoint(click_pos):
+        new_idx = (current_idx + 1) % len(AVAILABLE_CARS)
+        _game_setup["selected_car"] = AVAILABLE_CARS[new_idx]
+        return "car_changed"
     return None
 
 def handle_join_game_click(click_pos, rects):
-    # new car flag
     """Handle mouse clicks on join game UI elements."""
-    if rects["username_box"].collidepoint(click_pos):
+    # username box
+    if "username_box" in rects and rects["username_box"].collidepoint(click_pos):
         _game_setup["username_active"] = True
         _game_setup["code_active"] = False
         return "username_clicked"
-    elif rects["car1_btn"].collidepoint(click_pos):
-        _game_setup["selected_car"] = "ae86"
-        return "car1_selected"
-    elif rects["car2_btn"].collidepoint(click_pos):
-        _game_setup["selected_car"] = "barracuda"
-        return "car2_selected"
-    elif rects["car3_btn"].collidepoint(click_pos):
-        _game_setup["selected_car"] = "911"
-        return "car3_selected"
-    elif rects["car4_btn"].collidepoint(click_pos):
-        _game_setup["selected_car"] = "mustang"
-        return "car4_selected"
-    elif rects["code_box"].collidepoint(click_pos):
+    # code box
+    elif "code_box" in rects and rects["code_box"].collidepoint(click_pos):
         _game_setup["code_active"] = True
         _game_setup["username_active"] = False
         return "code_clicked"
-    elif rects["join_btn"].collidepoint(click_pos):
+    # join button
+    elif "join_btn" in rects and rects["join_btn"].collidepoint(click_pos):
         return "join_game"
+    # car selection
+    current_car = _game_setup.get("selected_car", AVAILABLE_CARS[0])
+    current_idx = AVAILABLE_CARS.index(current_car) if current_car in AVAILABLE_CARS else 0
+    if "car_up_btn" in rects and rects["car_up_btn"].collidepoint(click_pos):
+        new_idx = (current_idx - 1) % len(AVAILABLE_CARS)
+        _game_setup["selected_car"] = AVAILABLE_CARS[new_idx]
+        return "car_changed"
+    elif "car_down_btn" in rects and rects["car_down_btn"].collidepoint(click_pos):
+        new_idx = (current_idx + 1) % len(AVAILABLE_CARS)
+        _game_setup["selected_car"] = AVAILABLE_CARS[new_idx]
+        return "car_changed"
+    
     return None
 
 def handle_new_game_keypress(event):

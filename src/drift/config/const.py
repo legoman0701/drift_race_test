@@ -73,6 +73,7 @@ VIEW_ANGLE = 70 * math.pi / 180.0  # radians
 # ======= CAR SPRITES =======
 # [shadow, diffuse (main), headlights]
 # new car flag
+AVAILABLE_CARS = ["ae86", "barracuda", "911", "mustang"]
 CAR_SPRITES = {
     "ae86": {
         "paths": [
