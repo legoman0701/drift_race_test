@@ -29,25 +29,15 @@ def draw_car(surface, x, y, angle, name,
     if car_sprites_list is None:
         car_sprites_list = []
     for i, car_sprite in enumerate(car_sprites_list):
+        if i==2 and not lights_on: continue
+        show_angle = (-angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
+        sprite_index = round(show_angle * 64) % 64
+        sprite_size = (car_sprite[sprite_index].get_width(), car_sprite[sprite_index].get_height())
+        pos = (int(x - sprite_size[0] // 2), int(y - sprite_size[1] // 2))
         if i == 2:  # light spray
-            if not lights_on:
-                continue
-            show_angle = (-angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
-            sprite_index = round(show_angle * 64) % 64
-            sprite_size = (car_sprite[sprite_index].get_width(), car_sprite[sprite_index].get_height())
-            surface.blit(car_sprite[sprite_index],
-                         (int(x - sprite_size[0] // 2), int(y - sprite_size[1] // 2)),
-                         special_flags=pygame.BLEND_RGB_ADD)
-        elif i == 0:  # shadow (shadown mask to be made)
-            show_angle = (-angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
-            sprite_index = round(show_angle * 64) % 64
-            sprite_size = (car_sprite[sprite_index].get_width(), car_sprite[sprite_index].get_height())
-            surface.blit(car_sprite[sprite_index], (int(x - sprite_size[0] // 2), int(y - sprite_size[1] // 2)))
+            surface.blit(car_sprite[sprite_index], pos, special_flags=pygame.BLEND_RGB_ADD)
         else:
-            show_angle = (-angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
-            sprite_index = round(show_angle * 64) % 64
-            sprite_size = (car_sprite[sprite_index].get_width(), car_sprite[sprite_index].get_height())
-            surface.blit(car_sprite[sprite_index], (int(x - sprite_size[0] // 2), int(y - sprite_size[1] // 2)))
+            surface.blit(car_sprite[sprite_index], pos)
 
     # Draw oriented collision rectangle overlay
     ca, sa = math.cos(angle), math.sin(angle)
