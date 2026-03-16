@@ -38,19 +38,9 @@ def read_inputs(gamepad, car, cam, mouse_follow_mode: bool, ai_path_mode: bool) 
 
     # --- Mouse following mode ---
     if mouse_follow_mode:
-        mouse_pos = pygame.mouse.get_pos()
-        # Convert mouse position to world coordinates
-        mous_vec = (
-            mouse_pos[0] - car.x + cam.x - const.WINDOW_WIDTH / 2,
-            mouse_pos[1] - car.y + cam.y - const.WINDOW_HEIGHT / 2
-        )
-        # Normalize vector
-        mag = math.sqrt(mous_vec[0] ** 2 + mous_vec[1] ** 2) or 1.0
-        mous_vec = (mous_vec[0] / mag, mous_vec[1] / mag)
-
-        # Calculate steering angle to reach mouse position
-        error = (math.atan2(mous_vec[0], mous_vec[1]) - math.pi / 2 + car.angle + math.pi) % (2 * math.pi) - math.pi
-        st = -error * 2
+        # Mouse steering is handled directly in car.step() by setting target_angle
+        # Set steering to 0 to avoid interfering with direct angle control
+        st = 0.0
 
     # --- Joystick inputs ---
     if gamepad and gamepad.joystick:

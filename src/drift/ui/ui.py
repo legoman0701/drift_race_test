@@ -1,5 +1,6 @@
 # global
 import math, json, pygame
+import numpy as np
 
 # local
 import drift.config.const as const
@@ -25,20 +26,48 @@ _controls_rects_cache = None # controls rects cache
 
 def draw_car(surface, x, y, angle, name,
              color_body=const.COLOR_BODY_DEFAULT,
-             color_nose=const.COLOR_NOSE_DEFAULT, car_sprites_list=None, lights_on=False):
+             color_nose=const.COLOR_NOSE_DEFAULT, car_sprites_list=None, lights_on=False, palette_colors=None):
+    """Draw car with optional palette-based color customization.
+    
+    Args:
+        palette_colors: Tuple of 3 RGB tuples (color1, color2, color3) for palette replacement.
+                       If provided and car has palette layer, applies color customization.
+    """
     if car_sprites_list is None:
         car_sprites_list = []
+    
+    # Check if we have palette layer (index 3) and palette colors
+    has_palette = len(car_sprites_list) > 3 and palette_colors is not None
+    
     for i, car_sprite in enumerate(car_sprites_list):
-        if i==2 and not lights_on: continue
         show_angle = (-angle + math.pi / 2) % (2 * math.pi) / (2 * math.pi)
         sprite_index = round(show_angle * 64) % 64
-        sprite_size = (car_sprite[sprite_index].get_width(), car_sprite[sprite_index].get_height())
-        pos = (int(x - sprite_size[0] // 2), int(y - sprite_size[1] // 2))
+        
         if i == 2:  # light spray
-            surface.blit(car_sprite[sprite_index], pos, special_flags=pygame.BLEND_RGB_ADD)
-        else:
-            surface.blit(car_sprite[sprite_index], pos)
-
+            if not lights_on:
+                continue
+            sprite_size = (car_sprite[sprite_index].get_width(), car_sprite[sprite_index].get_height())
+            surface.blit(car_sprite[sprite_index],
+                         (int(x - sprite_size[0] // 2), int(y - sprite_size[1] // 2)),
+                         special_flags=pygame.BLEND_RGB_ADD)
+        elif i == 0:  # shadow
+            sprite_size = (car_sprite[sprite_index].get_width(), car_sprite[sprite_index].get_height())
+            surface.blit(car_sprite[sprite_index], (int(x - sprite_size[0] // 2), int(y - sprite_size[1] // 2)))
+        elif i == 1 and has_palette:  # diffuse with palette processing
+            # Get diffuse and palette sprites
+            diffuse_sprite = car_sprite[sprite_index]
+            palette_sprite = car_sprites_list[3][sprite_index]
+            
+            # Process palette and blend with diffuse (cached)
+            customized = _apply_palette_colors(diffuse_sprite, palette_sprite, palette_colors, sprite_index)
+            sprite_size = (customized.get_width(), customized.get_height())
+            surface.blit(customized, (int(x - sprite_size[0] // 2), int(y - sprite_size[1] // 2)))
+        elif i == 3:  # skip palette layer, already processed with diffuse
+            continue
+        else:  # other layers (diffuse without palette, etc.)
+            sprite_size = (car_sprite[sprite_index].get_width(), car_sprite[sprite_index].get_height())
+            surface.blit(car_sprite[sprite_index], (int(x - sprite_size[0] // 2), int(y - sprite_size[1] // 2)))
+    
     # Draw oriented collision rectangle overlay
     ca, sa = math.cos(angle), math.sin(angle)
     halfL, halfW = CAR_LEN * 0.7, CAR_WID * 0.5
@@ -61,6 +90,88 @@ def draw_car(surface, x, y, angle, name,
 
     # Return rear-wheel edge points for tire mark drawing by callers (indices 2 and 3)
     return (wpts[2], wpts[3])
+
+
+def _apply_palette_colors(diffuse_surf, palette_surf, palette_colors, sprite_index):
+    """Apply palette color replacement and blend with diffuse (with caching).
+    
+    Replaces red->color1, green->color2, blue->color3 in palette,
+    fills transparent pixels with white, then multiplies with diffuse.
+    Uses vectorized numpy operations and caches results.
+    
+    Args:
+        diffuse_surf: Main car texture
+        palette_surf: Palette mask (R/G/B channels indicate which color to use)
+        palette_colors: Tuple of 3 RGB tuples (color1, color2, color3)
+        sprite_index: Frame index (0-63) for cache key
+    
+    Returns:
+        Surface with applied palette colors
+    """
+    global _palette_cache
+    
+    # Create cache key from sprite index and colors
+    cache_key = (sprite_index, palette_colors)
+    
+    # Return cached result if available
+    if cache_key in _palette_cache:
+        return _palette_cache[cache_key]
+    
+    # Get dimensions
+    w, h = diffuse_surf.get_size()
+    
+    # Get pixel arrays (read-only copies)
+    diffuse_arr = pygame.surfarray.array3d(diffuse_surf)
+    diffuse_alpha = pygame.surfarray.array_alpha(diffuse_surf)
+    palette_arr = pygame.surfarray.array3d(palette_surf)
+    palette_alpha = pygame.surfarray.array_alpha(palette_surf)
+    
+    # Convert colors to numpy arrays for vectorization
+    color1 = np.array(palette_colors[0], dtype=np.float32) / 255.0
+    color2 = np.array(palette_colors[1], dtype=np.float32) / 255.0
+    color3 = np.array(palette_colors[2], dtype=np.float32) / 255.0
+    
+    # Normalize palette colors to 0-1 range
+    palette_norm = palette_arr.astype(np.float32) / 255.0
+    
+    # Extract R, G, B weights from palette
+    r_weight = palette_norm[:, :, 0]
+    g_weight = palette_norm[:, :, 1]
+    b_weight = palette_norm[:, :, 2]
+    
+    # Calculate blended palette colors using vectorized operations
+    # Each pixel gets a mix of color1 (by red), color2 (by green), color3 (by blue)
+    palette_result = np.zeros((w, h, 3), dtype=np.float32)
+    for c in range(3):  # RGB channels
+        palette_result[:, :, c] = (
+            r_weight * color1[c] +
+            g_weight * color2[c] +
+            b_weight * color3[c]
+        )
+    
+    # Where alpha is 0 (transparent), use white (1.0)
+    transparent_mask = palette_alpha == 0
+    palette_result[transparent_mask] = 1.0
+    
+    # Multiply with diffuse (blend)
+    diffuse_norm = diffuse_arr.astype(np.float32) / 255.0
+    result_arr = (diffuse_norm * palette_result * 255).astype(np.uint8)
+    
+    # Create result surface and set RGB values
+    result = pygame.Surface((w, h), pygame.SRCALPHA)
+    pygame.surfarray.blit_array(result, result_arr)
+    
+    # Copy alpha channel from diffuse surface
+    result_alpha = pygame.surfarray.pixels_alpha(result)
+    result_alpha[:] = diffuse_alpha
+    del result_alpha  # Unlock the surface
+    
+    result = result.convert_alpha()
+    
+    # Cache the result
+    _palette_cache[cache_key] = result
+    
+    return result
 
 _debug_font_cache = None # debug text cache
 _hud_font_cache = {} # HUD text cache
@@ -236,14 +347,14 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
     - stage2: settings | new_game | join_game
     - stage3: key_binds
     """
-    global _new_game_rects_cache, _join_game_rects_cache, _controls_rects_cache, _game_rects_cache
+    global _new_game_rects_cache, _join_game_rects_cache, _key_binds_rects_cache, _palette_picker_rects_cache
 
     button_results = []
     # click detection
     new_game_rects = None
     join_game_rects = None
-    game_rects = None
-    controls_rects = None
+    key_binds_rects = None
+    palette_picker_rects = None
     
     # Stage 1: Main stages
     if stage1 == "lobby":
@@ -336,12 +447,11 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
         draw_error(ui_surf, error_msg, font_small)
         draw_footer(ui_surf, font_small, code)
     
-    return world_surf, button_results, new_game_rects, join_game_rects
+    return world_surf, button_results, new_game_rects, join_game_rects, palette_picker_rects
 
 def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref, host_name=None, new_game_rects=None):
     """Handle game events including new game UI interactions."""
-    global _new_game_rects_cache
-    track_image, chunked_map, checkpoints = None, None, None
+    global _new_game_rects_cache, _palette_picker_rects_cache
     
     if ev.type == pygame.KEYDOWN: # press a key
         if stage1 == "lobby": # in lobby
@@ -402,6 +512,9 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                         stage3 = ""  # Go back to settings menu
                 elif stage3 == "" and ev.key == const.ESCAPE_KEY:
                     stage2 = "" # close settings
+            elif stage2 == "":  # In game, not in settings
+                # Handle palette picker key controls
+                handle_palette_picker_keypress(ev)
         elif stage1 == "error" and ev.key == const.RESET_KEY: # r to reset from error
             stage1 = "lobby"
             stage2 = ""
