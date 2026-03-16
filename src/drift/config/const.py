@@ -1,7 +1,8 @@
 import pygame, string, math
+from drift.tools.paths import get_available_cars
 
 # ======= APPLICATION INFO =======
-VERSION = "0.6_alpha7"
+VERSION = "0.7_dev"
 
 # ======= NETWORK =======
 RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
@@ -71,39 +72,16 @@ STEER_BIAS = 1.0  # how much the car automatically steers into the drift
 VIEW_ANGLE = 70 * math.pi / 180.0  # radians
 
 # ======= CAR SPRITES =======
-# [shadow, diffuse (main), headlights]
-# new car flag
-AVAILABLE_CARS = ["ae86", "barracuda", "911", "mustang"]
-CAR_SPRITES = {
-    "ae86": {
-        "paths": [
-            "cars/ae86/Shadow_Map/Image{i:04}.png",
-            "cars/ae86/Diffuse/Image{i:04}.png", 
-            "cars/ae86/Light_Spray/Image{i:04}.png"
+AVAILABLE_CARS = get_available_cars()
+CAR_SPRITES = {}
+for car in AVAILABLE_CARS:
+    CAR_SPRITES[car] = {
+        "paths": [ # [shadow, diffuse (main), headlights]
+            f"cars/{car}/Shadow_Map/Image{{i:04}}.png",
+            f"cars/{car}/Diffuse/Image{{i:04}}.png", 
+            f"cars/{car}/Light_Spray/Image{{i:04}}.png"
         ]
-    },
-    "barracuda": {
-        "paths": [
-            "cars/barracuda/Shadow_Map/Image{i:04}.png",
-            "cars/barracuda/Diffuse/Image{i:04}.png",
-            "cars/barracuda/Light_Spray/Image{i:04}.png"
-        ]
-    },
-    "911": {
-        "paths": [
-            "cars/911/Shadow_Map/Image{i:04}.png",
-            "cars/911/Diffuse/Image{i:04}.png",
-            "cars/911/Light_Spray/Image{i:04}.png"
-        ]
-    },
-    "mustang": {
-        "paths": [
-            "cars/mustang/Shadow_Map/Image{i:04}.png",
-            "cars/mustang/Diffuse/Image{i:04}.png",
-            "cars/mustang/Light_Spray/Image{i:04}.png"
-        ]
-    },
-}
+    }
 
 # ======= CONTROLS =======
 # Menu controls

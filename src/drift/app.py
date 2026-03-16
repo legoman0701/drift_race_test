@@ -5,7 +5,7 @@
 # global imports
 import pygame, json, time, random, sys, math, uuid, argparse, threading
 # local imports
-from drift.tools.paths import asset_path, chdir_to_exe_folder_if_frozen, normalize_asset_path
+from drift.tools.paths import asset_path, chdir_to_exe_folder_if_frozen, get_available_cars, normalize_asset_path
 import drift.config.const as const
 import drift.render.camera as camera
 import drift.core.car as car
@@ -151,7 +151,7 @@ class AudioController(threading.Thread):
             if sleep_time > 0:
                 time.sleep(sleep_time)
 
-# ======= CONFIGURATION =======
+# ======= RELAY =======
 
 RELAY_PUBLIC_ENDPOINT = const.RELAY_PUBLIC_ENDPOINT
 # True : client creates a room, False : joining
@@ -652,7 +652,7 @@ def main():
             if ev.type == pygame.KEYDOWN and ev.key == const.AI_KEY: # N to add AI car
                 if I_AM_HOST and stage1 in ["game", "mode1", "mode2"] and stage2 == "":
                     # Randomly assign car type for AI cars
-                    ai_car_type = random.choice(["ae86", "barracuda", "911", "mustang"]) # new car flag
+                    ai_car_type = random.choice(const.AVAILABLE_CARS)
                     ai_cars.append(
                         car.Car(
                             random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200),
@@ -706,7 +706,7 @@ def main():
                 ctlr_btn3_time = time.time()
                 if I_AM_HOST and stage1 in ["game", "mode1", "mode2"] and stage2 == "":
                     # Randomly assign car type for AI cars
-                    ai_car_type = random.choice(["ae86", "barracuda", "911", "mustang"]) # new car flag
+                    ai_car_type = random.choice(const.AVAILABLE_CARS)
                     ai_cars.append(
                         car.Car(
                             random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200),
