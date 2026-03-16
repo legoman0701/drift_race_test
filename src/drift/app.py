@@ -652,7 +652,7 @@ def main():
             if ev.type == pygame.KEYDOWN and ev.key == const.AI_KEY: # N to add AI car
                 if I_AM_HOST and stage1 in ["game", "mode1", "mode2"] and stage2 == "":
                     # Randomly assign car type for AI cars
-                    ai_car_type = random.choice(["ae86", "barracuda", "911"])
+                    ai_car_type = random.choice(const.AVAILABLE_CARS)
                     ai_cars.append(
                         car.Car(
                             random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200),
@@ -680,6 +680,42 @@ def main():
 
             ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map, checkpoints = handle_game_events(screen, ev, stage1, stage2, stage3, gp, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name)
             I_AM_HOST = host_ref[0]
+            # update map changes
+            if renderer and track_image and renderer.track_image != track_image: renderer.track_image = track_image
+            if renderer and chunked_map and renderer.chunked_map != chunked_map: renderer.chunked_map = chunked_map
+            if renderer and checkpoints: renderer.checkpoints = checkpoints
+
+        # ======== JOYSCTICK INPUTS HANDLING ======== (controller buttons)
+
+        # A: button 0, B: button 1, X: button 2, Y: button 3
+        # LB: button 4, RB: button 5
+        # -: button 6, +: button 7
+        # Left joystick: button 8 (press), Right joystick: button 9 (press)
+        # Home: button 10
+
+        if gp and gp.joystick:
+            js = gp.joystick
+            if js.get_button(2) and time.time() - ctlr_btn2_time > 0.2: # X to change car
+                ctlr_btn2_time = time.time()
+                # Cycle through available car types
+                available_types = list(const.CAR_SPRITES.keys())
+                current_index = available_types.index(my_car.car_type)
+                next_index = (current_index + 1) % len(available_types)
+                my_car.set_car_type(    available_types[next_index])
+            if js.get_button(3) and time.time() - ctlr_btn3_time > 0.2: # Y to spawn ai car
+                ctlr_btn3_time = time.time()
+                if I_AM_HOST and stage1 in ["game", "mode1", "mode2"] and stage2 == "":
+                    # Randomly assign car type for AI cars
+                    ai_car_type = random.choice(const.AVAILABLE_CARS)
+                    ai_cars.append(
+                        car.Car(
+                            random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200),
+                            random.randint(const.TRACK_MARGIN + 120, const.WINDOW_HEIGHT - const.TRACK_MARGIN - 120),
+                            name=f"AI-{len(ai_cars)+1}",
+                            is_ai=True,
+                            car_type=ai_car_type,
+                        )
+                    )
 
         # ======== NETWORKING ========
 
