@@ -3,8 +3,6 @@
 # ======= IMPORTS =======
 
 # global imports
-from itertools import count
-
 import pygame, json, time, random, sys, math, uuid, argparse, threading
 # local imports
 from drift.tools.paths import asset_path, chdir_to_exe_folder_if_frozen, normalize_asset_path
@@ -22,6 +20,7 @@ from drift.ui.ui import handle_game_events, draw_stage_ui, invalidate_ui_text_ca
 from drift.core.rpm import calc_engine_rpm
 from drift.audio.engine_audio import EngineAudio
 from drift.render.map_chunks import ChunkedMap
+from drift.core.gamepad import Gamepad
 
 # ======= CONFIGURATION =======
 
@@ -531,15 +530,11 @@ def main():
     # Renderer handles track, cars, and drift marks
     renderer = WorldRenderer(track_image, flags, chunked_map=chunked_map)
 
-    # list every gamepad connected to the hardware
-    count = pygame.joystick.get_count()
-    joysticks = [pygame.joystick.Joystick(i) for i in range(count)]
-    print(f"Found {count} controller(s):")
-    for i, js in enumerate(joysticks): print(f"[{i}] {js.get_name()}")
-    choice = int(input("Select the controller ID you want to use: "))
-    selected_joy = joysticks[choice]
-    selected_joy.init()
-    print(f"Successfully initialized {selected_joy.get_name()}!")
+    # connect first available gamepad (if any)
+    gp = Gamepad()
+    gp.joystick = pygame.joystick.Joystick(0) if pygame.joystick.get_count() > 0 else None
+    gp.selected_index = gp.joystick.get_id() if gp.joystick else None
+    if gp.joystick: gp.connect_gamepad(gp.selected_index)
 
     # Create a camera object; mouse wheel will adjust zoom and middle mouse drag will pan.
     cam = camera.Camera(const.WINDOW_WIDTH, const.WINDOW_HEIGHT, zoom=1.0)
@@ -683,7 +678,7 @@ def main():
                 cam.offset[0] -= ev.rel[0] / cam.zoom
                 cam.offset[1] -= ev.rel[1] / cam.zoom
 
-            ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map, checkpoints = handle_game_events(screen, ev, stage1, stage2, stage3, joysticks, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name)
+            ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map, checkpoints = handle_game_events(screen, ev, stage1, stage2, stage3, gp, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name)
             I_AM_HOST = host_ref[0]
             # update map changes
             if renderer and track_image and renderer.track_image != track_image: renderer.track_image = track_image
@@ -698,8 +693,8 @@ def main():
         # Left joystick: button 8 (press), Right joystick: button 9 (press)
         # Home: button 10
 
-        if joysticks and joysticks[0] != []:
-            js = joysticks[0]
+        if gp and gp.joystick:
+            js = gp.joystick
             if js.get_button(2) and time.time() - ctlr_btn2_time > 0.2: # X to change car
                 ctlr_btn2_time = time.time()
                 # Cycle through available car types
@@ -792,7 +787,7 @@ def main():
                 except Exception:
                     controls = None
             if controls is None:
-                controls = read_inputs(joysticks, my_car, cam, const.CURSOR_FOLLOW, const.AI_PATH_FOLLOW)
+                controls = read_inputs(gp, my_car, cam, const.CURSOR_FOLLOW, const.AI_PATH_FOLLOW)
             my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG)
             # Update engine audio based on RPM and throttle with enhanced drift characteristics
             try:
@@ -865,7 +860,7 @@ def main():
         fps = clock.get_fps()
         world_surf, button_results, new_game_rects, join_game_rects = draw_stage_ui(
             ui_surf, stage1, stage2, stage3, code, world_surf, world_size, renderer.checkpoints,
-            settings_buttons, error_msg, my_car, cam, joysticks, font_big, font_medium, font_small,
+            settings_buttons, error_msg, my_car, cam, gp, font_big, font_medium, font_small,
             controls, engine_state, fps, dt, I_AM_HOST, host_name, car_sprites_cache
         )
         

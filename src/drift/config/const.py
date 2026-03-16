@@ -104,7 +104,7 @@ CAR_SPRITES = {
     },
 }
 
-# ======= KEY BINDINGS =======
+# ======= CONTROLS =======
 # Menu controls
 RETURN_KEYS = [pygame.K_RETURN, pygame.K_KP_ENTER]
 ESCAPE_KEY = pygame.K_ESCAPE  # open settings / pause menu

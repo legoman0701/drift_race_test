@@ -4,11 +4,11 @@ from typing import Optional, Dict
 import drift.config.const as const
 
 
-def read_inputs(joysticks, car, cam, mouse_follow_mode: bool, ai_path_mode: bool) -> Dict[str, float]:
+def read_inputs(gamepad, car, cam, mouse_follow_mode: bool, ai_path_mode: bool) -> Dict[str, float]:
     """Read player inputs from keyboard, mouse, and joystick.
     
     Args:
-        joysticks: List of joystick objects
+        gamepad: Gamepad object
         car: Player car object (for mouse following mode)
         cam: Camera object (for mouse following mode)
         mouse_follow_mode: If True, use mouse position for steering
@@ -53,8 +53,8 @@ def read_inputs(joysticks, car, cam, mouse_follow_mode: bool, ai_path_mode: bool
         st = -error * 2
 
     # --- Joystick inputs ---
-    if joysticks and joysticks[0] != []:
-        js = joysticks[0]
+    if gamepad and gamepad.joystick:
+        js = gamepad.joystick
         steering = js.get_axis(0)  # left stick horizontal : steering
         throttle = round((js.get_axis(5) + 1) / 2, 2) - round((js.get_axis(4) + 1) / 2, 2) # RT : throttle. LT : brake
         handbrake = js.get_button(5)  # RB : handbrake
