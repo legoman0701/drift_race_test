@@ -1,49 +1,43 @@
-:: activate .venv or create it if it doesn't exist
-@echo off
-cd /d "%~dp0"
+# activate or create .venv and select it
 
-:: variables
-set "PY=python"
-set "VENV=.venv"
-set "ActivateScript=%VENV%\Scripts\activate.bat"
-set "PipExe=%VENV%\Scripts\pip.exe"
-set "PyExe=%VENV%\Scripts\python.exe"
-
-:: check if python is in path
-python --version >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] Python is not installed or not in PATH. Please install Python 3.6+ and ensure it's in your system PATH.
-    exit /b 1
+param (
+    [switch]$s # use -s to skipping dependency installation
 )
 
-:: if .venv does not exist, create it
-if not exist "%ActivateScript%" (
-    "%PY%" -m venv .venv || (echo [ERROR] Failed to create virtual environment.& exit /b 1)
-    echo [INFO] Created virtual environment in .venv
-)
+$ErrorActionPreference = "Stop" # stop on errors
+$env:PIP_DISABLE_PIP_VERSION_CHECK = '1'  # quiet pip's update ping
 
-:: disable pip version check (annoying)
-set "PIP_DISABLE_PIP_VERSION_CHECK=1"
+# variables
+$PY = "python"
+$VENV = ".venv"
+$ActivateScript = $VENV + "\Scripts\Activate.ps1"
+$PipExe = $VENV + "\Scripts\pip.exe"
+$PythonExe = $VENV + "\Scripts\python.exe"
 
-if /i "%~1"=="s" (
-    echo [INFO] Skipping dependency installation.
-    goto :activate
-)
+# if .venv does not exist, create it
+if (-not (Test-Path $ActivateScript)) {
+    & $PY -m venv $VENV
+    Write-Host "[INFO] Created virtual environment in $VENV"
+}
 
-:: upgrade pip
-"%PYEXE%" -m pip install --upgrade pip setuptools wheel || echo [WARN] Failed to upgrade pip. Continuing anyway.
+if (-not $s) {
+    # upgrade pip
+    & $PythonExe -m pip install --upgrade pip setuptools wheel
+    Write-Host "[INFO] Upgraded pip, setuptools, and wheel."
+    
+    # install dependencies
+    if (Test-Path "requirements.txt") {
+        & $PipExe install -r requirements.txt
+        Write-Host "[INFO] Installed dependencies from requirements.txt."
+    }
+    if (Test-Path "pyproject.toml") {
+        & $PipExe install -e .
+        Write-Host "[INFO] Installed dependencies from pyproject.toml."
+    }
+} else {
+    Write-Host "[INFO] Skipping dependency installation due to -s switch."
+}
 
-:: install dependencies
-if exist "requirements.txt" (
-    "%PipExe%" install -r requirements.txt || (echo [ERROR] Failed to install dependencies from requirements.txt.& exit /b 1)
-    echo [INFO] Installed dependencies from requirements.txt.
-)
-if exist "pyproject.toml" (
-    "%PipExe%" install -e . || (echo [ERROR] Failed to install dependencies from pyproject.toml.& exit /b 1)
-    echo [INFO] Installed dependencies from pyproject.toml.
-)
-
-:: activate the virtual environment
-:activate
-call "%ActivateScript%" || (echo [ERROR] Failed to activate virtual environment.& exit /b 1)
-echo [OK] .venv activated. to deactivate, run: deactivate
+# activate .venv
+& $ActivateScript
+Write-Host "[OK] .venv activated. to deactivate, run: deactivate"

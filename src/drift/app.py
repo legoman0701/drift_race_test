@@ -3,6 +3,8 @@
 # ======= IMPORTS =======
 
 # global imports
+from itertools import count
+
 import pygame, json, time, random, sys, math, uuid, argparse, threading
 # local imports
 from drift.tools.paths import asset_path, chdir_to_exe_folder_if_frozen, normalize_asset_path
@@ -529,9 +531,15 @@ def main():
     # Renderer handles track, cars, and drift marks
     renderer = WorldRenderer(track_image, flags, chunked_map=chunked_map)
 
-    joysticks = [pygame.joystick.Joystick(i) for i in range(pygame.joystick.get_count())]
-    for js in joysticks:
-        js.init()
+    # list every gamepad connected to the hardware
+    count = pygame.joystick.get_count()
+    joysticks = [pygame.joystick.Joystick(i) for i in range(count)]
+    print(f"Found {count} controller(s):")
+    for i, js in enumerate(joysticks): print(f"[{i}] {js.get_name()}")
+    choice = int(input("Select the controller ID you want to use: "))
+    selected_joy = joysticks[choice]
+    selected_joy.init()
+    print(f"Successfully initialized {selected_joy.get_name()}!")
 
     # Create a camera object; mouse wheel will adjust zoom and middle mouse drag will pan.
     cam = camera.Camera(const.WINDOW_WIDTH, const.WINDOW_HEIGHT, zoom=1.0)
@@ -576,7 +584,7 @@ def main():
         try: return stage1, "", sock, code, remotes
         except Exception: return stage1, "", None, None, {}
 
-    settings_buttons = [ # to do : be able to use * like */settings for key binds
+    settings_buttons = [ # todo : be able to use '*' like '*/settings' for key binds
     btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"], ["mode1", "settings"], ["mode2", "settings"]] ,lambda: leave_room(sock, code, my_id, remotes)),
     btn.Button("Key Binds", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, [["lobby", "settings"], ["game", "settings"], ["mode1", "settings"], ["mode2", "settings"]], handle_key_binds),
     btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["mode1", "settings"], ["mode2", "settings"]], lambda: switch_cursor_follow_mode(stage1)),
