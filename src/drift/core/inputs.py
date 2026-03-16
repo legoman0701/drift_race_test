@@ -4,11 +4,11 @@ from typing import Optional, Dict
 import drift.config.const as const
 
 
-def read_inputs(joysticks, car, cam, mouse_follow_mode: bool, ai_path_mode: bool) -> Dict[str, float]:
+def read_inputs(gamepad, car, cam, mouse_follow_mode: bool, ai_path_mode: bool) -> Dict[str, float]:
     """Read player inputs from keyboard, mouse, and joystick.
     
     Args:
-        joysticks: List of joystick objects
+        gamepad: Gamepad object
         car: Player car object (for mouse following mode)
         cam: Camera object (for mouse following mode)
         mouse_follow_mode: If True, use mouse position for steering
@@ -43,16 +43,16 @@ def read_inputs(joysticks, car, cam, mouse_follow_mode: bool, ai_path_mode: bool
         st = 0.0
 
     # --- Joystick inputs ---
-    if joysticks and joysticks[0] != []:
-        js = joysticks[0]
-        steering = js.get_axis(0)  # Left stick horizontal
-        throttle = (js.get_axis(5) + 1) / 2  # Right trigger (RT)
-        breaks = (js.get_axis(4) + 1) / 2  # Left trigger (LT)
-        
+    if gamepad and gamepad.joystick:
+        js = gamepad.joystick
+        steering = js.get_axis(0)  # left stick horizontal : steering
+        throttle = round((js.get_axis(5) + 1) / 2, 2) - round((js.get_axis(4) + 1) / 2, 2) # RT : throttle. LT : brake
+        handbrake = js.get_button(5)  # RB : handbrake
+
         # Override keyboard inputs if joystick is active (except in AI path mode)
         if not ai_path_mode:
             st = steering if abs(steering) > 0.1 else st  # Deadzone
-            th = throttle if throttle > 0.1 else th
-            br = breaks if breaks > 0.1 else br
+            th = throttle if abs(throttle) > 0.1 else th
+            br = handbrake if handbrake > 0.1 else br
     
     return {"th": float(th), "st": float(st), "br": float(br)}

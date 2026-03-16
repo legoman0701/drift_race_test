@@ -75,3 +75,27 @@ def chdir_to_exe_folder_if_frozen():
     """
     if getattr(sys, "frozen", False):
         os.chdir(Path(sys.executable).parent)
+
+def get_available_cars():
+    """
+    Scans the given directory and returns a sorted list of all car folder names.
+    Ignores files and hidden directories.
+    """
+    cars_directory = assets_dir() / "cars"
+    available_cars = []
+    
+    # Check if the directory actually exists to prevent crashes
+    if not os.path.exists(cars_directory):
+        print(f"Warning: Directory '{cars_directory}' not found!")
+        return available_cars
+
+    # Loop through everything in the assets/car folder
+    for item in os.listdir(cars_directory):
+        item_path = os.path.join(cars_directory, item)
+        
+        # Make sure it's a directory AND not a hidden folder (like .git or .DS_Store)
+        if os.path.isdir(item_path) and not item.startswith('.'):
+            available_cars.append(item)
+            
+    # Sort alphabetically so the order in your UI is always consistent
+    return sorted(available_cars)

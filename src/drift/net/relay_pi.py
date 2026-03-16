@@ -2,7 +2,7 @@
 # relay_pi_trust.py — UDP room relay that TRUSTS client states (no server-side physics)
 # Expose via Playit.gg: william-allow.gl.at.ply.gg:4800 => 127.0.0.1:40123 (UDP)
 
-import socket, json, time
+import socket, json, time, random
 
 RELAY_HOST = "0.0.0.0"
 RELAY_PORT = 40123
@@ -14,13 +14,27 @@ TICK = 0.01             # main loop tick
 # Rooms:
 #   code -> {
 #       "clients": { addr: {"id","name", "car_type","last"} },
-#       "states":  { id: {"x","y","a","vx","vy","name", "drift_ratio", "car_type"} },
+#       "states":  { id: {"x","y","a","vx","vy","name", "has_grip", "car_type"} },
 #       "host_addr": tuple|None,   # address of the creator
 #       "host_id": str,            # id of the creator
+#       "mode": str,               # selected game mode for room starts
+#       "race_started": bool,
 #       "last_broadcast": float,
 #       "dirty": bool
 #   }
 rooms = {}
+
+
+def assign_random_host(room):
+    if not room.get("clients"):
+        room["host_addr"] = None
+        room["host_id"] = ""
+        room["host_name"] = ""
+        return
+    new_addr, new_info = random.choice(list(room["clients"].items()))
+    room["host_addr"] = new_addr
+    room["host_id"] = new_info.get("id", "")
+    room["host_name"] = new_info.get("name", "")
 
 def sendto_json(sock, addr, obj):
     try:
@@ -34,7 +48,15 @@ def sendto_json(sock, addr, obj):
 def broadcast_world(sock, code, room): # update world screen
     now = time.time()
     room["last_broadcast"] = now
-    world = {"t":"world", "code":code, "players": room["states"]}
+    world = {
+        "t": "world",
+        "code": code,
+        "players": room["states"],
+        "host_name": room.get("host_name", ""),
+        "host_id": room.get("host_id", ""),
+        "race_started": bool(room.get("race_started", False)),
+        "mode": room.get("mode", "mode1"),
+    }
     for caddr in list(room["clients"].keys()):
         sendto_json(sock, caddr, world)
     room["dirty"] = False
@@ -61,8 +83,7 @@ def loop():
                         for sid in list(room["states"].keys()):
                             if isinstance(sid, str) and sid.startswith("AI-"):
                                 room["states"].pop(sid, None)
-                        room["host_addr"] = None
-                        room["host_id"] = ""
+                        assign_random_host(room)
                     room["dirty"] = True
             # remove room if empty
             if not room["clients"]:
@@ -97,16 +118,18 @@ def loop():
             pid  = (msg.get("id") or "")[:16]
             name = (msg.get("name") or f"Player{pid}")[:24]
             car_type = (msg.get("car_type") or "ae86")[:16]
+            mode = (msg.get("mode") or "mode1").strip()
+            track = (msg.get("track") or "track1").strip()
             if not code or not pid:
                 sendto_json(sock, addr, {"t":"error","msg":"missing_code_or_id"}); continue
             if code in rooms:
                 sendto_json(sock, addr, {"t":"error","msg":"room_already_exists"}); continue
-            room = {"clients": {}, "states": {}, "host_addr": addr, "host_id": pid, "host_name": name, "last_broadcast": 0.0, "dirty": True}
+            room = {"clients": {}, "states": {}, "host_addr": addr, "host_id": pid, "host_name": name, "mode": mode, "track": track, "race_started": False, "last_broadcast": 0.0, "dirty": True}
             rooms[code] = room
             room["clients"][addr] = {"id": pid, "name": name, "car_type": car_type, "last": now}
-            room["states"].setdefault(pid, {"x": 500, "y": 350, "a": 0.0, "vx": 0.0, "vy": 0.0, "name": name, "drift_ratio": 0.0, "car_type": car_type})
+            room["states"].setdefault(pid, {"x": 500, "y": 350, "a": 0.0, "vx": 0.0, "vy": 0.0, "name": name, "has_grip": [1.0, 1.0, 1.0, 1.0], "car_type": car_type})
             room["dirty"] = True
-            sendto_json(sock, addr, {"t":"join_ok", "code": code, "host_name": name})
+            sendto_json(sock, addr, {"t":"join_ok", "code": code, "host_name": name, "track": track})
             broadcast_world(sock, code, room)
 
         elif mtype == "join": # player wants to join an existing room
@@ -120,11 +143,11 @@ def loop():
             if not room:
                 sendto_json(sock, addr, {"t":"error","msg":"room_not_found"}); continue
             room["clients"][addr] = {"id": pid, "name": name, "last": now, "car_type": car_type}
-            room["states"].setdefault(pid, {"x": 500, "y": 350, "a": 0.0, "vx": 0.0, "vy": 0.0, "name": name, "drift_ratio": 0.0, "car_type": car_type})
+            room["states"].setdefault(pid, {"x": 500, "y": 350, "a": 0.0, "vx": 0.0, "vy": 0.0, "name": name, "has_grip": [1.0, 1.0, 1.0, 1.0], "car_type": car_type})
             room["dirty"] = True
-            # Send host_name from room data
+            # Send host_name and track from room data
             host_name = room.get("host_name", "no_host")
-            sendto_json(sock, addr, {"t":"join_ok", "code": code, "host_name": host_name})
+            sendto_json(sock, addr, {"t":"join_ok", "code": code, "host_name": host_name, "track": room.get("track", "track1")})
             broadcast_world(sock, code, room)
 
         elif mtype == "state": # get player's physic car status (trigger broadcoast)
@@ -148,7 +171,7 @@ def loop():
                 "vy": float(msg.get("vy", 0.0)),
                 # for AI, trust provided name; for players, use registered name
                 "name": (str(msg.get("name")) if is_ai else room["clients"][addr]["name"]),
-                "drift_ratio": float(msg.get("drift_ratio", 0.0)),
+                "has_grip": list(msg.get("has_grip", [1.0, 1.0, 1.0, 1.0])),
                 "car_type": (str(msg.get("car_type")) if is_ai else room["clients"][addr]["car_type"]),
             }
             room["states"][pid] = st
@@ -173,11 +196,24 @@ def loop():
                 for sid in list(room["states"].keys()):
                     if isinstance(sid, str) and sid.startswith("AI-"):
                         room["states"].pop(sid, None)
-                room["host_addr"] = None
-                room["host_id"] = ""
+                assign_random_host(room)
             room["dirty"] = True # trigger broadcast
             if not room["clients"]: # delete room if empty
                 rooms.pop(code, None)
+
+        elif mtype == "start_race":
+            code = (msg.get("code") or "").upper().strip()
+            pid  = (msg.get("id") or "")[:16]
+            room = rooms.get(code)
+            if not room or addr not in room["clients"]:
+                sendto_json(sock, addr, {"t":"error","msg":"room_not_found_or_not_joined"}); continue
+            if addr != room.get("host_addr") or pid != room.get("host_id"):
+                sendto_json(sock, addr, {"t":"error","msg":"only_host_can_start"}); continue
+            room["race_started"] = True
+            room["dirty"] = True
+            start_msg = {"t": "start_race", "code": code, "mode": room.get("mode", "mode1"), "track": room.get("track", "track1")}
+            for caddr in list(room["clients"].keys()):
+                sendto_json(sock, caddr, start_msg)
 
         else:
             sendto_json(sock, addr, {"t":"error","msg":"unknown_type"})

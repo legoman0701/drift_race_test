@@ -1,6 +1,7 @@
 import pygame
 from typing import Dict, Tuple, Optional, Iterable
 import os, drift.config.const as const
+import json
 from drift.tools.paths import asset_path
 from drift.tools.slice_map import slice_map
 
@@ -17,20 +18,81 @@ class ChunkedMap:
                  max_cached_chunks: int = 64) -> None:
         
         if root is None: root = asset_path("track", f"map{const.MAP_NUM}", "chunks")
-        self.root = root
+        self.root = root # map root
         self.tile_size = tile_size
         self.default_color = default_color
         self.max_cached_chunks = max_cached_chunks
         self._cache: Dict[Tuple[int, int], pygame.Surface] = {} # {(x, y): surface}
         self._cache_access_order: Dict[Tuple[int, int], int] = {}  # Track LRU
         self._access_counter = 0
-        slice_map(input_path = asset_path("track", f"map{const.MAP_NUM}", "main.png"),
-            outdir = asset_path("track", f"map{const.MAP_NUM}", "chunks"),
-            tile = const.TILE_SIZE,
-            indexing = "zero",
-            prefix = "",
-            pad_color = (28, 28, 28, 255),
-            force = False)
+        for map_num in range(1, const.TOTAL_MAPS + 1):
+            slice_map(input_path = asset_path("track", f"map{map_num}", "main.png"),
+                outdir = asset_path("track", f"map{map_num}", "chunks"),
+                tile = const.TILE_SIZE,
+                indexing = "zero",
+                prefix = "",
+                pad_color = (28, 28, 28, 255),
+                force = False)
+        self._world_size = self._compute_world_size()
+
+    def _compute_world_size(self) -> Tuple[int, int]:
+        """Prefer exact map dimensions, fallback to chunk coverage."""
+        # option 1 : meta data json file
+        map_size = self._read_world_size_from_metadata()
+        if map_size is not None: return map_size
+        # option 2 : main.png file size
+        map_size = self._read_world_size_from_main_png()
+        if map_size is not None: return map_size
+        # option 3 : sum of chunks sizes
+        return self._compute_world_size_from_chunks()
+
+    def _read_world_size_from_metadata(self) -> Optional[Tuple[int, int]]:
+        """Read world size from optional map metadata JSON in map folder."""
+        map_dir = os.path.dirname(str(self.root))
+        meta_path = os.path.join(map_dir, "map_meta.json")
+        try:
+            # print(f"Attempting to read map size from metadata: {meta_path}")
+            if not os.path.exists(meta_path): return None
+            with open(meta_path, "r", encoding="utf-8") as fh: meta = json.load(fh)
+            width = int(meta.get("width", 0))
+            height = int(meta.get("height", 0))
+            # print(f"Map metadata found. Width: {width}, Height: {height}")
+            if width > 0 and height > 0: return width, height
+        except Exception as e: print(f"Error reading map metadata: {e}")
+        return None
+
+    def _read_world_size_from_main_png(self) -> Optional[Tuple[int, int]]:
+        """Read world size directly from map main.png file."""
+        map_dir = os.path.dirname(str(self.root))
+        main_png_path = os.path.join(map_dir, "main.png")
+        try:
+            if not os.path.exists(main_png_path): return None
+            main_surf = pygame.image.load(main_png_path)
+            return main_surf.get_width(), main_surf.get_height()
+        except Exception as e: print(f"Error reading main.png size: {e}"); return None
+
+    def _compute_world_size_from_chunks(self) -> Tuple[int, int]:
+        """Compute finite world size from available chunk indices."""
+        root_path = str(self.root)
+        max_ix, max_iy = -1, -1
+        try:
+            for name in os.listdir(root_path):
+                if not name.endswith(".png"): continue
+                stem = os.path.splitext(name)[0]
+                if "_" not in stem: continue
+                xs, ys = stem.split("_", 1)
+                ix, iy = int(xs), int(ys)
+                if ix > max_ix: max_ix = ix
+                if iy > max_iy: max_iy = iy
+        except Exception as e: print(f"Error computing world size from chunks: {e}")
+
+        if max_ix < 0 or max_iy < 0: return const.WINDOW_WIDTH, const.WINDOW_HEIGHT
+
+        return (max_ix + 1) * self.tile_size, (max_iy + 1) * self.tile_size
+
+    def get_world_size(self) -> Tuple[int, int]:
+        """Return world dimensions in pixels derived from chunk coverage."""
+        return self._world_size
 
     def _load_tile(self, ix: int, iy: int) -> pygame.Surface:
         # root is already a Path object, so we can use / operator or joinpath
@@ -38,7 +100,7 @@ class ChunkedMap:
         surf: Optional[pygame.Surface] = None
         if os.path.exists(link):
             try: surf = pygame.image.load(link).convert()
-            except Exception: pass
+            except Exception as e: print(f"Error loading tile {link}: {e}")
         if surf is None:
             surf = pygame.Surface((self.tile_size, self.tile_size)) # surface : 512x512
             surf.fill(self.default_color)

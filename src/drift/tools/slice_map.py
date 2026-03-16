@@ -11,7 +11,7 @@ Defaults match the project layout:
 
 USAGE EXAMPLES
 --------------
-# Basic (recommended for your current Map1.png):
+# Basic usage with defaults:
 python drift.tools.slice_map.py --input assets/track/map1/main.png --outdir assets/track/map1/chunks --tile 512 --indexing zero
 
 # With file prefix (loader supports this too):
@@ -60,11 +60,14 @@ def slice_map(
     os.makedirs(outdir, exist_ok=True)
 
     # Safety: avoid accidental overwrite if directory isn't empty
-    existing = [f for f in os.listdir(outdir) if f.lower().endswith(".png")]
-    if existing and not force:
-        print(f"[WARN] Output directory '{outdir}' already has {len(existing)} .png files.")
-        print("       Re-run with --force to overwrite/append.")
-        return
+    # Use os.scandir to detect any PNG quickly and avoid allocating a full list
+    if not force:
+        try:
+            with os.scandir(outdir) as it:
+                for entry in it:
+                    if entry.is_file() and entry.name.lower().endswith('.png'):
+                        return
+        except FileNotFoundError: print(f"Output directory not found, will be created: {outdir}")
 
     pygame.init()
     # Load without convert()/convert_alpha() to avoid needing a display surface

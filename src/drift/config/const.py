@@ -1,7 +1,8 @@
 import pygame, string, math
+from drift.tools.paths import get_available_cars
 
 # ======= APPLICATION INFO =======
-VERSION = "0.6_alpha7"
+VERSION = "0.7_dev"
 
 # ======= NETWORK =======
 RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
@@ -25,7 +26,7 @@ NAVBAR_Y = 10
 RELAY_Y = WINDOW_HEIGHT - 16
 BTN_WIDTH, BTN_HEIGHT = 300, 60
 
-# Font sizes (created after pygame.init())
+# Font sizes
 FONT_SMALL_SIZE = 18
 FONT_MEDIUM_SIZE = 26
 FONT_BIG_SIZE = 36
@@ -59,6 +60,7 @@ TIRE_MARK_GROUND = (220, 220, 220, 220)    # marks on ground
 
 # ======= MAP & TRACK =======
 MAP_NUM = 1
+TOTAL_MAPS = 2 # new map flag
 TILE_SIZE = 512  # Tile size for map chunks
 TRACK_MARGIN = 40
 TRACK_BORDER_WIDTH = 4
@@ -70,27 +72,14 @@ STEER_BIAS = 1.0  # how much the car automatically steers into the drift
 VIEW_ANGLE = 70 * math.pi / 180.0  # radians
 
 # ======= CAR SPRITES =======
-# [shadow, diffuse (main), headlights]
-CAR_SPRITES = {
-    "ae86": {
-        "paths": [
-            "cars/ae86/Shadow_Map/Image{i:04}.png",
-            "cars/ae86/Diffuse/Image{i:04}.png", 
-            "cars/ae86/Light_Spray/Image{i:04}.png"
-        ]
-    },
-    "barracuda": {
-        "paths": [
-            "cars/barracuda/Shadow_Map/Image{i:04}.png",
-            "cars/barracuda/Diffuse/Image{i:04}.png",
-            "cars/barracuda/Light_Spray/Image{i:04}.png"
-        ]
-    },
-    "911": {
-        "paths": [
-            "cars/911/Shadow_Map/Image{i:04}.png",
-            "cars/911/Diffuse/Image{i:04}.png",
-            "cars/911/Light_Spray/Image{i:04}.png"
+AVAILABLE_CARS = get_available_cars()
+CAR_SPRITES = {}
+for car in AVAILABLE_CARS:
+    CAR_SPRITES[car] = {
+        "paths": [ # [shadow, diffuse (main), headlights]
+            f"cars/{car}/Shadow_Map/Image{{i:04}}.png",
+            f"cars/{car}/Diffuse/Image{{i:04}}.png", 
+            f"cars/{car}/Light_Spray/Image{{i:04}}.png"
         ]
     },
     "GTR34": {
@@ -101,22 +90,8 @@ CAR_SPRITES = {
             "cars/GTR34/Palette/Image{i:04}.png"
         ]
     }
-}
 
-# ======= TESTING OVERRIDES =======
-# Set to a car type (e.g., "GTR34") to force that car for testing, or None to use normal selection
-FORCE_CAR_TYPE = "GTR34"  # Set to None to disable
-
-# Color Palette System:
-# - When in-game, a palette picker appears in top right corner
-# - Click a color box (1, 2, 3) to select it
-# - Use R/F (red), T/G (green), Y/H (blue) keys to adjust RGB values
-# - Hold SHIFT for faster adjustment (20 vs 5 per press)
-# - ESC to deselect color
-# - Palette layer (4th sprite layer) maps: Red->Color1, Green->Color2, Blue->Color3
-# - Final result is multiplied with Diffuse layer for realistic coloring
-
-# ======= KEY BINDINGS =======
+# ======= CONTROLS =======
 # Menu controls
 RETURN_KEYS = [pygame.K_RETURN, pygame.K_KP_ENTER]
 ESCAPE_KEY = pygame.K_ESCAPE  # open settings / pause menu
@@ -133,10 +108,12 @@ RESET_KEY = pygame.K_r                  # reset car position
 CHANGE_CAR_KEY = pygame.K_c             # change car
 HOST_KEY = pygame.K_h                   # host game
 JOIN_KEY = pygame.K_j                   # join game
+AI_KEY = pygame.K_n                     # add AI car
 
 # Debug controls
 DEBUG_TOGGLE_KEY = pygame.K_F3          # toggle debug mode
-FULLSCREEN_KEY = pygame.K_f             # toggle fullscreen mode
+# FULLSCREEN_KEY = pygame.K_f             # toggle fullscreen mode
+FULLSCREEN_KEY = []                     # disabled
 
 # ======= USERNAME & ROOM CODE =======
 ROOM_ALPHABET = string.ascii_uppercase + string.digits

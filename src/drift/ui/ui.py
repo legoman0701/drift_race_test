@@ -10,27 +10,19 @@ from drift.core.inputs import read_inputs
 from drift.core.rpm import calc_engine_rpm
 from drift.ui.ui_helpers import get_cached_text, invalidate_ui_text_cache
 from drift.ui.draw_stage import (
-    draw_new_game, draw_join_game, draw_settings, draw_error,
+    draw_mode1, draw_mode2, draw_new_game, draw_join_game, draw_settings, draw_error,
     handle_new_game_click, handle_new_game_keypress, host_new_game, draw_key_binds,
     handle_join_game_click, handle_join_game_keypress, join_new_game,
-    handle_key_binds_click, handle_key_binds_keypress,
-    get_game_setup, reset_game_setup, set_error_message, clear_error_message,
-    draw_color_palette_picker, handle_palette_picker_click, handle_palette_picker_keypress,
-    get_palette_colors
+    handle_key_binds_click, handle_key_binds_keypress, draw_game,
+    get_game_setup, reset_game_setup, set_error_message, clear_error_message
 )
 from drift.config.settings import settings_manager
 
 _car_name_font_cache = {} # car name cache
 _new_game_rects_cache = None # new game rects cache
 _join_game_rects_cache = None # join game rects cache
-_key_binds_rects_cache = None # key binds rects cache
-_palette_picker_rects_cache = None # palette picker rects cache
-_palette_cache = {} # cache for processed palette sprites: (sprite_id, colors) -> surface
-
-def invalidate_palette_cache():
-    """Clear the palette cache when colors change."""
-    global _palette_cache
-    _palette_cache.clear()
+_game_rects_cache = None # game rects cache
+_controls_rects_cache = None # controls rects cache
 
 def draw_car(surface, x, y, angle, name,
              color_body=const.COLOR_BODY_DEFAULT,
@@ -345,9 +337,9 @@ def draw_footer(surface: str, font_small, code=None):
                                  cache_key=(id(font_small), "room_code", room_label))
     surface.blit(code_text, (10, const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y + 5))
 
-def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size, buttons, 
-                  error_msg, my_car, cam, joysticks, font_big, font_medium, font_small,
-                  ai_path_mode_controls, engine_state, fps, dt, host_name=None, car_sprites_cache=None):
+def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size, checkpoints, buttons, 
+                  error_msg, my_car, cam, gamepad, font_big, font_medium, font_small,
+                  ai_path_mode_controls, engine_state, fps, dt, is_host, host_name=None, car_sprites_cache=None):
     """Draw UI elements based on current stage levels (stage1, stage2, stage3).
     
     Stage levels:
@@ -368,7 +360,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
     if stage1 == "lobby":
         if stage2 == "settings":
             if stage3 == "key_binds":
-                draw_header(ui_surf, font_big, font_small, "Key Bindings", fps, host_name)
+                draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name)
             else:
                 world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
                 draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
@@ -395,21 +387,57 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
         _join_game_rects_cache = None  # Clear cache when in game
         if stage2 == "settings": 
             if stage3 == "key_binds":
-                key_binds_rects = draw_key_binds(ui_surf, font_small)
-                _key_binds_rects_cache = key_binds_rects  # Cache for event handling
-                draw_header(ui_surf, font_big, font_small, "Key Bindings", fps, host_name)
+                controls_rects = draw_key_binds(ui_surf, font_small)
+                _controls_rects_cache = controls_rects  # Cache for event handling
+                draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name)
             else:
-                _key_binds_rects_cache = None  # Clear cache when not in key_binds
+                _controls_rects_cache = None  # Clear cache when not in key_binds
                 world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
                 draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
         else:
-            _key_binds_rects_cache = None  # Clear cache when not in settings
-            # draw_game()
-            draw_header(ui_surf, font_big, font_small, "In Game", fps, host_name)
-            draw_controls_hud(ui_surf, ai_path_mode_controls, joysticks, my_car, cam, font_small, dt, engine_state, 7000)
-            # Draw palette picker in game mode
-            palette_picker_rects = draw_color_palette_picker(ui_surf, font_small)
-            _palette_picker_rects_cache = palette_picker_rects
+            _controls_rects_cache = None  # Clear cache when not in settings
+            game_rects = draw_game(ui_surf, font_big, font_medium, is_host)
+            _game_rects_cache = game_rects
+            draw_header(ui_surf, font_big, font_small, "Waiting Room", fps, host_name)
+            draw_controls_hud(ui_surf, ai_path_mode_controls, gamepad, my_car, cam, font_small, dt, engine_state, 7000)
+        draw_footer(ui_surf, font_small, code)
+
+    elif stage1 == "mode1":
+        _new_game_rects_cache = None  # Clear cache when in game
+        _join_game_rects_cache = None  # Clear cache when in game
+        if stage2 == "settings":
+            if stage3 == "key_binds":
+                controls_rects = draw_key_binds(ui_surf, font_small)
+                _controls_rects_cache = controls_rects  # Cache for event handling
+                draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name)
+            else:
+                _controls_rects_cache = None  # Clear cache when not in key_binds
+                world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
+                draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
+        else:
+            _controls_rects_cache = None  # Clear cache when not in settings
+            draw_mode1(ui_surf, font_big, font_medium, cam, checkpoints)
+            draw_header(ui_surf, font_big, font_small, "Mode 1", fps, host_name)
+            draw_controls_hud(ui_surf, ai_path_mode_controls, gamepad, my_car, cam, font_small, dt, engine_state, 7000)
+        draw_footer(ui_surf, font_small, code)
+
+    elif stage1 == "mode2":
+        _new_game_rects_cache = None  # Clear cache when in game
+        _join_game_rects_cache = None  # Clear cache when in game
+        if stage2 == "settings": 
+            if stage3 == "key_binds":
+                controls_rects = draw_key_binds(ui_surf, font_small)
+                _controls_rects_cache = controls_rects  # Cache for event handling
+                draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name)
+            else:
+                _controls_rects_cache = None  # Clear cache when not in key_binds
+                world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
+                draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
+        else:
+            _controls_rects_cache = None  # Clear cache when not in settings
+            draw_mode2(ui_surf, font_big, font_medium, cam, checkpoints)
+            draw_header(ui_surf, font_big, font_small, "Mode 2", fps, host_name)
+            draw_controls_hud(ui_surf, ai_path_mode_controls, gamepad, my_car, cam, font_small, dt, engine_state, 7000)
         draw_footer(ui_surf, font_small, code)
 
     elif stage1 == "error":
@@ -421,51 +449,50 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
     
     return world_surf, button_results, new_game_rects, join_game_rects, palette_picker_rects
 
-def handle_game_events(screen, ev, stage1, stage2, stage3, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref, host_name=None, new_game_rects=None):
+def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref, host_name=None, new_game_rects=None):
     """Handle game events including new game UI interactions."""
     global _new_game_rects_cache, _palette_picker_rects_cache
     
     if ev.type == pygame.KEYDOWN: # press a key
         if stage1 == "lobby": # in lobby
-            if stage2 == "" and ev.key == const.HOST_KEY:  # h
-                stage2 = "new_game" # host a room - open new game UI
-                reset_game_setup()  # Reset to defaults when opening
-            elif stage2 == "" and ev.key == const.JOIN_KEY:  # j
-                stage2 = "join_game" # join a room - open join game UI
-                reset_game_setup()  # Reset to defaults when opening
-            elif stage2 == "new_game": # in new_game UI
+            if stage2 == "": # main lobby
+                if ev.key == const.HOST_KEY: # h
+                    stage2 = "new_game" # host a room - open new game UI
+                    reset_game_setup()  # Reset to defaults when opening
+                if ev.key == const.JOIN_KEY: # j
+                    stage2 = "join_game" # join a room - open join game UI
+                    reset_game_setup()  # Reset to defaults when opening
+            elif stage2 == "new_game": # hosting game
                 handle_new_game_keypress(ev)
                 if ev.key == const.ESCAPE_KEY: # esc
                     stage2 = "" # go back to lobby
                     reset_game_setup()
                 if ev.key in const.RETURN_KEYS:
                     setup = get_game_setup()
-                    if setup["username"]:  # Only proceed if username is entered
-                        stage1, my_name, code, sock, is_host, host_name = host_new_game(my_id)
-                        stage2 = "" # Close new_game UI
-                        is_host_flag_ref[0] = is_host
-                        my_car.name = my_name # update car with new name
-                        my_car.set_car_type(setup["selected_car"]) # update car selected car type
-                        my_car.x = const.WINDOW_WIDTH // 2
-                        my_car.y = const.WINDOW_HEIGHT // 2
-                    else:
-                        set_error_message("username missing")
-            elif stage2 == "join_game": # in join_game UI
+                    if not setup["username"]: setup["username"] = "Player" + str(my_id)[:4]
+                    stage1, my_name, code, sock, is_host, host_name, track_image, chunked_map, checkpoints = host_new_game(my_id) # keyboard press
+                    stage2 = "" # Close new_game UI
+                    is_host_flag_ref[0] = is_host
+                    my_car.name = my_name # update car with new name
+                    my_car.set_car_type(setup["selected_car"]) # update car selected car type
+                    my_car.x = const.WINDOW_WIDTH // 2
+                    my_car.y = const.WINDOW_HEIGHT // 2
+            elif stage2 == "join_game": # joining game
                 handle_join_game_keypress(ev)
                 if ev.key == const.ESCAPE_KEY: # esc to go back to lobby
                     stage2 = ""
                     reset_game_setup()
                 if ev.key in const.RETURN_KEYS:
                     setup = get_game_setup()
-                    if not setup["username"]:
-                        set_error_message("username missing")
+                    if not setup["username"]: setup["username"] = "Player" + str(my_id)[:4]
                     elif not setup["room_code"]:
                         set_error_message("room code missing")
                     elif len(setup["room_code"]) < 4:
                         set_error_message("room code too short")
                     else: # Only proceed if username is entered
                         clear_error_message()
-                        stage1, my_name, code, sock, is_host, host_name, error = join_new_game(my_id)
+                        stage1, my_name, code, sock, is_host, host_name, error, track_image, chunked_map, checkpoints = join_new_game(my_id) # keyboard press
+                        is_host_flag_ref[0] = is_host
                         if error: set_error_message(error)
                         else:
                             stage2 = "" # Close new_game UI
@@ -473,7 +500,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, remotes, ai_cars, soc
                             my_car.set_car_type(setup["selected_car"]) # update car selected car type
                             my_car.x = const.WINDOW_WIDTH // 2
                             my_car.y = const.WINDOW_HEIGHT // 2
-        elif stage1 == "game": # in game
+        elif stage1 in ["game", "mode1", "mode2"]: # in game
             if stage2 == "" and ev.key == const.ESCAPE_KEY: 
                 stage2 = "settings" # open settings
             elif stage2 == "settings":
@@ -517,7 +544,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, remotes, ai_cars, soc
                 # Get game setup and start hosting
                 setup = get_game_setup()
                 if setup["username"]:  # Only proceed if username is entered
-                    stage1, my_name, code, sock, is_host, host_name = host_new_game(my_id)
+                    stage1, my_name, code, sock, is_host, host_name, track_image, chunked_map, checkpoints = host_new_game(my_id) # mouse click
                     is_host_flag_ref[0] = is_host
                     stage2 = ""  # Close new_game UI
                     
@@ -531,24 +558,95 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, remotes, ai_cars, soc
                 # Get game setup and start joining
                 setup = get_game_setup()
                 if setup["username"]:  # Only proceed if username is entered
-                    stage1, my_name, code, sock, is_host, host_name, error = join_new_game(my_id)
+                    stage1, my_name, code, sock, is_host, host_name, error, track_image, chunked_map, checkpoints = join_new_game(my_id) # mouse click
+                    is_host_flag_ref[0] = is_host
                     stage2 = ""  # Close new_game UI
                     
                     # Update car with new name and selected car type
                     my_car.name = my_name
                     my_car.set_car_type(setup["selected_car"])
-        elif stage1 == "game" and stage2 == "settings" and stage3 == "key_binds" and _key_binds_rects_cache:
-            handle_key_binds_click(ev.pos, _key_binds_rects_cache)
-        elif stage1 == "game" and stage2 == "" and _palette_picker_rects_cache:
-            # Handle palette picker clicks
-            handle_palette_picker_click(ev.pos, _palette_picker_rects_cache)
+        elif stage1 == "game" and stage2 == "" and _game_rects_cache:
+            start_btn = _game_rects_cache.get("start_btn") # Start button
+            if start_btn and start_btn.collidepoint(ev.pos):
+                setup = get_game_setup()
+                if not setup["username"]: set_error_message("username missing")
+                # print(f"Start button clicked - {setup['selected_track']}")
+                stage1 = setup['selected_mode']  # Switch to selected game mode
+                track_image = None
+                chunked_map = None
+                if sock:
+                    try:
+                        sock.send(json.dumps({"t": "start_race", "code": code, "id": my_id, "mode": setup['selected_mode']}).encode("utf-8")) # client -> server
+                    except Exception as e:
+                        print(f"Error sending start: {e}")
+
+        elif stage1 in ["game", "mode1", "mode2"] and stage2 == "settings" and stage3 == "key_binds" and _controls_rects_cache:
+            res = handle_key_binds_click(ev.pos, _controls_rects_cache, gamepad)
+            if res and res.startswith("gp_connected_"):
+                stage2 = "" ; stage3 = "" # close controls & settings to confirm connection
+
+    if gamepad and gamepad.joystick:
+        js = gamepad.joystick
+        if stage1 == "lobby": # in lobby
+            if stage2 == "": # main lobby
+                if js.get_button(6): # - -> join game (j)
+                    stage2 = "join_game"
+                    reset_game_setup()
+                elif js.get_button(7): # + -> host game (h)
+                    stage2 = "new_game"
+                    reset_game_setup()
+            elif stage2 == "new_game": # hosting game
+                if js.get_button(8): # left stick press -> cancel (esc)
+                    stage2 = "" # go back to lobby
+                    reset_game_setup()
+                elif js.get_button(9): # right stick press -> confirm (enter)
+                    setup = get_game_setup()
+                    if not setup["username"]: setup["username"] = "Player" + str(my_id)[:4]
+                    stage1, my_name, code, sock, is_host, host_name, track_image, chunked_map, checkpoints = host_new_game(my_id) # keyboard press
+                    stage2 = "" # Close new_game UI
+                    is_host_flag_ref[0] = is_host
+                    my_car.name = my_name # update car with new name
+                    my_car.set_car_type(setup["selected_car"]) # update car selected car type
+                    my_car.x = const.WINDOW_WIDTH // 2
+                    my_car.y = const.WINDOW_HEIGHT // 2
+            elif stage2 == "join_game": # joining game
+                if js.get_button(8): # left stick press -> cancel (esc)
+                    stage2 = "" # go back to lobby
+                    reset_game_setup()
+                elif js.get_button(9): # right stick press -> confirm (enter)
+                    setup = get_game_setup()
+                    if not setup["room_code"]: set_error_message("room code missing")
+                    elif len(setup["room_code"]) < 4: set_error_message("room code too short")
+                    else: # Only proceed if username is entered
+                        if not setup["username"]: setup["username"] = "Player" + str(my_id)[:4]
+                        clear_error_message()
+                        stage1, my_name, code, sock, is_host, host_name, error, track_image, chunked_map, checkpoints = join_new_game(my_id) # keyboard press
+                        is_host_flag_ref[0] = is_host
+                        if error: set_error_message(error)
+                        else:
+                            stage2 = "" # Close join_game UI
+                            my_car.name = my_name # update car with new name
+                            my_car.set_car_type(setup["selected_car"]) # update car selected car type
+                            my_car.x = const.WINDOW_WIDTH // 2
+                            my_car.y = const.WINDOW_HEIGHT // 2
+        elif stage1 in ["game", "mode1", "mode2"]: # in game
+            if stage2 == "": # main game screen
+                if js.get_button(8): # left stick press -> open settings (esc)
+                    stage2 = "settings"
+            elif stage2 == "settings": # in settings menu
+                if stage3 == "key_binds": # do not handle joystick buttons yet
+                    if js.get_button(8): # left stick press -> back (esc)
+                        stage3 = ""
+                elif stage3 == "":
+                    if js.get_button(8): # left stick press -> close settings (esc)
+                        stage2 = ""
     
     # Handle slider events in settings menu (all event types)
-    if ((stage1 == "game" and stage2 == "settings" and stage3 == "") or 
+    if ((stage1 in ["game", "mode1", "mode2"] and stage2 == "settings" and stage3 == "") or 
         (stage1 == "lobby" and stage2 == "settings" and stage3 == "")):
         settings_manager.handle_slider_events(ev)
 
-    return ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name
+    return ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map, checkpoints
 
 def _get_cached_hud_font(font_small: pygame.font.Font, scale: float) -> pygame.font.Font:
     """Get or create a cached scaled font for HUD elements."""
@@ -557,7 +655,7 @@ def _get_cached_hud_font(font_small: pygame.font.Font, scale: float) -> pygame.f
         _hud_font_cache[font_size] = pygame.font.SysFont(None, font_size)
     return _hud_font_cache[font_size]
 
-def draw_controls_hud(ui_surf: pygame.Surface, ai_path_mode_controls, joysticks, my_car, cam, font_small, dt, engine_state, rpm_redline: float = 7000.0) -> None:
+def draw_controls_hud(ui_surf: pygame.Surface, ai_path_mode_controls, gamepad, my_car, cam, font_small, dt, engine_state, rpm_redline: float = 7000.0) -> None:
     """Draw bottom-right HUD with RPM gauge, steering wheel, throttle and brake bars.
 
     Parameters
@@ -572,7 +670,7 @@ def draw_controls_hud(ui_surf: pygame.Surface, ai_path_mode_controls, joysticks,
     if const.AI_PATH_FOLLOW and ai_path_mode_controls is not None: 
         inp = ai_path_mode_controls
     else: 
-        inp = read_inputs(joysticks, my_car, cam, const.CURSOR_FOLLOW, const.AI_PATH_FOLLOW)
+        inp = read_inputs(gamepad, my_car, cam, const.CURSOR_FOLLOW, const.AI_PATH_FOLLOW)
 
     th = clamp(inp.get("th", 0.0), -1.0, 1.0)
     br = clamp(inp.get("br", 0.0), 0.0, 1.0)

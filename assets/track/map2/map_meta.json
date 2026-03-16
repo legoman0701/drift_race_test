@@ -1,0 +1,13 @@
+{
+    "map_name": "Placeholder for Mode 1",
+    "width": "3000",
+    "height": "2000",
+    "checkpoints": [
+        {"id": 0, "name": "Top Line 1", "x": 830, "y": 170, "width": 100, "height": 350},
+        {"id": 1, "name": "Left Line", "x": 210, "y": 865, "width": 320, "height": 100},
+        {"id": 2, "name": "Bottom Line 1", "x": 1050, "y": 1520, "width": 100, "height": 310},
+        {"id": 3, "name": "Bottom Line 2", "x": 1840, "y": 1520, "width": 100, "height": 310},
+        {"id": 4, "name": "Right Line", "x": 2440, "y": 1060, "width": 350, "height": 100},
+        {"id": 5, "name": "Top Line 2", "x": 2100, "y": 175, "width": 100, "height": 350}
+    ]
+}

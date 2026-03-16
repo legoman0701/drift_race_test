@@ -5,7 +5,7 @@
 # global imports
 import pygame, json, time, random, sys, math, uuid, argparse, threading
 # local imports
-from drift.tools.paths import asset_path, chdir_to_exe_folder_if_frozen, normalize_asset_path
+from drift.tools.paths import asset_path, chdir_to_exe_folder_if_frozen, get_available_cars, normalize_asset_path
 import drift.config.const as const
 import drift.render.camera as camera
 import drift.core.car as car
@@ -20,6 +20,7 @@ from drift.ui.ui import handle_game_events, draw_stage_ui, invalidate_ui_text_ca
 from drift.core.rpm import calc_engine_rpm
 from drift.audio.engine_audio import EngineAudio
 from drift.render.map_chunks import ChunkedMap
+from drift.core.gamepad import Gamepad
 
 # ======= CONFIGURATION =======
 
@@ -150,7 +151,7 @@ class AudioController(threading.Thread):
             if sleep_time > 0:
                 time.sleep(sleep_time)
 
-# ======= CONFIGURATION =======
+# ======= RELAY =======
 
 RELAY_PUBLIC_ENDPOINT = const.RELAY_PUBLIC_ENDPOINT
 # True : client creates a room, False : joining
@@ -428,11 +429,11 @@ def main():
     audio_initialized = loaded_assets["audio_initialized"]
     car_sprites_cache = loaded_assets["car_sprites_cache"]
     track_image = loaded_assets["track_image"]
-    chunk_map = loaded_assets["chunk_map"]
+    chunked_map = loaded_assets["chunk_map"]
     engine_sound = loaded_assets["engine_sound"]
     audio_controller = loaded_assets["audio_controller"]
     
-    stage1 = "lobby" # lobby | game | error
+    stage1 = "lobby" # lobby | game | error | mode1 | mode2
     stage2 = "" # new_game | join_game | settings
     stage3 = "" # key_binds
     error_msg = ""
@@ -457,6 +458,10 @@ def main():
     my_car = car.Car(spawnx, spawny, my_name, is_ai=False, car_type=initial_car_type)
     # Local player's engine state (avoid mutating Car which may use __slots__)
     engine_state = {"gear": 0, "last_rpm": None}
+
+    # controller cooldowns
+    ctlr_btn2_time = 0.0 # i'll store last time.time() the X button was pressed (change car)
+    ctlr_btn3_time = 0.0 # same for the Y button (spawn ai car)
 
     if args.mode == "host" and args.code and args.name:
         my_name = args.name
@@ -525,11 +530,13 @@ def main():
             I_AM_HOST = False
     
     # Renderer handles track, cars, and drift marks
-    renderer = WorldRenderer(track_image, flags, chunked_map=chunk_map)
+    renderer = WorldRenderer(track_image, flags, chunked_map=chunked_map)
 
-    joysticks = [pygame.joystick.Joystick(i) for i in range(pygame.joystick.get_count())]
-    for js in joysticks:
-        js.init()
+    # connect first available gamepad (if any)
+    gp = Gamepad()
+    gp.joystick = pygame.joystick.Joystick(0) if pygame.joystick.get_count() > 0 else None
+    gp.selected_index = gp.joystick.get_id() if gp.joystick else None
+    if gp.joystick: gp.connect_gamepad(gp.selected_index)
 
     # Create a camera object; mouse wheel will adjust zoom and middle mouse drag will pan.
     cam = camera.Camera(const.WINDOW_WIDTH, const.WINDOW_HEIGHT, zoom=1.0)
@@ -537,6 +544,7 @@ def main():
     host_ref = [I_AM_HOST]
 
     def leave_room(sock, code, my_id, remotes):
+        nonlocal host_name
         if sock and code:
             try:
                 sock.send(json.dumps({"t": "bye", "code": code, "id": my_id}).encode("utf-8"))
@@ -547,6 +555,8 @@ def main():
         ai_cars.clear()
         const.AI_PATH_FOLLOW = False
         const.CURSOR_FOLLOW = False
+        host_name = None
+        host_ref[0] = False
         invalidate_ui_text_cache('room')  # Clear cached room code text
         # Clear tire marks and chunk cache to free memory
         renderer.clear_tire_marks()
@@ -557,25 +567,25 @@ def main():
         nonlocal stage3
         stage3 = "key_binds"
         
-    def switch_cursor_follow_mode():
+    def switch_cursor_follow_mode(stage1):
         const.CURSOR_FOLLOW = not const.CURSOR_FOLLOW
         if const.CURSOR_FOLLOW: const.AI_PATH_FOLLOW = False
         # stage, substage sock, code, remotes
-        try: return "game", "", sock, code, remotes
-        except Exception: return "game", "", None, None, {}
+        try: return stage1, "", sock, code, remotes
+        except Exception: return stage1, "", None, None, {}
 
-    def switch_ai_path_mode():
+    def switch_ai_path_mode(stage1):
         const.AI_PATH_FOLLOW = not const.AI_PATH_FOLLOW
         if const.AI_PATH_FOLLOW: const.CURSOR_FOLLOW = False
         # stage, substage sock, code, remotes
-        try: return "game", "", sock, code, remotes
-        except Exception: return "game", "", None, None, {}
+        try: return stage1, "", sock, code, remotes
+        except Exception: return stage1, "", None, None, {}
 
-    settings_buttons = [ # to do : be able to use * like */settings for key binds
-    btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"]] ,lambda: leave_room(sock, code, my_id, remotes)),
-    btn.Button("Key Binds", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, [["lobby", "settings"], ["game", "settings"]], handle_key_binds),
-    btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"]], switch_cursor_follow_mode),
-    btn.Button("AI Path Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.65, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"]], switch_ai_path_mode),
+    settings_buttons = [ # todo : be able to use '*' like '*/settings' for key binds
+    btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"], ["mode1", "settings"], ["mode2", "settings"]] ,lambda: leave_room(sock, code, my_id, remotes)),
+    btn.Button("Key Binds", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, [["lobby", "settings"], ["game", "settings"], ["mode1", "settings"], ["mode2", "settings"]], handle_key_binds),
+    btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["mode1", "settings"], ["mode2", "settings"]], lambda: switch_cursor_follow_mode(stage1)),
+    btn.Button("AI Path Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.65, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["mode1", "settings"], ["mode2", "settings"]], lambda: switch_ai_path_mode(stage1)),
     ]
     
     # Performance debugging
@@ -599,7 +609,7 @@ def main():
             # print(f"[DEBUG] FPS: {current_fps:.1f} | Text cache: {text_cache_size} | Button cache: {button_cache_size} | Chunk cache: {chunk_cache_size} | Tire marks: {tire_mark_chunks}")
             last_debug_time = current_time
 
-        # ======== EVENT HANDLING ========
+        # ======== EVENT HANDLING ======== (keyboard)
 
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
@@ -616,15 +626,15 @@ def main():
                 pygame.quit()
                 sys.exit(0)
 
-            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_l:
+            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_l: # L to toggle headlights
                 lights_on = not lights_on
-            if ev.type == pygame.KEYDOWN and ev.key == const.CHANGE_CAR_KEY:
+            if ev.type == pygame.KEYDOWN and ev.key == const.CHANGE_CAR_KEY: # C to change car
                 # Cycle through available car types
                 available_types = list(const.CAR_SPRITES.keys())
                 current_index = available_types.index(my_car.car_type)
                 next_index = (current_index + 1) % len(available_types)
                 my_car.set_car_type(available_types[next_index])
-            if ev.type == pygame.KEYDOWN and ev.key == const.DEBUG_TOGGLE_KEY:
+            if ev.type == pygame.KEYDOWN and ev.key == const.DEBUG_TOGGLE_KEY: # F3 to toggle debug mode
                 # Toggle debug mode
                 const.DEBUG = not const.DEBUG
                 invalidate_ui_text_cache('debug')  # Clear cached debug text
@@ -641,10 +651,10 @@ def main():
                     screen = pygame.display.set_mode((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
                     cam.zoom = 1.0
                 print(f"Fullscreen mode {'enabled' if is_fullscreen else 'disabled'}")
-            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_n:
-                if I_AM_HOST and stage1 == "game":
+            if ev.type == pygame.KEYDOWN and ev.key == const.AI_KEY: # N to add AI car
+                if I_AM_HOST and stage1 in ["game", "mode1", "mode2"] and stage2 == "":
                     # Randomly assign car type for AI cars
-                    ai_car_type = random.choice(["ae86", "barracuda", "911"])
+                    ai_car_type = random.choice(const.AVAILABLE_CARS)
                     ai_cars.append(
                         car.Car(
                             random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200),
@@ -670,14 +680,69 @@ def main():
                 cam.offset[0] -= ev.rel[0] / cam.zoom
                 cam.offset[1] -= ev.rel[1] / cam.zoom
 
-            ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name = handle_game_events(screen, ev, stage1, stage2, stage3, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name)
+            ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map, checkpoints = handle_game_events(screen, ev, stage1, stage2, stage3, gp, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name)
             I_AM_HOST = host_ref[0]
+            # update map changes
+            if renderer and track_image and renderer.track_image != track_image: renderer.track_image = track_image
+            if renderer and chunked_map and renderer.chunked_map != chunked_map: renderer.chunked_map = chunked_map
+            if renderer and checkpoints: renderer.checkpoints = checkpoints
+
+        # ======== JOYSCTICK INPUTS HANDLING ======== (controller buttons)
+
+        # A: button 0, B: button 1, X: button 2, Y: button 3
+        # LB: button 4, RB: button 5
+        # -: button 6, +: button 7
+        # Left joystick: button 8 (press), Right joystick: button 9 (press)
+        # Home: button 10
+
+        if gp and gp.joystick:
+            js = gp.joystick
+            if js.get_button(2) and time.time() - ctlr_btn2_time > 0.2: # X to change car
+                ctlr_btn2_time = time.time()
+                # Cycle through available car types
+                available_types = list(const.CAR_SPRITES.keys())
+                current_index = available_types.index(my_car.car_type)
+                next_index = (current_index + 1) % len(available_types)
+                my_car.set_car_type(    available_types[next_index])
+            if js.get_button(3) and time.time() - ctlr_btn3_time > 0.2: # Y to spawn ai car
+                ctlr_btn3_time = time.time()
+                if I_AM_HOST and stage1 in ["game", "mode1", "mode2"] and stage2 == "":
+                    # Randomly assign car type for AI cars
+                    ai_car_type = random.choice(const.AVAILABLE_CARS)
+                    ai_cars.append(
+                        car.Car(
+                            random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200),
+                            random.randint(const.TRACK_MARGIN + 120, const.WINDOW_HEIGHT - const.TRACK_MARGIN - 120),
+                            name=f"AI-{len(ai_cars)+1}",
+                            is_ai=True,
+                            car_type=ai_car_type,
+                        )
+                    )
 
         # ======== NETWORKING ========
 
         if sock:
             # print(sock)
-            err = handle_network_messages(sock, remotes, dt, my_id, I_AM_HOST)
+            net_result = handle_network_messages(sock, remotes, dt, my_id, I_AM_HOST)
+            if net_result.get("host_name") is not None:
+                host_name = net_result["host_name"] or None
+            if net_result.get("host_id") is not None:
+                I_AM_HOST = (net_result["host_id"] == my_id)
+                host_ref[0] = I_AM_HOST
+            if net_result.get("start_mode") and stage1 in ["game", "mode1", "mode2"]:
+                stage1 = net_result["start_mode"]
+                # Non-host: reload the correct map when race starts
+                if not I_AM_HOST and net_result.get("start_track"):
+                    try:
+                        new_map_num = int(net_result["start_track"][5:])
+                    except Exception:
+                        new_map_num = 1
+                    const.MAP_NUM = new_map_num
+                    track_image = pygame.image.load(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
+                    chunked_map = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=const.TILE_SIZE)
+                    renderer.track_image = track_image
+                    renderer.chunked_map = chunked_map
+            err = net_result.get("error")
             if err:
                 # Switch to offline on relay errors
                 try:

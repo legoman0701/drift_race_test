@@ -1,10 +1,10 @@
 {
-    "model": "ae86",
-    "manufacturer": "Toyota",
+    "model": "mustang",
+    "manufacturer": "Ford",
     "type": "drift",
-    "year": 1983,
+    "year": 1965,
     "engine": {
-        "sound": "cars/ae86/sound"
+        "sound": "cars/mustang/sound"
     },
     "dimensions": {
         "CAR_LEN": 38.0,
