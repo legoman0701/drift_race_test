@@ -479,7 +479,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
 
         elif stage1 in ["game", "mode1", "mode2"] and stage2 == "settings" and stage3 == "key_binds" and _controls_rects_cache:
             res = handle_key_binds_click(ev.pos, _controls_rects_cache, gamepad)
-            if res.startswith("gp_connected_"):
+            if res and res.startswith("gp_connected_"):
                 stage2 = "" ; stage3 = "" # close controls & settings to confirm connection
 
     if gamepad and gamepad.joystick:
