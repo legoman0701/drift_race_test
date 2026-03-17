@@ -15,6 +15,7 @@ TICK = 0.01             # main loop tick
 #   code -> {
 #       "clients": { addr: {"id","name", "car_type","last"} },
 #       "states":  { id: {"x","y","a","vx","vy","name", "has_grip", "car_type"} },
+#       "results": { id: {"time","name","car_type"} },
 #       "host_addr": tuple|None,   # address of the creator
 #       "host_id": str,            # id of the creator
 #       "mode": str,               # selected game mode for room starts
@@ -36,6 +37,55 @@ def assign_random_host(room):
     room["host_id"] = new_info.get("id", "")
     room["host_name"] = new_info.get("name", "")
 
+
+def remove_client_from_room(room, addr=None, pid=None):
+    """Remove a client by address and/or player id from one room.
+
+    Returns True if any client entry was removed.
+    """
+    removed = False
+    removed_host = False
+    removed_pids = set()
+
+    for caddr, info in list(room["clients"].items()):
+        info_pid = info.get("id")
+        by_addr = (addr is not None and caddr == addr)
+        by_pid = (pid is not None and info_pid == pid)
+        if not (by_addr or by_pid):
+            continue
+
+        if caddr == room.get("host_addr") or info_pid == room.get("host_id"):
+            removed_host = True
+        if info_pid:
+            removed_pids.add(info_pid)
+        room["clients"].pop(caddr, None)
+        removed = True
+
+    for rid in removed_pids:
+        room["states"].pop(rid, None)
+        room.get("results", {}).pop(rid, None)
+
+    if removed_host:
+        for sid in list(room["states"].keys()):
+            if isinstance(sid, str) and sid.startswith("AI-"):
+                room["states"].pop(sid, None)
+        room["race_started"] = False
+        assign_random_host(room)
+
+    if removed:
+        room["dirty"] = True
+    return removed
+
+
+def evict_from_other_rooms(except_code, addr, pid):
+    """Ensure a client is active in only one room at a time."""
+    for code, room in list(rooms.items()):
+        if code == except_code:
+            continue
+        remove_client_from_room(room, addr=addr, pid=pid)
+        if not room.get("clients"):
+            rooms.pop(code, None)
+
 def sendto_json(sock, addr, obj):
     try:
         data = json.dumps(obj, separators=(",", ":")).encode("utf-8")
@@ -52,10 +102,12 @@ def broadcast_world(sock, code, room): # update world screen
         "t": "world",
         "code": code,
         "players": room["states"],
+        "results": room.get("results", {}),
         "host_name": room.get("host_name", ""),
         "host_id": room.get("host_id", ""),
         "race_started": bool(room.get("race_started", False)),
         "mode": room.get("mode", "mode1"),
+        "track": room.get("track", "track1"),
     }
     for caddr in list(room["clients"].keys()):
         sendto_json(sock, caddr, world)
@@ -78,11 +130,13 @@ def loop():
                     pid = info["id"]
                     room["clients"].pop(caddr, None)
                     room["states"].pop(pid, None)
+                    room.get("results", {}).pop(pid, None)
                     # if the timed out client was host, purge AI states
                     if caddr == room.get("host_addr") or pid == room.get("host_id"):
                         for sid in list(room["states"].keys()):
                             if isinstance(sid, str) and sid.startswith("AI-"):
                                 room["states"].pop(sid, None)
+                        room["race_started"] = False
                         assign_random_host(room)
                     room["dirty"] = True
             # remove room if empty
@@ -124,7 +178,8 @@ def loop():
                 sendto_json(sock, addr, {"t":"error","msg":"missing_code_or_id"}); continue
             if code in rooms:
                 sendto_json(sock, addr, {"t":"error","msg":"room_already_exists"}); continue
-            room = {"clients": {}, "states": {}, "host_addr": addr, "host_id": pid, "host_name": name, "mode": mode, "track": track, "race_started": False, "last_broadcast": 0.0, "dirty": True}
+            evict_from_other_rooms(code, addr, pid)
+            room = {"clients": {}, "states": {}, "results": {}, "host_addr": addr, "host_id": pid, "host_name": name, "mode": mode, "track": track, "race_started": False, "last_broadcast": 0.0, "dirty": True}
             rooms[code] = room
             room["clients"][addr] = {"id": pid, "name": name, "car_type": car_type, "last": now}
             room["states"].setdefault(pid, {"x": 500, "y": 350, "a": 0.0, "vx": 0.0, "vy": 0.0, "name": name, "has_grip": [1.0, 1.0, 1.0, 1.0], "car_type": car_type})
@@ -142,6 +197,9 @@ def loop():
             room = rooms.get(code)
             if not room:
                 sendto_json(sock, addr, {"t":"error","msg":"room_not_found"}); continue
+            if room.get("race_started"):
+                sendto_json(sock, addr, {"t":"error","msg":"race_in_progress"}); continue
+            evict_from_other_rooms(code, addr, pid)
             room["clients"][addr] = {"id": pid, "name": name, "last": now, "car_type": car_type}
             room["states"].setdefault(pid, {"x": 500, "y": 350, "a": 0.0, "vx": 0.0, "vy": 0.0, "name": name, "has_grip": [1.0, 1.0, 1.0, 1.0], "car_type": car_type})
             room["dirty"] = True
@@ -190,12 +248,15 @@ def loop():
             if not room: 
                 continue
             room["clients"].pop(addr, None)
-            if pid: room["states"].pop(pid, None) # remove player
+            if pid:
+                room["states"].pop(pid, None) # remove player
+                room.get("results", {}).pop(pid, None)
             # If the host leaves, purge AI states and clear host markers
             if addr == room.get("host_addr") or pid == room.get("host_id"):
                 for sid in list(room["states"].keys()):
                     if isinstance(sid, str) and sid.startswith("AI-"):
                         room["states"].pop(sid, None)
+                room["race_started"] = False
                 assign_random_host(room)
             room["dirty"] = True # trigger broadcast
             if not room["clients"]: # delete room if empty
@@ -209,11 +270,47 @@ def loop():
                 sendto_json(sock, addr, {"t":"error","msg":"room_not_found_or_not_joined"}); continue
             if addr != room.get("host_addr") or pid != room.get("host_id"):
                 sendto_json(sock, addr, {"t":"error","msg":"only_host_can_start"}); continue
-            room["race_started"] = True
+            requested_mode = (msg.get("mode") or room.get("mode", "mode1")).strip()
+            requested_track = (msg.get("track") or room.get("track", "track1")).strip()
+
+            if requested_track:
+                room["track"] = requested_track
+
+            if requested_mode == "game":
+                room["race_started"] = False
+                room["mode"] = "game"
+                room["results"] = {}
+            else:
+                room["race_started"] = True
+                room["mode"] = requested_mode
+                room["results"] = {}
+
             room["dirty"] = True
-            start_msg = {"t": "start_race", "code": code, "mode": room.get("mode", "mode1"), "track": room.get("track", "track1")}
+            start_msg = {"t": "start_race", "code": code, "mode": requested_mode, "track": room.get("track", "track1")}
             for caddr in list(room["clients"].keys()):
                 sendto_json(sock, caddr, start_msg)
+
+        elif mtype == "race_result":
+            code = (msg.get("code") or "").upper().strip()
+            pid  = (msg.get("id") or "")[:16]
+            room = rooms.get(code)
+            if not room or addr not in room["clients"]:
+                sendto_json(sock, addr, {"t":"error","msg":"room_not_found_or_not_joined"}); continue
+            if not pid or pid != room["clients"][addr].get("id"):
+                sendto_json(sock, addr, {"t":"error","msg":"invalid_player_id"}); continue
+            try:
+                finish_time = float(msg.get("time", 0.0))
+            except Exception:
+                sendto_json(sock, addr, {"t":"error","msg":"invalid_finish_time"}); continue
+            if finish_time < 0.0:
+                sendto_json(sock, addr, {"t":"error","msg":"invalid_finish_time"}); continue
+
+            room.setdefault("results", {})[pid] = {
+                "time": round(finish_time, 4),
+                "name": room["clients"][addr].get("name", pid),
+                "car_type": room["clients"][addr].get("car_type", "ae86"),
+            }
+            room["dirty"] = True
 
         else:
             sendto_json(sock, addr, {"t":"error","msg":"unknown_type"})

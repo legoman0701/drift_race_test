@@ -13,6 +13,7 @@ import drift.ui.button as btn
 import drift.ai.path_finder as path_finder
 from drift.render.renderer import WorldRenderer
 from drift.core.helpers import clamp, rand_name
+from drift.core.gamemode import SimpleRace
 from drift.ai.ai import ai_algorithme
 from drift.core.inputs import read_inputs
 from drift.net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, recv_jsons
@@ -433,13 +434,17 @@ def main():
     engine_sound = loaded_assets["engine_sound"]
     audio_controller = loaded_assets["audio_controller"]
     
-    stage1 = "lobby" # lobby | game | error | mode1 | mode2
+    stage1 = "lobby" # lobby | game | error | mode1 | mode2 | leaderboard
     stage2 = "" # new_game | join_game | settings
     stage3 = "" # key_binds
     error_msg = ""
     remotes = {}
     ai_cars = []
     path_poly = []
+    game_mode = None           # active BaseGameMode instance (SimpleRace, etc.)
+    _prev_stage1 = "lobby"     # detect stage1 transitions
+    _return_btn_rect = None    # leaderboard button rect from previous frame
+    _local_result_sent = False
 
     my_name = rand_name()
     my_id = str(uuid.uuid4())[:8]
@@ -542,7 +547,7 @@ def main():
     host_ref = [I_AM_HOST]
 
     def leave_room(sock, code, my_id, remotes):
-        nonlocal host_name
+        nonlocal host_name, game_mode, _prev_stage1, _return_btn_rect, _local_result_sent
         if sock and code:
             try:
                 sock.send(json.dumps({"t": "bye", "code": code, "id": my_id}).encode("utf-8"))
@@ -555,6 +560,12 @@ def main():
         const.CURSOR_FOLLOW = False
         host_name = None
         host_ref[0] = False
+        if game_mode is not None:
+            game_mode.on_exit()
+            game_mode = None
+        _prev_stage1 = "lobby"
+        _return_btn_rect = None
+        _local_result_sent = False
         invalidate_ui_text_cache('room')  # Clear cached room code text
         # Clear tire marks and chunk cache to free memory
         renderer.clear_tire_marks()
@@ -580,8 +591,8 @@ def main():
         except Exception: return stage1, "", None, None, {}
 
     settings_buttons = [ # todo : be able to use '*' like '*/settings' for key binds
-    btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"], ["mode1", "settings"], ["mode2", "settings"]] ,lambda: leave_room(sock, code, my_id, remotes)),
-    btn.Button("Key Binds", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, [["lobby", "settings"], ["game", "settings"], ["mode1", "settings"], ["mode2", "settings"]], handle_key_binds),
+    btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["leaderboard", "settings"]] ,lambda: leave_room(sock, code, my_id, remotes)),
+    btn.Button("Key Binds", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, [["lobby", "settings"], ["game", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["leaderboard", "settings"]], handle_key_binds),
     btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["mode1", "settings"], ["mode2", "settings"]], lambda: switch_cursor_follow_mode(stage1)),
     btn.Button("AI Path Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.65, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["mode1", "settings"], ["mode2", "settings"]], lambda: switch_ai_path_mode(stage1)),
     ]
@@ -680,6 +691,34 @@ def main():
 
             ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map, checkpoints = handle_game_events(screen, ev, stage1, stage2, stage3, gp, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name)
             I_AM_HOST = host_ref[0]
+
+            # Leaderboard "Return to Lobby" button click
+            if (ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1
+                    and stage1 == "leaderboard" and I_AM_HOST
+                    and _return_btn_rect is not None
+                    and _return_btn_rect.collidepoint(ev.pos)):
+                # Return everyone to the waiting room
+                if game_mode is not None:
+                    game_mode.on_exit()
+                    game_mode = None
+                stage1 = "game"
+                _prev_stage1 = "game"
+                _return_btn_rect = None
+                _local_result_sent = False
+                # Teleport local player back to center
+                my_car.x = const.WINDOW_WIDTH // 2
+                my_car.y = const.WINDOW_HEIGHT // 2
+                my_car.vx, my_car.vy = 0.0, 0.0
+                # Tell remote players to return (via relay)
+                if sock and code and code != "Offline":
+                    try:
+                        sock.send(json.dumps({
+                            "t": "start_race", "code": code, "id": my_id,
+                            "mode": "game"
+                        }).encode("utf-8"))
+                    except Exception:
+                        pass
+
             # update map changes
             if renderer and track_image and renderer.track_image != track_image: renderer.track_image = track_image
             if renderer and chunked_map and renderer.chunked_map != chunked_map: renderer.chunked_map = chunked_map
@@ -721,14 +760,38 @@ def main():
 
         if sock:
             # print(sock)
-            net_result = handle_network_messages(sock, remotes, dt, my_id, I_AM_HOST)
+            net_result = handle_network_messages(sock, remotes, dt, my_id, I_AM_HOST, code)
             if net_result.get("host_name") is not None:
                 host_name = net_result["host_name"] or None
             if net_result.get("host_id") is not None:
                 I_AM_HOST = (net_result["host_id"] == my_id)
                 host_ref[0] = I_AM_HOST
-            if net_result.get("start_mode") and stage1 in ["game", "mode1", "mode2"]:
-                stage1 = net_result["start_mode"]
+            if net_result.get("start_mode") and stage1 in ["game", "mode1", "mode2", "leaderboard"]:
+                new_mode = net_result["start_mode"]
+
+                # Race start transitions are one-way from waiting room only.
+                # This avoids re-applying stale/echoed starts while already racing.
+                if new_mode in ["mode1", "mode2"] and stage1 != "game":
+                    new_mode = None
+                if new_mode is None:
+                    pass
+                # "game" means return to waiting room (from leaderboard)
+                elif new_mode == "game":
+                    if stage1 != "game":
+                        if game_mode is not None:
+                            game_mode.on_exit()
+                            game_mode = None
+                        _prev_stage1 = "game"
+                        _return_btn_rect = None
+                        _local_result_sent = False
+                        my_car.x = const.WINDOW_WIDTH // 2
+                        my_car.y = const.WINDOW_HEIGHT // 2
+                        my_car.vx, my_car.vy = 0.0, 0.0
+                        stage1 = new_mode
+                else:
+                    stage1 = new_mode
+            if game_mode is not None and net_result.get("race_results"):
+                game_mode.apply_network_results(net_result["race_results"])
                 # Non-host: reload the correct map when race starts
                 if not I_AM_HOST and net_result.get("start_track"):
                     try:
@@ -762,22 +825,99 @@ def main():
                 last_ping = now
                 send_ping(sock, code)
 
+        # ======== GAME MODE LIFECYCLE ========
+
+        # Detect stage1 transitions → initialise / tear-down game modes
+        if stage1 != _prev_stage1:
+            # Leaving a mode
+            if _prev_stage1 in ["mode1", "mode2"] and game_mode is not None:
+                if stage1 != "leaderboard":  # keep mode alive for leaderboard
+                    game_mode.on_exit()
+                    game_mode = None
+
+            # Entering mode1
+            if stage1 == "mode1" and game_mode is None:
+                _start_grid = []
+                try:
+                    meta_path = asset_path("track", f"map{const.MAP_NUM}", "map_meta.json")
+                    with open(meta_path, "r", encoding="utf-8") as fh:
+                        _meta = json.load(fh)
+                    _start_grid = _meta.get("start", []) or []
+                    _lines = _meta.get("lines", []) or []
+                except Exception:
+                    _start_grid = []
+                    _lines = []
+
+                game_mode = SimpleRace(renderer.checkpoints or [], total_laps=1, start_grid=_start_grid, lines=_lines, local_player_id=my_id) # here to change the number of laps
+                _local_result_sent = False
+                # Build player dict for on_enter
+                _mode_players = {my_id: {"car_type": my_car.car_type, "name": my_car.name}}
+                for pid, rd in remotes.items():
+                    _mode_players[pid] = {"car_type": rd.get("car_type", "ae86"), "name": rd.get("name", pid)}
+                for i, ai in enumerate(ai_cars, start=1):
+                    _mode_players[f"AI-{i}"] = {"car_type": ai.car_type, "name": ai.name}
+                game_mode.on_enter(_mode_players)
+                # Teleport all players to start line
+                sorted_spawn_ids = sorted(_mode_players.keys())
+                start_positions = game_mode.get_start_positions(sorted_spawn_ids)
+                if my_id in start_positions:
+                    sx, sy, sa = start_positions[my_id]
+                    my_car.x, my_car.y, my_car.angle = sx, sy, sa
+                    my_car.target_angle = sa
+                    my_car.vx, my_car.vy = 0.0, 0.0
+                for i, ai in enumerate(ai_cars, start=1):
+                    key = f"AI-{i}"
+                    if key in start_positions:
+                        sx, sy, sa = start_positions[key]
+                        ai.x, ai.y, ai.angle = sx, sy, sa
+                        ai.target_angle = sa
+                        ai.vx, ai.vy = 0.0, 0.0
+
+            # Leaving leaderboard (return to lobby/game)
+            if _prev_stage1 == "leaderboard" and game_mode is not None:
+                game_mode.on_exit()
+                game_mode = None
+
+            _prev_stage1 = stage1
+
+        # Update active game mode
+        mode_result = {}
+        if game_mode is not None and stage1 in ["mode1", "mode2", "leaderboard"]:
+            mode_result = game_mode.update(dt, remotes, my_car, I_AM_HOST)
+            local_finish_time = game_mode.get_local_finish_time()
+            if (local_finish_time is not None and not _local_result_sent and sock and code and code != "Offline"):
+                try:
+                    sock.send(json.dumps({
+                        "t": "race_result",
+                        "code": code,
+                        "id": my_id,
+                        "time": float(local_finish_time),
+                    }).encode("utf-8"))
+                    _local_result_sent = True
+                except Exception:
+                    pass
+            # Handle stage transition request (e.g. racing → leaderboard)
+            if mode_result.get("stage_transition") == "leaderboard":
+                stage1 = "leaderboard"
+                _prev_stage1 = "leaderboard"
+
         # ======== FRAME UPDATE ========
         
-        world_size = renderer.get_world_size(stage1)
+        world_size = renderer.get_world_size(stage1 if stage1 != "leaderboard" else "mode1")
 
         # Skip physics computations when in menus (new_game, join_game, key_binds)
         # This saves CPU on low-end devices and improves battery life
         skip_physics = stage2 in ["new_game", "join_game"] or stage3 == "key_binds"
         
         if not skip_physics:
+            movement_locked = bool(mode_result.get("movement_locked"))
             # Prepare remotes view for the player: include network remotes + AI cars (so player can collide with AIs)
             remotes_with_ai_for_player = dict(remotes)
             if I_AM_HOST:
                 for i, ai in enumerate(ai_cars, start=1):
                     key = f"AI-{i}"
                     remotes_with_ai_for_player[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "drift_ratio": ai.drift_ratio, "name": ai.name}
-
+                    
             # Update player car using remotes that include AIs
             # If AI path mode is enabled and a path is available, let the AI drive the player
             controls = None
@@ -788,7 +928,13 @@ def main():
                     controls = None
             if controls is None:
                 controls = read_inputs(gp, my_car, cam, const.CURSOR_FOLLOW, const.AI_PATH_FOLLOW)
-            my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG)
+            # Lock movement during countdown/cooldown/leaderboard
+            if movement_locked:
+                controls = {"th": 0.0, "st": 0.0, "br": 0.0}
+                my_car.vx, my_car.vy = 0.0, 0.0
+                my_car.v_angle = 0.0
+            else:
+                my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG)
             # Update engine audio based on RPM and throttle with enhanced drift characteristics
             try:
                 if engine_sound is not None and audio_controller is not None and audio_initialized:
@@ -827,11 +973,15 @@ def main():
                 for i, ai in enumerate(ai_cars, start=1):
                     key = f"AI-{i}"
                     remotes_with_ai_for_ais[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "drift_ratio": ai.drift_ratio, "name": ai.name}
-
+                
             # Step AIs (each AI sees other AIs + network remotes + the player)
             if I_AM_HOST:
                 for ai in ai_cars:
-                    ai.step(ai_algorithme(path_poly, ai), dt, remotes_with_ai_for_ais, world_size, compute_debug=const.DEBUG)
+                    if movement_locked:
+                        ai.vx, ai.vy = 0.0, 0.0
+                        ai.v_angle = 0.0
+                    else:
+                        ai.step(ai_algorithme(path_poly, ai), dt, remotes_with_ai_for_ais, world_size, compute_debug=const.DEBUG)
             cam.update(my_car, world_size)
         else:
             # In menus: set default controls to prevent undefined variable errors
@@ -841,7 +991,8 @@ def main():
 
         if not skip_physics:
             # draw track, drift marks and cars (online & local)
-            world_surf, resized, is_viewport = renderer.render_world(cam, stage1, my_car, ai_cars, remotes, lights_on, car_sprites_cache)
+            render_stage = stage1 if stage1 != "leaderboard" else "mode1"
+            world_surf, resized, is_viewport = renderer.render_world(cam, render_stage, my_car, ai_cars, remotes, lights_on, car_sprites_cache)
             if resized and not is_viewport:
                 path_poly = path_finder.discover_track(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png"))
 
@@ -858,11 +1009,25 @@ def main():
         ui_surf = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), pygame.SRCALPHA)
         ui_surf.fill((0,0,0,0)) # transparent surface
         fps = clock.get_fps()
+        ui_checkpoints = renderer.checkpoints
+        if game_mode is not None and stage1 in ["mode1", "leaderboard"]:
+            # mode1 draws only the next checkpoint via SimpleRace.draw_checkpoints
+            ui_checkpoints = []
         world_surf, button_results, new_game_rects, join_game_rects = draw_stage_ui(
-            ui_surf, stage1, stage2, stage3, code, world_surf, world_size, renderer.checkpoints,
+            ui_surf, stage1 if stage1 != "leaderboard" else "mode1",
+            stage2, stage3, code, world_surf, world_size, ui_checkpoints,
             settings_buttons, error_msg, my_car, cam, gp, font_big, font_medium, font_small,
             controls, engine_state, fps, dt, I_AM_HOST, host_name, car_sprites_cache
         )
+
+        # Game mode overlays (countdown, lap counter, leaderboard)
+        _return_btn_rect = None
+        if game_mode is not None:
+            if stage1 == "leaderboard":
+                lb_result = game_mode.draw_leaderboard(ui_surf, font_big, font_medium, font_small, I_AM_HOST)
+                _return_btn_rect = lb_result.get("return_btn_rect")
+            elif stage1 in ["mode1", "mode2"]:
+                game_mode.draw_hud(ui_surf, cam, font_big, font_medium, font_small)
         
         # Handle button results from settings menu
         for res in button_results:

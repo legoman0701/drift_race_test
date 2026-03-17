@@ -610,7 +610,7 @@ def host_new_game(my_id):
     Returns: (stage1, my_name, code, sock, is_host, host_name) tuple
     """
     
-    my_name = _game_setup["username"] or "Player"
+    my_name = _game_setup["username"] or "Player_" + str(my_id)[:4]
     code = rand_code()
     sock = None
     is_host = True
@@ -692,7 +692,7 @@ def join_new_game(my_id):
     Join an existing game with the configured settings.
     Returns: (stage1, my_name, code, sock, is_host, host_name) tuple
     """    
-    my_name = _game_setup["username"] or "Player"
+    my_name = _game_setup["username"] or "Player_" + str(my_id)[:4]
     code = _game_setup["room_code"].upper() if _game_setup["room_code"] else ""
     sock = None
     is_host = False
@@ -732,14 +732,12 @@ def join_new_game(my_id):
             time.sleep(0.02)
         
         if not join_ok_received:
-            # Relay didn't confirm; fall back to offline mode
+            # Relay didn't confirm; keep user in lobby with explicit error
             try:
                 sock.close()
             except Exception:
                 pass
-            sock = None
-            code = "Offline"
-            is_host = False
+            return ("lobby", my_name, "", None, False, "Host", "join_timeout", None, None, [])
         
     except Exception as e:
         # Handle specific error cases
@@ -751,13 +749,9 @@ def join_new_game(my_id):
         except Exception:
             pass
         sock = None
-        
-        # If room not found, return error instead of falling back to offline
-        if "room_not_found" in error:
-            return ("lobby", my_name, "", None, False, "Host", error)
-        # For other errors (relay unreachable, etc), fall back to offline mode
-        code = "Offline"
-        is_host = False
+
+        # Join failures should not silently create an offline room/session.
+        return ("lobby", my_name, "", None, False, "Host", error, None, None, [])
 
     try: const.MAP_NUM = int(_game_setup["selected_track"][5:]) 
     except Exception: pass
