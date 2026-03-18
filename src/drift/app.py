@@ -459,6 +459,7 @@ def main():
     remotes = {}
     ai_cars = []
     path_poly = []
+    checkpoints = []
     game_mode = None           # active BaseGameMode instance (SimpleRace, etc.)
     _prev_stage1 = "lobby"     # detect stage1 transitions
     _return_btn_rect = None    # leaderboard button rect from previous frame
@@ -1063,7 +1064,7 @@ def main():
         if game_mode is not None and stage1 in ["mode1", "leaderboard"]:
             # mode1 draws only the next checkpoint via SimpleRace.draw_checkpoints
             ui_checkpoints = []
-        world_surf, button_results, new_game_rects, join_game_rects = draw_stage_ui(
+        world_surf, button_results, new_game_rects, join_game_rects, palette_picker_rects = draw_stage_ui(
             ui_surf, stage1 if stage1 != "leaderboard" else "mode1",
             stage2, stage3, code, world_surf, world_size, ui_checkpoints,
             settings_buttons, error_msg, my_car, cam, gp, font_big, font_medium, font_small,
