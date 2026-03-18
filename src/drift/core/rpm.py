@@ -130,7 +130,7 @@ def calc_engine_rpm(
     Arguments
     - speed_units: vehicle speed magnitude in "game units / s" (pixels/s by default)
     - drift_ratio: 0..1 measure of drift; if > ~0.4 we assume aggressive driving
-    - throttle: -1..1 (only positive used here), affects clutch slip/spinup
+    - throttle: -1..1 (absolute value used), affects clutch slip/spinup
     - prev_rpm: last frame's rpm for smoothing; if None, starts from wheel rpm
     - dt: timestep in seconds
     - params: RpmParams to override defaults
@@ -170,11 +170,15 @@ def calc_engine_rpm(
     # Calculate time since last gear change
     time_since_gear_change = current_time - last_gear_change_time
 
+    # Treat reverse input like forward load for engine RPM modeling.
+    # This keeps reverse audible while still using first-gear ratios.
+    throttle_abs = abs(float(throttle))
+
     # Enhanced stopped/low speed behavior with rev hanging
     if wheel_rps < 1e-4:
         _state["gear"] = current_gear
         base = prev_rpm if prev_rpm is not None else p.idle_rpm
-        th = _clamp(throttle, 0.0, 1.0)
+        th = _clamp(throttle_abs, 0.0, 1.0)
         
         # Rev hanging: when throttle is lifted, RPM hangs for a bit (drift style)
         if th < 0.1 and prev_rpm and prev_rpm > p.idle_rpm * 1.5:
@@ -224,7 +228,7 @@ def calc_engine_rpm(
     wheel_based_rpm = wheel_rps * gear_ratio * 60.0
 
     # Enhanced throttle and clutch slip
-    throttle = max(0.0, min(1.0, throttle))
+    throttle = max(0.0, min(1.0, throttle_abs))
 
     if prev_rpm is None:
         prev_rpm = wheel_based_rpm

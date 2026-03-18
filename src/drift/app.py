@@ -1001,13 +1001,13 @@ def main():
                     )
                     engine_state["last_rpm"] = rpm
                     if engine_audio is not None:
-                        engine_audio.update(rpm=rpm, throttle=max(0.0, th))
+                        engine_audio.update(rpm=rpm, throttle=abs(th))
                     current_gear = engine_state.get("gear", 0)
                     if shift_sound is not None:
                         shift_sound.update(
                             current_gear=current_gear,
                             rpm=rpm,
-                            throttle=max(0.0, th),
+                            throttle=abs(th),
                             drift_ratio=my_car.drift_ratio,
                             engine_sound_id=getattr(my_car, "engine_sound_id", ""),
                         )
