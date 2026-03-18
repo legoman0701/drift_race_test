@@ -120,6 +120,9 @@ PROFANITY_SET = {"ON VA EVITER"}
 KEY_REPEAT_DELAY = 250
 KEY_REPEAT_INTERVAL = 35
 
+# ======= FORCE FEEDBACK =======
+FFB_STRENGTH = 0.8   # 0.0 = off, 1.0 = full force (steering wheel only)
+
 # ======= DEBUG MODES =======
 DEBUG = False
 CURSOR_FOLLOW = False

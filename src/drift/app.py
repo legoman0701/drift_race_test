@@ -25,6 +25,7 @@ from drift.audio.engine_audio import V8EngineAudio
 from drift.audio.gear_shift_sound import GearShiftSound
 from drift.render.map_chunks import ChunkedMap
 from drift.core.gamepad import Gamepad
+from drift.core.ffb import SteeringFFB
 
 # ======= CONFIGURATION =======
 
@@ -575,6 +576,9 @@ def main():
     gp.selected_index = gp.joystick.get_id() if gp.joystick else None
     if gp.joystick: gp.connect_gamepad(gp.selected_index)
 
+    # Initialise FFB for real steering wheels (silently no-ops for gamepads)
+    ffb = SteeringFFB(joystick_index=0) if gp.joystick else None
+
     # Create a camera object; mouse wheel will adjust zoom and middle mouse drag will pan.
     cam = camera.Camera(const.WINDOW_WIDTH, const.WINDOW_HEIGHT, zoom=1.0)
     dragging = False
@@ -666,6 +670,7 @@ def main():
                         shift_sound.stop_all()
                 except Exception:
                     pass
+                if ffb: ffb.stop()
                 pygame.quit()
                 sys.exit(0)
 
@@ -998,7 +1003,10 @@ def main():
                 my_car.vx, my_car.vy = 0.0, 0.0
                 my_car.v_angle = 0.0
             else:
-                my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG, cursor_follow=const.CURSOR_FOLLOW, cam=cam)
+                _ffb_active = ffb is not None and ffb.is_active
+                my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG, cursor_follow=const.CURSOR_FOLLOW, cam=cam, ffb_active=_ffb_active)
+                if _ffb_active:
+                    ffb.update(my_car, dt)
 #                 my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG, cursor_follow=const.CURSOR_FOLLOW, cam=cam)
             # Update engine audio based on RPM and throttle with enhanced drift characteristics
             try:

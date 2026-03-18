@@ -214,7 +214,7 @@ class Car:
         self.engine_sound_id = specs_vals["ENGINE_SOUND_ID"]
         self.palette_colors = specs_vals["PALETTE_COLORS"]
 
-    def step(self, inputs, dt, players, bounds, compute_debug=False, cursor_follow=False, cam=None):        
+    def step(self, inputs, dt, players, bounds, compute_debug=False, cursor_follow=False, cam=None, ffb_active=False):        
         global steering_multiplier
         # Load specs values using new format
         specs_vals = extract_specs_values(self.specs)
@@ -307,10 +307,11 @@ class Car:
 
         wheel_steer_angle = 0
         steer_bias = 0.0
-        if TRANSMITION_SETUP == "RWD":
-            steer_bias = const.STEER_BIAS 
-        if TRANSMITION_SETUP in ["AWD", "AWDS", "FWD"]:
-            steer_bias = const.STEER_BIAS*0.1
+        if not ffb_active:
+            if TRANSMITION_SETUP == "RWD":
+                steer_bias = const.STEER_BIAS
+            if TRANSMITION_SETUP in ["AWD", "AWDS", "FWD"]:
+                steer_bias = const.STEER_BIAS * 0.1
 
         if vel_dir_f > 0:
             wheel_steer_angle = -drift_angle*0.8* steer_bias
