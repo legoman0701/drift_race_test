@@ -41,6 +41,26 @@ _color_palette = {
     "color3": (0, 0, 255),    # Blue channel replacement
     "active_picker": None,    # Which color is being edited (1, 2, 3, or None)
 }
+_palette_initialized_for_car = None
+
+
+def _resolve_car_folder(car_type):
+    """Resolve car folder using case-insensitive lookup from available cars."""
+    car_str = str(car_type)
+    for car in AVAILABLE_CARS:
+        if str(car).lower() == car_str.lower():
+            return car
+    return car_str
+
+
+def _normalize_selected_car(selected_car):
+    """Return a selected car value guaranteed to match AVAILABLE_CARS casing."""
+    if AVAILABLE_CARS:
+        resolved = _resolve_car_folder(selected_car)
+        if resolved in AVAILABLE_CARS:
+            return resolved
+        return AVAILABLE_CARS[0]
+    return selected_car
 
 def set_palette_colors_from_car(palette_colors):
     """Set palette colors from car specs.
@@ -57,13 +77,39 @@ def set_palette_colors_from_car(palette_colors):
 def _load_car_specs(car_type):
     """Load car specifications from JSON file."""
     try:
-        spec_path = normalize_asset_path("cars", car_type.upper(), "specs.json")
+        car_folder = _resolve_car_folder(car_type)
+        spec_path = normalize_asset_path("cars", car_folder, "specs.json")
         with open(spec_path, "r", encoding="utf-8") as fh:
             specs = json.load(fh)
-        return specs.get("manufacturer", "Unknown"), specs.get("model", "Unknown")
+        metadata = specs.get("metadata", {}) or {}
+        manufacturer = metadata.get("manufacturer", specs.get("manufacturer", "Unknown"))
+        model = metadata.get("model", specs.get("model", "Unknown"))
+        return manufacturer, model
     except Exception as e:
         print(f"Warning: Could not load specs for {car_type}: {e}")
         return "Unknown", "Unknown"
+
+
+def _init_palette_for_selected_car(car_type, force=False):
+    """Initialize shared palette from selected car default palette in specs."""
+    global _palette_initialized_for_car
+
+    car_folder = _resolve_car_folder(car_type)
+    if not force and _palette_initialized_for_car == car_folder:
+        return
+
+    try:
+        spec_path = normalize_asset_path("cars", car_folder, "specs.json")
+        with open(spec_path, "r", encoding="utf-8") as fh:
+            specs = json.load(fh)
+        palette = specs.get("specs", {}).get("default_pallet")
+        if isinstance(palette, (list, tuple)) and len(palette) >= 3:
+            set_palette_colors_from_car(palette)
+            from drift.ui.ui import invalidate_palette_cache
+            invalidate_palette_cache()
+            _palette_initialized_for_car = car_folder
+    except Exception as e:
+        print(f"Warning: Could not initialize palette for {car_type}: {e}")
 
 def _update_car_rotation(dt):
     """Update the global car rotation angle for selection screens."""
@@ -391,9 +437,11 @@ def draw_new_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.0
     car_box_y = y + 35
     
     # Get current car index
-    selected_car = _game_setup.get("selected_car", AVAILABLE_CARS[0])
+    selected_car = _normalize_selected_car(_game_setup.get("selected_car", AVAILABLE_CARS[0] if AVAILABLE_CARS else "ae86"))
+    _game_setup["selected_car"] = selected_car
     try: current_index = AVAILABLE_CARS.index(selected_car)
     except ValueError: current_index = 0
+    _init_palette_for_selected_car(selected_car)
 
     # 1. Main Display Box (Green Border)
     main_car_rect = pygame.Rect(start_x, car_box_y, car_btn_width, car_btn_height)
@@ -555,9 +603,11 @@ def draw_join_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.
     car_box_y = y + 35
     
     # Get current car index
-    selected_car = _game_setup.get("selected_car", AVAILABLE_CARS[0])
+    selected_car = _normalize_selected_car(_game_setup.get("selected_car", AVAILABLE_CARS[0] if AVAILABLE_CARS else "ae86"))
+    _game_setup["selected_car"] = selected_car
     try: current_index = AVAILABLE_CARS.index(selected_car)
     except ValueError: current_index = 0
+    _init_palette_for_selected_car(selected_car)
 
     # 1. Main Display Box (Green Border)
     main_car_rect = pygame.Rect(start_x, car_box_y, car_btn_width, car_btn_height)
@@ -672,14 +722,12 @@ def handle_new_game_click(click_pos, rects):
     if "car_up_btn" in rects and rects["car_up_btn"].collidepoint(click_pos):
         new_idx = (current_idx - 1) % len(AVAILABLE_CARS)
         _game_setup["selected_car"] = AVAILABLE_CARS[new_idx]
-        from drift.ui.ui import invalidate_palette_cache
-        invalidate_palette_cache()
+        _init_palette_for_selected_car(_game_setup["selected_car"], force=True)
         return "car_changed"
     elif "car_down_btn" in rects and rects["car_down_btn"].collidepoint(click_pos):
         new_idx = (current_idx + 1) % len(AVAILABLE_CARS)
         _game_setup["selected_car"] = AVAILABLE_CARS[new_idx]
-        from drift.ui.ui import invalidate_palette_cache
-        invalidate_palette_cache()
+        _init_palette_for_selected_car(_game_setup["selected_car"], force=True)
         return "car_changed"
     return None
 
@@ -704,14 +752,12 @@ def handle_join_game_click(click_pos, rects):
     if "car_up_btn" in rects and rects["car_up_btn"].collidepoint(click_pos):
         new_idx = (current_idx - 1) % len(AVAILABLE_CARS)
         _game_setup["selected_car"] = AVAILABLE_CARS[new_idx]
-        from drift.ui.ui import invalidate_palette_cache
-        invalidate_palette_cache()
+        _init_palette_for_selected_car(_game_setup["selected_car"], force=True)
         return "car_changed"
     elif "car_down_btn" in rects and rects["car_down_btn"].collidepoint(click_pos):
         new_idx = (current_idx + 1) % len(AVAILABLE_CARS)
         _game_setup["selected_car"] = AVAILABLE_CARS[new_idx]
-        from drift.ui.ui import invalidate_palette_cache
-        invalidate_palette_cache()
+        _init_palette_for_selected_car(_game_setup["selected_car"], force=True)
         return "car_changed"
     
     return None
@@ -766,14 +812,13 @@ def reset_game_setup():
     """Reset game setup to defaults."""
     _game_setup["username"] = ""
     _game_setup["username_active"] = True
-    _game_setup["selected_car"] = "ae86"
+    _game_setup["selected_car"] = AVAILABLE_CARS[0] if AVAILABLE_CARS else "ae86"
     _game_setup["selected_track"] = "track1"
     _game_setup["selected_mode"] = "mode1"
     _game_setup["room_code"] = ""
     _game_setup["code_active"] = False
     _game_setup["error_message"] = None
-    from drift.ui.ui import invalidate_palette_cache
-    invalidate_palette_cache()  # Init sprite cache for default car
+    _init_palette_for_selected_car(_game_setup["selected_car"], force=True)
 
 def set_error_message(message):
     """Set an error message to display in the UI."""

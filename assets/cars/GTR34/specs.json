@@ -16,7 +16,7 @@
             "height": 1360,
             "wheelbase": 2665
         },
-        "default_pallet": [[154, 28, 66], [10, 10, 10], [128, 128, 128]]
+        "default_pallet": [[9, 104, 120], [10, 10, 10], [120, 83, 60]]
     },
     "engine": {
         "type": "2.6L RB26DETT I6",

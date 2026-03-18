@@ -120,8 +120,9 @@ def _apply_palette_colors(diffuse_surf, palette_surf, palette_colors, sprite_ind
     """
     global _palette_cache
     
-    # Create cache key from sprite index and colors
-    cache_key = (sprite_index, palette_colors)
+    # Include source surface identities to avoid cross-car/frame cache collisions.
+    # Using only (sprite_index, palette_colors) can reuse a blended sprite from a different car.
+    cache_key = (id(diffuse_surf), id(palette_surf), sprite_index, palette_colors)
     
     # Return cached result if available
     if cache_key in _palette_cache:
