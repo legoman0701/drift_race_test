@@ -98,8 +98,8 @@ def draw_car(surface, x, y, angle, name,
         text = font.render(name, True, (230, 230, 255))
         surface.blit(text, (int(x - text.get_width() / 2), int(y - int(40 * scale))))
 
-    # Return rear-wheel edge points for tire mark drawing by callers (indices 2 and 3)
-    return (wpts[2], wpts[3])
+    # Return all four car corner points for per-wheel tire mark drawing.
+    return tuple(wpts)
 
 
 def _apply_palette_colors(diffuse_surf, palette_surf, palette_colors, sprite_index):
@@ -120,8 +120,9 @@ def _apply_palette_colors(diffuse_surf, palette_surf, palette_colors, sprite_ind
     """
     global _palette_cache
     
-    # Create cache key from sprite index and colors
-    cache_key = (sprite_index, palette_colors)
+    # Include source surface identities to avoid cross-car/frame cache collisions.
+    # Using only (sprite_index, palette_colors) can reuse a blended sprite from a different car.
+    cache_key = (id(diffuse_surf), id(palette_surf), sprite_index, palette_colors)
     
     # Return cached result if available
     if cache_key in _palette_cache:
@@ -187,111 +188,87 @@ _debug_font_cache = None # debug text cache
 _hud_font_cache = {} # HUD text cache
 
 def draw_wheel_debug(surface: pygame.Surface, car, offx: int = 0, offy: int = 0) -> None:
-    """Visualize per-wheel forces and angles for a car.
+    """Show per-wheel has_grip, wheel heading vector and lateral force vector.
 
-    - Draws longitudinal (green/red) and lateral (blue) force arrows per wheel.
-    - Renders small text with slip angle and wheel angle near each wheel.
-    - offx/offy: camera offset to convert world->screen (used in chunked renderer).
+    offx/offy: camera offset to convert world->screen (used in chunked renderer).
     """
+    import math
     global _debug_font_cache
     if not hasattr(car, "wheel_debug"):
         return
-    
-    # Draw target angle visualization - large circle with arrow
-    if hasattr(car, "target_angle"):
-        cx, cy = int(car.x - offx), int(car.y - offy)
-        circle_radius = 100
-        # Draw circle around car
-        pygame.draw.circle(surface, (100, 255, 100), (cx, cy), circle_radius, 2)
-        
-        # Draw arrow pointing at target angle
-        arrow_len = circle_radius - 5
-        target_x = cx + math.cos(car.target_angle) * arrow_len
-        target_y = cy + math.sin(car.target_angle) * arrow_len
-        # Main arrow line
-        pygame.draw.line(surface, (100, 255, 100), (cx, cy), (int(target_x), int(target_y)), 3)
-        # Arrowhead
-        arrow_size = 15
-        arrow_angle = 0.5  # radians
-        left_x = target_x - math.cos(car.target_angle - arrow_angle) * arrow_size
-        left_y = target_y - math.sin(car.target_angle - arrow_angle) * arrow_size
-        right_x = target_x - math.cos(car.target_angle + arrow_angle) * arrow_size
-        right_y = target_y - math.sin(car.target_angle + arrow_angle) * arrow_size
-        pygame.draw.line(surface, (100, 255, 100), (int(target_x), int(target_y)), (int(left_x), int(left_y)), 3)
-        pygame.draw.line(surface, (100, 255, 100), (int(target_x), int(target_y)), (int(right_x), int(right_y)), 3)
-        
-        # Draw current angle indicator (shorter line)
-        current_x = cx + math.cos(car.angle) * (circle_radius * 0.6)
-        current_y = cy + math.sin(car.angle) * (circle_radius * 0.6)
-        pygame.draw.line(surface, (255, 100, 100), (cx, cy), (int(current_x), int(current_y)), 2)
-    
-    wheels = car.wheel_debug.get("wheels", [])
 
-    # Scale factors for arrow lengths
-    k_long = 0.06  # pixels per unit force
-    k_lat = 0.06
-    # Use cached font to avoid expensive font creation every frame
+    wheels = car.wheel_debug.get("wheels", [])
+    grips = getattr(car, "has_grip", (1.0, 1.0, 1.0, 1.0))
+
     if _debug_font_cache is None:
         _debug_font_cache = pygame.font.SysFont(None, 14)
     font = _debug_font_cache
 
+    # Target heading visualization (magenta): where steering controller wants to face.
+    if hasattr(car, "target_angle"):
+        cx, cy = int(car.x - offx), int(car.y - offy)
+        tx = int(cx + math.cos(car.target_angle) * 36)
+        ty = int(cy + math.sin(car.target_angle) * 36)
+        pygame.draw.line(surface, (255, 80, 220), (cx, cy), (tx, ty), 2)
+        hax, hay = -math.sin(car.target_angle) * 4, math.cos(car.target_angle) * 4
+        pygame.draw.line(surface, (255, 80, 220), (tx, ty), (int(tx - math.cos(car.target_angle) * 8 + hax), int(ty - math.sin(car.target_angle) * 8 + hay)), 2)
+        pygame.draw.line(surface, (255, 80, 220), (tx, ty), (int(tx - math.cos(car.target_angle) * 8 - hax), int(ty - math.sin(car.target_angle) * 8 - hay)), 2)
+
+        sm = getattr(car, "steering_multiplier", None)
+        if sm is not None:
+            sm_text = font.render(f"sm:{sm:.2f}", True, (255, 220, 140))
+            surface.blit(sm_text, (cx + 8, cy + 10))
+
+    # Car basis vectors (world frame) needed to rotate wheel-local vectors
+    ca, sa = math.cos(car.angle), math.sin(car.angle)
+    forward_x, forward_y = ca, sa
+    right_x,   right_y   = -sa, ca
+
+    # Scale factors: keep vectors readable regardless of force magnitude
+    ANGLE_VEC_LEN = 14   # pixels for wheel heading arrow
+    FLAT_SCALE    = 0.04  # pixels per unit of lateral force
+
     for w in wheels:
         wx, wy = w["world_pos"]
-        wl_ang = w["wheel_angle"]
-        Fl = w["F_long"]
-        Ft = w["F_lat"]
-        slip = w["slip"]
+        idx = int(w.get("index", -1))
+        grip = grips[idx] if 0 <= idx < len(grips) else 1.0
 
-        # Wheel forward axis in world
-        ca, sa = math.cos(car.angle + wl_ang), math.sin(car.angle + wl_ang)
-        # Build arrow endpoints
-        # Longitudinal: along wheel heading
-        ex_long = wx + ca * Fl * k_long
-        ey_long = wy + sa * Fl * k_long
-        # Lateral: perpendicular to wheel heading (to the left of wheel axis)
-        nx, ny = -sa, ca
-        ex_lat = wx + nx * Ft * k_lat
-        ey_lat = wy + ny * Ft * k_lat
-
-        # Convert to screen
         sx, sy = int(wx - offx), int(wy - offy)
-        sxL, syL = int(ex_long - offx), int(ey_long - offy)
-        sxT, syT = int(ex_lat - offx), int(ey_lat - offy)
+        grip_color = (int((1.0 - grip) * 255), int(grip * 255), 80)
+        pygame.draw.circle(surface, grip_color, (sx, sy), 3)
 
-        # Draw axes dot
-        pygame.draw.circle(surface, (240, 240, 255), (sx, sy), 2)
-        # Longitudinal arrow (green forward, red backward)
-        color_long = (80, 220, 100) if Fl >= 0 else (230, 80, 80)
-        pygame.draw.line(surface, color_long, (sx, sy), (sxL, syL), 2)
-        # Lateral arrow (blue)
-        pygame.draw.line(surface, (80, 120, 255), (sx, sy), (sxT, syT), 2)
+        # ---- wheel heading vector (cyan) ----
+        wheel_angle = w.get("wheel_angle", 0.0)
+        total_angle = car.angle + wheel_angle
+        wax, way = math.cos(total_angle), math.sin(total_angle)
+        ex = int(sx + wax * ANGLE_VEC_LEN)
+        ey = int(sy + way * ANGLE_VEC_LEN)
+        pygame.draw.line(surface, (80, 220, 255), (sx, sy), (ex, ey), 1)
+        # arrowhead
+        ax, ay = -way * 3, wax * 3
+        pygame.draw.line(surface, (80, 220, 255), (ex, ey), (int(ex - wax*4 + ax), int(ey - way*4 + ay)), 1)
+        pygame.draw.line(surface, (80, 220, 255), (ex, ey), (int(ex - wax*4 - ax), int(ey - way*4 - ay)), 1)
 
-        # Text with values (rounded for readability)
-        txt = f"ang={math.degrees(wl_ang):.0f}° slip={math.degrees(slip):.0f}°\nFx={Fl:.0f} Fy={Ft:.0f}"
-        # Render multiline: split lines
-        lines = txt.split("\n")
-        ty = sy - 22
-        for i, line in enumerate(lines):
-            ts = font.render(line, True, (230, 230, 245))
-            surface.blit(ts, (sx + 6, ty + i * 12))
+        # ---- lateral force vector (orange) ----
+        # F_lat acts along the wheel's lateral axis (perpendicular to wheel heading)
+        f_lat = w.get("F_lat", 0.0)
+        # Wheel lateral axis in world frame: rotate right vector by wheel_angle
+        total_ca, total_sa = math.cos(car.angle + wheel_angle), math.sin(car.angle + wheel_angle)
+        lat_wx = -total_sa   # perpendicular to wheel heading
+        lat_wy =  total_ca
+        flx = int(sx + lat_wx * f_lat * FLAT_SCALE)
+        fly = int(sy + lat_wy * f_lat * FLAT_SCALE)
+        if abs(f_lat) > 1.0:
+            pygame.draw.line(surface, (255, 160, 30), (sx, sy), (flx, fly), 1)
+            bax, bay = -lat_wy * 3, lat_wx * 3
+            dxn = lat_wx if f_lat >= 0 else -lat_wx
+            dyn = lat_wy if f_lat >= 0 else -lat_wy
+            pygame.draw.line(surface, (255, 160, 30), (flx, fly), (int(flx - dxn*4 + bax), int(fly - dyn*4 + bay)), 1)
+            pygame.draw.line(surface, (255, 160, 30), (flx, fly), (int(flx - dxn*4 - bax), int(fly - dyn*4 - bay)), 1)
 
-    # Draw body-level forces (rolling, aero, brake) from car center
-    body_forces = car.wheel_debug.get("body_forces")
-    if body_forces:
-        cx, cy = int(car.x - offx), int(car.y - offy)
-        k_body = 0.06
-        roll = body_forces.get("rolling", (0.0, 0.0))
-        drag = body_forces.get("aero_drag", (0.0, 0.0))
-        brk  = body_forces.get("brake", (0.0, 0.0))
-
-        def draw_vec(vec, color):
-            ex = int(cx + vec[0] * k_body)
-            ey = int(cy + vec[1] * k_body)
-            pygame.draw.line(surface, color, (cx, cy), (ex, ey), 2)
-
-        draw_vec(roll, (200, 180, 80))   # rolling resistance: amber
-        draw_vec(drag, (180, 80, 220))   # aero drag: purple
-        draw_vec(brk,  (240, 80, 80))    # brake drag: red
+        # ---- grip label ----
+        ts = font.render(f"g{idx}:{grip:.2f}", True, (230, 230, 245))
+        surface.blit(ts, (sx + 6, sy - 8))
 
 def draw_header(surface, font_big, font_small, title_str: str, fps: float, host_username: str = None):
     # header background

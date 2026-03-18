@@ -52,16 +52,6 @@ class RpmParams:
     rev_hang_time: float = 0.3            # much shorter rev hang
     overrev_limit: float = 1.02           # minimal overrev allowance (102% max)
 
-    # Turbo parameters
-    has_turbo: bool = True                 # enable/disable turbo simulation
-    max_boost_psi: float = 15.0           # maximum boost pressure in PSI
-    boost_threshold_rpm: float = 2500.0   # RPM where turbo starts spooling
-    full_boost_rpm: float = 4000.0        # RPM where turbo reaches max boost
-    turbo_lag_s: float = 0.8              # time constant for turbo spool-up (seconds)
-    wastegate_rpm: float = 6500.0         # RPM where wastegate starts opening
-    boost_decay_rate: float = 3.0         # how fast boost decays when off-throttle (multiplier)
-    boost_rpm_multiplier: float = 1.3     # how much boost affects RPM climb rate
-
 
 def _clamp(v: float, lo: float, hi: float) -> float:
     return hi if v > hi else lo if v < lo else v
@@ -124,131 +114,6 @@ def _choose_gear(target_rpm: float, wheel_rps: float, p: RpmParams, current_gear
             return 0
 
     return best
-
-
-def _calc_turbo_boost(
-    rpm: float,
-    throttle: float,
-    prev_boost: float,
-    dt: float,
-    p: RpmParams
-) -> float:
-    """Calculate turbo boost pressure with realistic spool dynamics.
-    
-    Arguments:
-    - rpm: current engine RPM
-    - throttle: throttle position (0..1)
-    - prev_boost: previous frame's boost pressure (PSI)
-    - dt: timestep in seconds
-    - p: RpmParams containing turbo configuration
-    
-    Returns:
-    - Current boost pressure in PSI
-    """
-    if not p.has_turbo:
-        return 0.0
-    
-    # Calculate target boost based on RPM and throttle
-    target_boost = 0.0
-    
-    if rpm >= p.boost_threshold_rpm and throttle > 0.1:
-        # RPM-based boost curve: ramp from threshold to full boost RPM
-        if rpm <= p.full_boost_rpm:
-            rpm_factor = (rpm - p.boost_threshold_rpm) / max(1.0, p.full_boost_rpm - p.boost_threshold_rpm)
-        else:
-            rpm_factor = 1.0
-            # Wastegate effect: reduce boost at very high RPM
-            if rpm > p.wastegate_rpm:
-                wastegate_factor = max(0.5, 1.0 - (rpm - p.wastegate_rpm) / (p.redline_rpm - p.wastegate_rpm))
-                rpm_factor *= wastegate_factor
-        
-        # Throttle affects boost - partial throttle = partial boost
-        throttle_factor = _clamp(throttle, 0.0, 1.0) ** 0.7  # slight curve for more linear feel
-        
-        target_boost = p.max_boost_psi * rpm_factor * throttle_factor
-    
-    # Apply turbo lag using exponential approach to target
-    if target_boost > prev_boost:
-        # Spooling up - use turbo lag time constant
-        spool_rate = 1.0 / max(0.1, p.turbo_lag_s)
-        boost = prev_boost + (target_boost - prev_boost) * (1.0 - (2.718281828 ** (-spool_rate * dt)))
-    else:
-        # Spooling down - faster decay when off throttle
-        decay_rate = p.boost_decay_rate / max(0.1, p.turbo_lag_s)
-        boost = prev_boost + (target_boost - prev_boost) * (1.0 - (2.718281828 ** (-decay_rate * dt)))
-    
-    return _clamp(boost, 0.0, p.max_boost_psi)
-
-
-def calc_turbo_rpm(
-    engine_rpm: float,
-    throttle: float = 0.0,
-    prev_turbo_rpm: Optional[float] = None,
-    dt: float = 1/60,
-    params: Optional[RpmParams] = None,
-    _state: dict | None = None,
-) -> float:
-    """Calculate turbo RPM based on engine RPM.
-    
-    Arguments:
-    - engine_rpm: current engine RPM from calc_engine_rpm
-    - throttle: throttle position (0..1)
-    - prev_turbo_rpm: previous frame's turbo RPM for smoothing
-    - dt: timestep in seconds
-    - params: RpmParams containing turbo configuration
-    - _state: optional dict to persist turbo state
-    
-    Returns:
-    - Turbo RPM (typically much higher than engine RPM)
-    """
-    p = params or RpmParams()
-    
-    if not p.has_turbo:
-        return 0.0
-    
-    # Maintain turbo state
-    if _state is None:
-        _state = {}
-    prev_boost: float = _state.get("turbo_boost", 0.0)
-    
-    # Calculate boost pressure based on engine RPM
-    current_boost = _calc_turbo_boost(
-        rpm=engine_rpm,
-        throttle=throttle,
-        prev_boost=prev_boost,
-        dt=dt,
-        p=p
-    )
-    _state["turbo_boost"] = current_boost
-    
-    # Turbo RPM is typically 10-20x engine RPM when spooling
-    # Base turbo speed ratio (how fast turbo spins relative to engine)
-    base_turbo_ratio = 15.0  # turbo spins 15x faster than engine at idle
-    max_turbo_ratio = 25.0   # max ratio at high boost
-    
-    # Calculate target turbo RPM based on engine RPM and boost
-    if current_boost > 0.1:
-        # Boost affects turbo speed ratio
-        boost_factor = current_boost / p.max_boost_psi
-        turbo_ratio = base_turbo_ratio + boost_factor * (max_turbo_ratio - base_turbo_ratio)
-        target_turbo_rpm = engine_rpm * turbo_ratio
-    else:
-        # No boost = turbo spinning at base rate
-        target_turbo_rpm = engine_rpm * base_turbo_ratio * 0.3  # much slower when not spooling
-    
-    # Smooth turbo RPM changes (turbo has inertia)
-    if prev_turbo_rpm is None:
-        prev_turbo_rpm = target_turbo_rpm
-    
-    # Turbo spins up/down faster than engine but still has lag
-    turbo_accel_rate = p.max_rpm_change_per_s * 3.0  # turbo can change faster than engine
-    max_turbo_delta = turbo_accel_rate * dt
-    
-    turbo_rpm = prev_turbo_rpm + _clamp(target_turbo_rpm - prev_turbo_rpm, -max_turbo_delta, max_turbo_delta)
-    
-    # Turbo has its own limits (much higher than engine)
-    max_turbo_rpm = p.redline_rpm * 20.0  # turbo can spin much faster
-    return _clamp(turbo_rpm, 0.0, max_turbo_rpm)
 
 
 def calc_engine_rpm(
@@ -409,18 +274,4 @@ def calc_engine_rpm(
     return _clamp(rpm, p.idle_rpm, max_rpm)
 
 
-def get_turbo_boost(_state: dict | None = None) -> float:
-    """Get current turbo boost pressure from state.
-    
-    Arguments:
-    - _state: state dictionary from calc_engine_rpm calls
-    
-    Returns:
-    - Current boost pressure in PSI, or 0.0 if no turbo state
-    """
-    if _state is None:
-        return 0.0
-    return _state.get("turbo_boost", 0.0)
-
-
-__all__ = ["RpmParams", "calc_engine_rpm", "calc_turbo_rpm", "get_turbo_boost"]
+__all__ = ["RpmParams", "calc_engine_rpm"]

@@ -1,0 +1,18 @@
+{
+    "eng": {
+            "idle_volume": 0.15,
+            "max_volume": 0.33,
+            "throttle_curve": 0.55,
+            "sigma_multiplier": 1,
+            "rpm_response": 0.18,
+              "audio_file": "i6bmws55_eng.sfxBlend2D"
+        },
+        "exh": {
+            "idle_volume": 0.05,
+            "max_volume": 0.15,
+            "throttle_curve": 1.15,
+            "sigma_multiplier": 1,
+            "rpm_response": 0.26,
+              "audio_file": "i6bmws55_exh.sfxBlend2D"
+        }
+}

@@ -1,0 +1,46 @@
+{
+    "header" : {
+	    "version" : 1
+    },
+    "eventName" : "event:>Engine>mod_exhaust",
+    "samples" :
+    [
+	    [
+		    ["art/sound/engine/i4hondaf20_exh/869.wav", 869],
+		    ["art/sound/engine/i4hondaf20_exh/1079.wav", 1079],
+		    ["art/sound/engine/i4hondaf20_exh/1542.wav", 1542],
+		    ["art/sound/engine/i4hondaf20_exh/2025.wav", 2025],
+		    ["art/sound/engine/i4hondaf20_exh/2648.wav", 2648],
+		    ["art/sound/engine/i4hondaf20_exh/3290.wav", 3290],
+		    ["art/sound/engine/i4hondaf20_exh/4286.wav", 4286],
+		    ["art/sound/engine/i4hondaf20_exh/4748.wav", 4748],
+		    ["art/sound/engine/i4hondaf20_exh/5211.wav", 5211],
+		    ["art/sound/engine/i4hondaf20_exh/5743.wav", 5743],
+		    ["art/sound/engine/i4hondaf20_exh/6527.wav", 6527],
+		    ["art/sound/engine/i4hondaf20_exh/6904.wav", 6904],
+		    ["art/sound/engine/i4hondaf20_exh/7488.wav", 7488],
+		    ["art/sound/engine/i4hondaf20_exh/8026.wav", 8026],
+		    ["art/sound/engine/i4hondaf20_exh/8535.wav", 8535],
+		    ["art/sound/engine/i4hondaf20_exh/9344.wav", 9344]
+	    ]
+	    ,
+	    [
+		    ["art/sound/engine/i4hondaf20_exh/869.wav", 869],
+		    ["art/sound/engine/i4hondaf20_exh/1079.wav", 1079],
+		    ["art/sound/engine/i4hondaf20_exh/1542.wav", 1542],
+		    ["art/sound/engine/i4hondaf20_exh/2025.wav", 2025],
+		    ["art/sound/engine/i4hondaf20_exh/2648.wav", 2648],
+		    ["art/sound/engine/i4hondaf20_exh/3290.wav", 3290],
+		    ["art/sound/engine/i4hondaf20_exh/4286.wav", 4286],
+		    ["art/sound/engine/i4hondaf20_exh/4748.wav", 4748],
+		    ["art/sound/engine/i4hondaf20_exh/5211.wav", 5211],
+		    ["art/sound/engine/i4hondaf20_exh/5743.wav", 5743],
+		    ["art/sound/engine/i4hondaf20_exh/6527.wav", 6527],
+		    ["art/sound/engine/i4hondaf20_exh/6904.wav", 6904],
+		    ["art/sound/engine/i4hondaf20_exh/7488.wav", 7488],
+		    ["art/sound/engine/i4hondaf20_exh/8026.wav", 8026],
+		    ["art/sound/engine/i4hondaf20_exh/8535.wav", 8535],
+		    ["art/sound/engine/i4hondaf20_exh/9344.wav", 9344]
+	    ]
+    ]
+}

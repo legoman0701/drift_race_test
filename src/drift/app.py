@@ -3,12 +3,13 @@
 # ======= IMPORTS =======
 
 # global imports
-import pygame, json, time, random, sys, math, uuid, argparse, threading
+import pygame, json, time, random, sys, math, uuid, argparse
 # local imports
 from drift.tools.paths import asset_path, chdir_to_exe_folder_if_frozen, get_available_cars, normalize_asset_path, get_available_sprite_layers
 import drift.config.const as const
 import drift.render.camera as camera
 import drift.core.car as car
+from drift.core.car import get_car_engine_sound_id
 import drift.ui.button as btn
 import drift.ai.path_finder as path_finder
 from drift.render.renderer import WorldRenderer
@@ -18,139 +19,16 @@ from drift.ai.ai import ai_algorithme
 from drift.core.inputs import read_inputs
 from drift.net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, recv_jsons
 from drift.ui.ui import handle_game_events, draw_stage_ui, invalidate_ui_text_cache, invalidate_palette_cache
+from drift.ui.draw_stage import set_palette_colors_from_car
 from drift.core.rpm import calc_engine_rpm
-from drift.audio.engine_audio import EngineAudio
+from drift.audio.engine_audio import V8EngineAudio
+from drift.audio.gear_shift_sound import GearShiftSound
 from drift.render.map_chunks import ChunkedMap
 from drift.core.gamepad import Gamepad
 
 # ======= CONFIGURATION =======
 
 chdir_to_exe_folder_if_frozen()
-
-class AudioController(threading.Thread):
-    """Separate thread for audio processing at adaptive rate for better low-end device compatibility."""
-    
-    def __init__(self, engine_audio, update_rate: float = 100.0):
-        """Initialize audio controller thread.
-        
-        Args:
-            engine_audio: EngineAudio instance to control
-            update_rate: Updates per second (Hz) for audio processing
-        """
-        super().__init__(daemon=True)
-        self.engine_audio = engine_audio
-        self.target_update_rate = update_rate
-        self.update_interval = 1.0 / update_rate
-        self._running = False
-        self._state_lock = threading.Lock()
-        
-        # Adaptive rate limiting for low-end devices
-        self._performance_samples = []
-        self._adaptive_rate = update_rate
-        self._last_rate_adjust = 0.0
-        self._rate_adjust_interval = 2.0  # Check performance every 2 seconds
-        
-        # Thread-safe state variables
-        self._rpm = 0.0
-        self._throttle = 0.0
-        self._current_gear = 0
-        self._drift_ratio = 0.0
-        self._last_update = time.perf_counter()
-        
-    def set_engine_state(self, rpm: float, throttle: float, current_gear: int = 0, drift_ratio: float = 0.0):
-        """Thread-safe method to update engine state from game thread."""
-        with self._state_lock:
-            self._rpm = float(rpm)
-            self._throttle = float(throttle)
-            self._current_gear = int(current_gear)
-            self._drift_ratio = float(drift_ratio)
-    
-    def get_engine_state(self):
-        """Thread-safe method to read engine state from audio thread."""
-        with self._state_lock:
-            return self._rpm, self._throttle, self._current_gear, self._drift_ratio
-    
-    def _adjust_adaptive_rate(self, processing_time: float):
-        """Adjust audio update rate based on processing performance."""
-        current_time = time.perf_counter()
-        
-        # Track processing time samples
-        self._performance_samples.append(processing_time)
-        if len(self._performance_samples) > 50:  # Keep last 50 samples
-            self._performance_samples.pop(0)
-        
-        # Only adjust rate every few seconds
-        if current_time - self._last_rate_adjust < self._rate_adjust_interval:
-            return
-            
-        self._last_rate_adjust = current_time
-        
-        if len(self._performance_samples) < 10:
-            return
-            
-        # Calculate average processing time
-        avg_processing_time = sum(self._performance_samples) / len(self._performance_samples)
-        target_frame_time = 1.0 / self._adaptive_rate
-        
-        # If processing takes more than 70% of frame time, reduce rate
-        if avg_processing_time > target_frame_time * 0.7:
-            new_rate = max(30.0, self._adaptive_rate * 0.8)  # Minimum 30 Hz
-            if new_rate != self._adaptive_rate:
-                self._adaptive_rate = new_rate
-                self.update_interval = 1.0 / self._adaptive_rate
-                # print(f"Audio rate reduced to {self._adaptive_rate:.1f} Hz due to performance")
-        
-        # If processing is fast, try to increase rate (but not above target)
-        elif avg_processing_time < target_frame_time * 0.3:
-            new_rate = min(self.target_update_rate, self._adaptive_rate * 1.1)
-            if new_rate != self._adaptive_rate:
-                self._adaptive_rate = new_rate
-                self.update_interval = 1.0 / self._adaptive_rate
-                # print(f"Audio rate increased to {self._adaptive_rate:.1f} Hz")
-    
-    def start_audio_thread(self):
-        """Start the audio processing thread."""
-        if not self._running:
-            self._running = True
-            self.start()
-            print(f"Audio thread started at {self._adaptive_rate:.1f} Hz (adaptive)")
-    
-    def stop_audio_thread(self):
-        """Stop the audio processing thread."""
-        if self._running:
-            self._running = False
-            self.join(timeout=1.0)
-            print("Audio thread stopped")
-    
-    def run(self):
-        """Main audio thread loop - runs at adaptive rate for better low-end device performance."""
-        last_time = time.perf_counter()
-        
-        while self._running:
-            current_time = time.perf_counter()
-            dt = current_time - last_time
-            last_time = current_time
-            
-            # Get current engine state
-            rpm, throttle, current_gear, drift_ratio = self.get_engine_state()
-            
-            # Update audio with measured processing time
-            processing_start = time.perf_counter()
-            try:
-                self.engine_audio.update(rpm, throttle, dt, current_gear, drift_ratio)
-            except Exception as e:
-                print(f"Audio thread error: {e}")
-            
-            processing_time = time.perf_counter() - processing_start
-            
-            # Adapt update rate based on performance
-            self._adjust_adaptive_rate(processing_time)
-            
-            # Sleep to maintain target update rate
-            elapsed = time.perf_counter() - current_time
-            sleep_time = max(0, self.update_interval - elapsed)
-            if sleep_time > 0:
-                time.sleep(sleep_time)
 
 # ======= RELAY =======
 
@@ -233,7 +111,7 @@ def draw_loading_screen(screen, progress, total_steps, current_task="Loading..."
     else:
         pygame.display.flip()
 
-def load_assets_with_progress(screen, clock, gpu_display=None):
+def load_assets_with_progress(screen, clock, engine_sound_id, gpu_display=None):
     """Load all game assets with progress tracking"""
     
     # Define loading steps
@@ -242,7 +120,8 @@ def load_assets_with_progress(screen, clock, gpu_display=None):
         ("Loading car sprites...", "sprites"),
         ("Loading track data...", "track"),
         ("Initializing systems...", "systems"),
-        ("Starting audio controller...", "audio_controller"),
+        ("Loading engine audio...", "engine_audio"),
+        ("Loading shift audio...", "shift_audio"),
         ("Finalizing...", "final")
     ]
     
@@ -277,9 +156,12 @@ def load_assets_with_progress(screen, clock, gpu_display=None):
         elif step_key == "systems":
             loaded_data["path_poly"] = []  # Will be initialized later
             time.sleep(0.1)
+
+        elif step_key == "engine_audio":
+            loaded_data["engine_audio"] = load_engine_audio_system(loaded_data["audio_initialized"], engine_sound_id)
             
-        elif step_key == "audio_controller":
-            loaded_data["engine_sound"], loaded_data["audio_controller"] = load_audio_controller(loaded_data["audio_initialized"])
+        elif step_key == "shift_audio":
+            loaded_data["shift_sound"] = load_shift_sound_system(loaded_data["audio_initialized"])
 
         elif step_key == "final":
             time.sleep(0.1)
@@ -359,25 +241,155 @@ def load_all_car_sprites():
     
     return car_sprites_cache
 
-def load_audio_controller(audio_initialized):
-    engine_sound = None
-    audio_controller = None
+def load_shift_sound_system(audio_initialized):
+    shift_sound = None
     try:
         if audio_initialized:
-            engine_sound = EngineAudio()
-            # Start with lower rate for better compatibility on low-end devices
-            initial_rate = 80.0  # Reduced from 120 Hz
-            audio_controller = AudioController(engine_sound, initial_rate)
-            audio_controller.start_audio_thread()
-            print("Threaded audio system initialized")
+            shift_sound = GearShiftSound()
+            print("Shift audio system initialized")
         else:
             print("Audio system disabled due to initialization failure")
     except Exception as e:
-        print("Engine sound init failed:", e)
-        engine_sound = None
-        audio_controller = None
+        print("Shift audio init failed:", e)
+        shift_sound = None
 
-    return engine_sound, audio_controller
+    return shift_sound
+
+
+def load_engine_audio_system(audio_initialized, engine_sound_id):
+    engine_audio = None
+    try:
+        if audio_initialized:
+            engine_audio = V8EngineAudio(engine_sound_id=engine_sound_id)
+            print(f"Engine audio system initialized for {engine_sound_id}")
+        else:
+            print("Audio system disabled due to initialization failure")
+    except Exception as e:
+        print("Engine audio init failed:", e)
+        engine_audio = None
+
+    return engine_audio
+
+
+def reload_engine_audio_system(current_engine_audio, audio_initialized, engine_sound_id):
+    if current_engine_audio is not None:
+        try:
+            current_engine_audio.stop_all()
+        except Exception:
+            pass
+    return load_engine_audio_system(audio_initialized, engine_sound_id)
+
+
+def sync_engine_audio_system(current_engine_audio, audio_initialized, current_engine_sound_id, active_car):
+    next_engine_sound_id = getattr(active_car, "engine_sound_id", current_engine_sound_id)
+    if next_engine_sound_id == current_engine_sound_id:
+        return current_engine_audio, current_engine_sound_id
+    return (
+        reload_engine_audio_system(current_engine_audio, audio_initialized, next_engine_sound_id),
+        next_engine_sound_id,
+    )
+
+
+def draw_engine_audio_debug(surface, engine_audio):
+    if engine_audio is None or not const.DEBUG:
+        return
+
+    snapshot = engine_audio.get_debug_snapshot()
+    groups = snapshot.get("groups", {})
+    if not groups:
+        return
+
+    if not hasattr(draw_engine_audio_debug, "_font"):
+        draw_engine_audio_debug._font = pygame.font.SysFont(None, 16)
+        draw_engine_audio_debug._header_font = pygame.font.SysFont(None, 20)
+        draw_engine_audio_debug._tiny_font = pygame.font.SysFont(None, 14)
+
+    font = draw_engine_audio_debug._font
+    header_font = draw_engine_audio_debug._header_font
+    tiny_font = draw_engine_audio_debug._tiny_font
+    panel_x = 10
+    panel_y = const.TOP_LINE_Y + 10
+    panel_width = min(920, const.WINDOW_WIDTH - 20)
+    panel_height = min(const.WINDOW_HEIGHT - panel_y - const.BOTTOM_LINE_Y - 10, const.WINDOW_HEIGHT - 120)
+    panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
+    panel = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
+    panel.fill((8, 10, 14, 205))
+    pygame.draw.rect(panel, (110, 170, 220, 220), panel.get_rect(), 1)
+
+    rpm = snapshot.get("rpm", 0.0)
+    throttle = snapshot.get("throttle", 0.0)
+    header = header_font.render(
+        f"Engine Audio Debug  rpm={rpm:6.0f}  th={throttle:0.2f}",
+        True,
+        (210, 235, 255),
+    )
+    panel.blit(header, (8, 6))
+
+    group_order = [group_name for group_name in ("eng", "exh") if group_name in groups]
+    if not group_order:
+        group_order = list(groups.keys())
+
+    inner_width = panel_rect.width - 24
+    gap = 12
+    group_width = max(220, (inner_width - (gap * max(0, len(group_order) - 1))) // max(1, len(group_order)))
+    rows_per_group = max(1, len(group_order))
+
+    for group_index, group_name in enumerate(group_order):
+        group = groups[group_name]
+        tracks = group.get("tracks", [])
+        bank_mix = group.get("bank_mix", [])
+        group_x = 8 + (group_index * (group_width + gap))
+        group_rect = pygame.Rect(group_x, 32, group_width, panel_rect.height - 40)
+        group_panel = pygame.Surface(group_rect.size, pygame.SRCALPHA)
+        group_panel.fill((16, 20, 26, 190))
+        border_color = (110, 180, 255, 220) if group_name == "eng" else (255, 170, 110, 220)
+        pygame.draw.rect(group_panel, border_color, group_panel.get_rect(), 1)
+
+        title = header_font.render(
+            f"{group_name.upper()}  master={group.get('master_volume', 0.0):.2f}  rpm={group.get('rpm', 0.0):.0f}",
+            True,
+            (230, 240, 255),
+        )
+        group_panel.blit(title, (8, 6))
+
+        if bank_mix:
+            normal_pct = bank_mix[0] * 100.0
+            load_pct = (bank_mix[1] * 100.0) if len(bank_mix) > 1 else 0.0
+            bank_text = tiny_font.render(f"N {normal_pct:4.0f}%   P {load_pct:4.0f}%", True, (180, 200, 220))
+            group_panel.blit(bank_text, (8, 22))
+
+        bar_left = 138
+        bar_width = max(70, group_rect.width - bar_left - 44)
+        row_height = 18
+        max_rows = max(1, (group_rect.height - 48) // row_height)
+
+        for row_index, track in enumerate(tracks[:max_rows]):
+            y = 46 + (row_index * row_height)
+            label = tiny_font.render(f"{int(track['rpm']):4d} {track['banks'][:3]:<3} {track['label'][:8]}", True, (205, 215, 225))
+            group_panel.blit(label, (8, y + 1))
+
+            track_volume = max(0.0, min(1.0, float(track["volume"])))
+            bar_rect = pygame.Rect(bar_left, y + 3, bar_width, 10)
+            fill_width = max(0, int(bar_rect.width * track_volume))
+            fill_color = (120, 220, 150) if group_name == "eng" else (255, 170, 95)
+            pygame.draw.rect(group_panel, (42, 48, 58), bar_rect, border_radius=3)
+            if fill_width > 0:
+                pygame.draw.rect(group_panel, fill_color, (bar_rect.x, bar_rect.y, fill_width, bar_rect.height), border_radius=3)
+            pygame.draw.rect(group_panel, (120, 130, 145), bar_rect, 1, border_radius=3)
+
+            pct_text = tiny_font.render(f"{track_volume * 100:5.1f}%", True, (225, 232, 238))
+            group_panel.blit(pct_text, (bar_rect.right + 6, y))
+
+            weight_text = tiny_font.render(f"w {track['weight'] * 100:4.0f}%", True, (150, 180, 200))
+            group_panel.blit(weight_text, (bar_left, y - 11))
+
+        if len(tracks) > max_rows:
+            overflow = tiny_font.render(f"+{len(tracks) - max_rows} more", True, (160, 170, 180))
+            group_panel.blit(overflow, (8, group_rect.height - 18))
+
+        panel.blit(group_panel, group_rect.topleft)
+
+    surface.blit(panel, panel_rect.topleft)
 
 # ======= MAIN LOOP =======
   
@@ -420,9 +432,12 @@ def main():
     
     # Fullscreen state tracking
     is_fullscreen = False
+
+    default_car = const.AVAILABLE_CARS[0] if const.AVAILABLE_CARS else "AE86"
+    default_engine_sound_id = get_car_engine_sound_id(default_car)
     
     # Show loading screen and load assets
-    loaded_assets = load_assets_with_progress(screen, clock, gpu_display)
+    loaded_assets = load_assets_with_progress(screen, clock, default_engine_sound_id, gpu_display)
     
     # Create fonts after pygame.init()
     font_small = pygame.font.SysFont(None, const.FONT_SMALL_SIZE)
@@ -434,10 +449,10 @@ def main():
     car_sprites_cache = loaded_assets["car_sprites_cache"]
     track_image = loaded_assets["track_image"]
     chunked_map = loaded_assets["chunk_map"]
-    engine_sound = loaded_assets["engine_sound"]
-    audio_controller = loaded_assets["audio_controller"]
-    
-    stage1 = "lobby" # lobby | game | error | mode1 | mode2 | leaderboard
+    engine_audio = loaded_assets["engine_audio"]
+    shift_sound = loaded_assets["shift_sound"]
+
+    stage1 = "lobby" # lobby | game | error | mode1 | mode2
     stage2 = "" # new_game | join_game | settings
     stage3 = "" # key_binds
     error_msg = ""
@@ -461,8 +476,10 @@ def main():
 
     spawnx = random.uniform(const.WINDOW_WIDTH*0.3, const.WINDOW_WIDTH*0.7)
     spawny = random.uniform(const.WINDOW_HEIGHT*0.3, const.WINDOW_HEIGHT*0.7)
-    default_car = const.AVAILABLE_CARS[0] if const.AVAILABLE_CARS else "AE86"
     my_car = car.Car(spawnx, spawny, my_name, is_ai=False, car_type=default_car)
+    current_engine_sound_id = my_car.engine_sound_id
+    # Set palette colors from car specs
+    set_palette_colors_from_car(my_car.palette_colors)
     # Local player's engine state (avoid mutating Car which may use __slots__)
     engine_state = {"gear": 0, "last_rpm": None}
 
@@ -630,10 +647,10 @@ def main():
                     try: sock.send(json.dumps({"t": "bye", "code": code, "id": my_id}).encode("utf-8"))
                     except Exception: pass
                 try:
-                    if engine_sound:
-                        engine_sound.stop_all()  # Stop all sounds
-                    if audio_controller:
-                        audio_controller.stop_audio_thread()  # Stop the audio thread
+                    if engine_audio:
+                        engine_audio.stop_all()
+                    if shift_sound:
+                        shift_sound.stop_all()
                 except Exception:
                     pass
                 pygame.quit()
@@ -651,6 +668,13 @@ def main():
                     current_index = lower_types.index(my_car.car_type.lower()) if my_car.car_type.lower() in lower_types else 0
                 next_index = (current_index + 1) % len(available_types)
                 my_car.set_car_type(available_types[next_index])
+                engine_audio, current_engine_sound_id = sync_engine_audio_system(
+                    engine_audio,
+                    audio_initialized,
+                    current_engine_sound_id,
+                    my_car,
+                )
+                set_palette_colors_from_car(my_car.palette_colors)
                 invalidate_palette_cache()  # Recalculate colored sprites for new car type
             if ev.type == pygame.KEYDOWN and ev.key == const.DEBUG_TOGGLE_KEY: # F3 to toggle debug mode
                 # Toggle debug mode
@@ -700,6 +724,12 @@ def main():
 
             ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map, checkpoints = handle_game_events(screen, ev, stage1, stage2, stage3, gp, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name, track_image=track_image, chunked_map=chunked_map, checkpoints=checkpoints)
             I_AM_HOST = host_ref[0]
+            engine_audio, current_engine_sound_id = sync_engine_audio_system(
+                engine_audio,
+                audio_initialized,
+                current_engine_sound_id,
+                my_car,
+            )
 
             # Leaderboard "Return to Lobby" button click
             if (ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1
@@ -750,6 +780,13 @@ def main():
                 current_index = available_types.index(my_car.car_type)
                 next_index = (current_index + 1) % len(available_types)
                 my_car.set_car_type(    available_types[next_index])
+                engine_audio, current_engine_sound_id = sync_engine_audio_system(
+                    engine_audio,
+                    audio_initialized,
+                    current_engine_sound_id,
+                    my_car,
+                )
+                set_palette_colors_from_car(my_car.palette_colors)
                 invalidate_palette_cache()  # Recalculate colored sprites for new car type
             if js.get_button(3) and time.time() - ctlr_btn3_time > 0.2: # Y to spawn ai car
                 ctlr_btn3_time = time.time()
@@ -944,11 +981,11 @@ def main():
                 my_car.vx, my_car.vy = 0.0, 0.0
                 my_car.v_angle = 0.0
             else:
-                my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG)
+                my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG, cursor_follow=const.CURSOR_FOLLOW, cam=cam)
 #                 my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG, cursor_follow=const.CURSOR_FOLLOW, cam=cam)
             # Update engine audio based on RPM and throttle with enhanced drift characteristics
             try:
-                if engine_sound is not None and audio_controller is not None and audio_initialized:
+                if audio_initialized and (engine_audio is not None or shift_sound is not None):
                     speed_units = math.hypot(my_car.vx, my_car.vy)
                     th = clamp(controls.get("th", 0.0), -1.0, 1.0)
                     prev_rpm = engine_state.get("last_rpm")
@@ -958,20 +995,22 @@ def main():
                         throttle=th,
                         prev_rpm=prev_rpm,
                         dt=dt,
-                        params=None,
+                        params=my_car.rpm_params,
                         _state=engine_state,
                     )
                     engine_state["last_rpm"] = rpm
-                    # Get current gear from engine state for gear shift sounds
+                    if engine_audio is not None:
+                        engine_audio.update(rpm=rpm, throttle=max(0.0, th))
                     current_gear = engine_state.get("gear", 0)
-                    # Thread-safe audio state update with gear and drift info
-                    audio_controller.set_engine_state(
-                        rpm=rpm, 
-                        throttle=max(0.0, th),
-                        current_gear=current_gear,
-                        drift_ratio=my_car.drift_ratio
-                    )
-            except Exception as e:
+                    if shift_sound is not None:
+                        shift_sound.update(
+                            current_gear=current_gear,
+                            rpm=rpm,
+                            throttle=max(0.0, th),
+                            drift_ratio=my_car.drift_ratio,
+                            engine_sound_id=getattr(my_car, "engine_sound_id", ""),
+                        )
+            except Exception:
                 # Silently handle audio errors to prevent crashes on low-end devices
                 pass
 
@@ -1030,6 +1069,7 @@ def main():
             settings_buttons, error_msg, my_car, cam, gp, font_big, font_medium, font_small,
             controls, engine_state, fps, dt, I_AM_HOST, host_name, car_sprites_cache
         )
+        draw_engine_audio_debug(ui_surf, engine_audio)
 
         # Game mode overlays (countdown, lap counter, leaderboard)
         _return_btn_rect = None

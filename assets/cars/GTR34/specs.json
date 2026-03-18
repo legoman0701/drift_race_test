@@ -1,23 +1,41 @@
 {
-    "model": "Skyline GTR R34",
-    "manufacturer": "Nissan",
-    "type": "drift",
-    "year": 1983,
+    "id": "r34",
+    "metadata": {
+        "year": 1999,
+        "manufacturer": "Nissan",
+        "model": "Skyline GTR R34",
+        "country": "Japan"
+    },
+    "specs": {
+        "mass": 1550,
+        "horsepower": 280,
+        "drivetrain": "AWDS",
+        "dimensions": {
+            "length": 4600,
+            "width": 1785,
+            "height": 1360,
+            "wheelbase": 2665
+        },
+        "default_pallet": [[9, 104, 120], [10, 10, 10], [120, 83, 60]]
+    },
     "engine": {
-        "sound": "cars/GTR34/sound"
+        "type": "2.6L RB26DETT I6",
+        "sound_id": "i6t",
+        "max_rpm": 8000,
+        "gear_ratios": [3.83, 2.36, 1.69, 1.31, 1.0, 0.79],
+        "final_drive": 3.545
     },
-    "dimensions": {
-        "CAR_LEN": 38.0,
-        "CAR_WID": 20.0
-    },
-    "performance": {
-        "ENGINE_ACC": 450.0,
-        "MASS": 4,
-        "BRAKE_COEFF": 600.0,
-        "CORNERING_STIFFNESS": 2
-    },
-    "drivetrain": {
-        "layout": "AWDS",
-        "gear_ratios": [3.166, 1.481, 1.1, 0.8]
+    "physics": {
+        "braking": {
+            "max_torque": 4800,
+            "bias": 0.70,
+            "handbrake_force": 0.1
+        },
+        "wheels": {
+            "front_grip": 1.05,
+            "rear_grip": 1.05,
+            "stiffness_factor": 0.90
+        },
+        "cornering_stiffness": 2.0
     }
 }

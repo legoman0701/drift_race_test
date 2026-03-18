@@ -1,0 +1,4 @@
+- make 4 times the pixel size
+  (120x120) -> (480x480)
+- angle the camera at 70°
+- disconect the file export in the composite

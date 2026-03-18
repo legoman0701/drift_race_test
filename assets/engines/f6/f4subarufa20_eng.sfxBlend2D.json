@@ -1,0 +1,34 @@
+{
+    "header" : {
+	    "version" : 1
+    },
+    "eventName" : "event:>Engine>mod_engine",
+    "samples" :
+    [
+	    [
+		    ["art/sound/engine/f4subarufa20_eng/834.wav", 834],
+		    ["art/sound/engine/f4subarufa20_eng/1494.wav", 1494],
+		    ["art/sound/engine/f4subarufa20_eng/1856.wav", 1856],
+		    ["art/sound/engine/f4subarufa20_eng/2584.wav", 2584],
+		    ["art/sound/engine/f4subarufa20_eng/3371.wav", 3371],
+		    ["art/sound/engine/f4subarufa20_eng/4108.wav", 4108],
+		    ["art/sound/engine/f4subarufa20_eng/4841.wav", 4841],
+		    ["art/sound/engine/f4subarufa20_eng/5706.wav", 5706],
+		    ["art/sound/engine/f4subarufa20_eng/6569.wav", 6569],
+		    ["art/sound/engine/f4subarufa20_eng/7332.wav", 7332]
+	    ]
+	    ,
+	    [
+		    ["art/sound/engine/f4subarufa20_eng/834.wav", 834],
+		    ["art/sound/engine/f4subarufa20_eng/1494.wav", 1494],
+		    ["art/sound/engine/f4subarufa20_eng/1856.wav", 1856],
+		    ["art/sound/engine/f4subarufa20_eng/2584.wav", 2584],
+		    ["art/sound/engine/f4subarufa20_eng/3371.wav", 3371],
+		    ["art/sound/engine/f4subarufa20_eng/4108.wav", 4108],
+		    ["art/sound/engine/f4subarufa20_eng/4841.wav", 4841],
+		    ["art/sound/engine/f4subarufa20_eng/5706.wav", 5706],
+		    ["art/sound/engine/f4subarufa20_eng/6569.wav", 6569],
+		    ["art/sound/engine/f4subarufa20_eng/7332.wav", 7332]
+	    ]
+    ]
+}

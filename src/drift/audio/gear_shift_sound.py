@@ -111,7 +111,14 @@ class GearShiftSound:
         except Exception as e:
             print(f"Could not create synthetic gear shift sounds: {e}")
     
-    def update(self, current_gear: int, rpm: float, throttle: float, drift_ratio: float = 0.0):
+    def update(
+        self,
+        current_gear: int,
+        rpm: float,
+        throttle: float,
+        drift_ratio: float = 0.0,
+        engine_sound_id: str = "",
+    ):
         """
         Update gear shift sound system.
         
@@ -120,8 +127,11 @@ class GearShiftSound:
             rpm: Current engine RPM
             throttle: Throttle position (0.0-1.0)
             drift_ratio: How much the car is drifting (0.0-1.0)
+            engine_sound_id: Engine audio ID used to detect turbo engines (suffix 't')
         """
         current_time = time.time()
+        normalized_engine_sound_id = str(engine_sound_id or "").strip().lower()
+        bov_enabled = normalized_engine_sound_id.endswith("t")
         
         with self._shift_lock:
             # Check if we just shifted gears
@@ -136,7 +146,7 @@ class GearShiftSound:
                     self._trigger_shift_sound(self.last_gear, current_gear, rpm, throttle, drift_ratio)
                     
                     # Trigger BOV sound for powershifts
-                    if is_powershift and self.bov_sound:
+                    if bov_enabled and is_powershift and self.bov_sound:
                         self._trigger_powershift_bov(throttle, rpm, drift_ratio)
                     
                     self.last_shift_time = current_time
