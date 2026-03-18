@@ -184,6 +184,7 @@ def loop():
             room["clients"][addr] = {"id": pid, "name": name, "car_type": car_type, "last": now}
             room["states"].setdefault(pid, {"x": 500, "y": 350, "a": 0.0, "vx": 0.0, "vy": 0.0, "name": name, "has_grip": [1.0, 1.0, 1.0, 1.0], "car_type": car_type})
             room["dirty"] = True
+            print(f"[relay] Room {code!r} created by {name!r} (id={pid}) | mode={mode} track={track}")
             sendto_json(sock, addr, {"t":"join_ok", "code": code, "host_name": name, "track": track})
             broadcast_world(sock, code, room)
 
@@ -205,6 +206,8 @@ def loop():
             room["dirty"] = True
             # Send host_name and track from room data
             host_name = room.get("host_name", "no_host")
+            player_count = len(room["clients"])
+            print(f"[relay] {name!r} (id={pid}) joined room {code!r} | players in room: {player_count}")
             sendto_json(sock, addr, {"t":"join_ok", "code": code, "host_name": host_name, "track": room.get("track", "track1")})
             broadcast_world(sock, code, room)
 
@@ -221,6 +224,18 @@ def loop():
             if is_ai and room.get("host_addr") != addr:
                 # ignore non-host AI updates
                 continue
+            # Update registered car_type when player changes car mid-session
+            if not is_ai:
+                new_car_type = msg.get("car_type")
+                if isinstance(new_car_type, str) and new_car_type:
+                    room["clients"][addr]["car_type"] = new_car_type[:16]
+            raw_palette = msg.get("palette")
+            if (isinstance(raw_palette, list) and len(raw_palette) == 3 and
+                    all(isinstance(c, list) and len(c) == 3 and
+                        all(isinstance(v, (int, float)) for v in c) for c in raw_palette)):
+                palette = raw_palette
+            else:
+                palette = None
             st = {
                 "x": float(msg.get("x", 0.0)),
                 "y": float(msg.get("y", 0.0)),
@@ -231,6 +246,7 @@ def loop():
                 "name": (str(msg.get("name")) if is_ai else room["clients"][addr]["name"]),
                 "has_grip": list(msg.get("has_grip", [1.0, 1.0, 1.0, 1.0])),
                 "car_type": (str(msg.get("car_type")) if is_ai else room["clients"][addr]["car_type"]),
+                "palette": palette,
             }
             room["states"][pid] = st
             room["dirty"] = True
@@ -286,6 +302,8 @@ def loop():
                 room["results"] = {}
 
             room["dirty"] = True
+            player_count = len(room["clients"])
+            print(f"[relay] Race started in room {code!r} | mode={requested_mode} track={room.get('track','track1')} players={player_count}")
             start_msg = {"t": "start_race", "code": code, "mode": requested_mode, "track": room.get("track", "track1")}
             for caddr in list(room["clients"].keys()):
                 sendto_json(sock, caddr, start_msg)
