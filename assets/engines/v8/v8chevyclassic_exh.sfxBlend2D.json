@@ -1,0 +1,35 @@
+{
+    "header" : {
+	    "version" : 1
+    },
+    "eventName" : "event:>Engine>mod_exhaust",
+    "samples" :
+    [
+	    [
+		    ["art/sound/engine/v8chevyclassic_exh/1273.wav", 873],
+		    ["art/sound/engine/v8chevyclassic_exh/2021.wav", 2021],
+		    ["art/sound/engine/v8chevyclassic_exh/2812.wav", 2812],
+		    ["art/sound/engine/v8chevyclassic_exh/3362.wav", 3362],
+		    ["art/sound/engine/v8chevyclassic_exh/4117.wav", 4117],
+		    ["art/sound/engine/v8chevyclassic_exh/4640.wav", 4640],
+		    ["art/sound/engine/v8chevyclassic_exh/5203.wav", 5203]
+	    ]
+	    ,
+	    [
+		    ["art/sound/engine/v8chevyclassic_exh/1273.wav", 873],
+		    ["art/sound/engine/v8chevyclassic_exh/1604_P.wav", 1604],
+		    ["art/sound/engine/v8chevyclassic_exh/1845_P.wav", 1845],
+		    ["art/sound/engine/v8chevyclassic_exh/2131_P.wav", 2131],
+		    ["art/sound/engine/v8chevyclassic_exh/2450_P.wav", 2450],
+		    ["art/sound/engine/v8chevyclassic_exh/2812_P.wav", 2812],
+		    ["art/sound/engine/v8chevyclassic_exh/3127_P.wav", 3127],
+		    ["art/sound/engine/v8chevyclassic_exh/3427_P.wav", 3427],
+		    ["art/sound/engine/v8chevyclassic_exh/3757_P.wav", 3757],
+		    ["art/sound/engine/v8chevyclassic_exh/4064_P.wav", 4064],
+		    ["art/sound/engine/v8chevyclassic_exh/4380_P.wav", 4380],
+		    ["art/sound/engine/v8chevyclassic_exh/4746_P.wav", 4746],
+		    ["art/sound/engine/v8chevyclassic_exh/5095_P.wav", 5095],
+		    ["art/sound/engine/v8chevyclassic_exh/5396_P.wav", 5396]
+	    ]
+    ]
+}

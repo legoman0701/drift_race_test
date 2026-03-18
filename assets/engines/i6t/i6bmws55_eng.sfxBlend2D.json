@@ -1,0 +1,54 @@
+{
+    "header" : {
+        "version" : 1
+    },
+    "eventName" : "event:>Engine>mod_engine",
+    "samples" : 
+    [
+        [
+            ["art/sound/engine/i6bmws55_eng/800.wav", 800],
+            ["art/sound/engine/i6bmws55_eng/1785.wav", 1785],
+            ["art/sound/engine/i6bmws55_eng/2506.wav", 2506],
+            ["art/sound/engine/i6bmws55_eng/3107.wav", 3107],
+            ["art/sound/engine/i6bmws55_eng/3406.wav", 3406],
+            ["art/sound/engine/i6bmws55_eng/3765.wav", 3765],
+            ["art/sound/engine/i6bmws55_eng/4152.wav", 4152],
+            ["art/sound/engine/i6bmws55_eng/4479.wav", 4479],
+            ["art/sound/engine/i6bmws55_eng/4802.wav", 4802],
+            ["art/sound/engine/i6bmws55_eng/5090.wav", 5090],
+            ["art/sound/engine/i6bmws55_eng/5363.wav", 5363],
+            ["art/sound/engine/i6bmws55_eng/5614.wav", 5614],
+            ["art/sound/engine/i6bmws55_eng/6092.wav", 6092],
+            ["art/sound/engine/i6bmws55_eng/6329.wav", 6329],
+            ["art/sound/engine/i6bmws55_eng/6549.wav", 6549],
+            ["art/sound/engine/i6bmws55_eng/6768.wav", 6768],
+            ["art/sound/engine/i6bmws55_eng/6948.wav", 6948],
+            ["art/sound/engine/i6bmws55_eng/7168.wav", 7168],
+            ["art/sound/engine/i6bmws55_eng/7318.wav", 7318],
+            ["art/sound/engine/i6bmws55_eng/7490.wav", 7490]
+        ]
+        ,
+        [
+			["art/sound/engine/i6bmws55_eng/800.wav", 800],
+            ["art/sound/engine/i6bmws55_eng/1785.wav", 1785],
+            ["art/sound/engine/i6bmws55_eng/2506.wav", 2506],
+            ["art/sound/engine/i6bmws55_eng/3107.wav", 3107],
+            ["art/sound/engine/i6bmws55_eng/3406.wav", 3406],
+            ["art/sound/engine/i6bmws55_eng/3765.wav", 3765],
+            ["art/sound/engine/i6bmws55_eng/4152.wav", 4152],
+            ["art/sound/engine/i6bmws55_eng/4479.wav", 4479],
+            ["art/sound/engine/i6bmws55_eng/4802.wav", 4802],
+            ["art/sound/engine/i6bmws55_eng/5090.wav", 5090],
+            ["art/sound/engine/i6bmws55_eng/5363.wav", 5363],
+            ["art/sound/engine/i6bmws55_eng/5614.wav", 5614],
+            ["art/sound/engine/i6bmws55_eng/6092.wav", 6092],
+            ["art/sound/engine/i6bmws55_eng/6329.wav", 6329],
+            ["art/sound/engine/i6bmws55_eng/6549.wav", 6549],
+            ["art/sound/engine/i6bmws55_eng/6768.wav", 6768],
+            ["art/sound/engine/i6bmws55_eng/6948.wav", 6948],
+            ["art/sound/engine/i6bmws55_eng/7168.wav", 7168],
+            ["art/sound/engine/i6bmws55_eng/7318.wav", 7318],
+            ["art/sound/engine/i6bmws55_eng/7490.wav", 7490]
+        ]
+    ]
+}

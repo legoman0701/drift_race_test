@@ -107,6 +107,7 @@ def extract_specs_values(specs: dict) -> dict:
         max_rpm = specs.get("engine", {}).get("max_rpm", 7000.0)
         gear_ratios = tuple(specs.get("engine", {}).get("gear_ratios", [3.166, 1.481, 1.1, 0.8]))
         final_drive = specs.get("engine", {}).get("final_drive", 4.1)
+        engine_sound_id = specs.get("engine", {}).get("sound_id", "v8")
         
         # Extract palette colors
         palette_colors = specs.get("specs", {}).get("default_pallet", [[255, 0, 0], [0, 255, 0], [0, 0, 255]])
@@ -128,6 +129,7 @@ def extract_specs_values(specs: dict) -> dict:
             "MAX_RPM": max_rpm,
             "GEAR_RATIOS": gear_ratios,
             "FINAL_DRIVE": final_drive,
+            "ENGINE_SOUND_ID": str(engine_sound_id),
             "PALETTE_COLORS": palette_tuple
         }
     except (KeyError, TypeError, IndexError):
@@ -148,8 +150,16 @@ def extract_specs_values(specs: dict) -> dict:
             "MAX_RPM": 7000.0,
             "GEAR_RATIOS": (3.166, 1.481, 1.1, 0.8),
             "FINAL_DRIVE": 4.1,
+            "ENGINE_SOUND_ID": "v8",
             "PALETTE_COLORS": ((255, 0, 0), (0, 255, 0), (0, 0, 255))
         }
+
+
+def get_car_engine_sound_id(car_type: str) -> str:
+    spec_path = normalize_asset_path("cars", car_type, "specs.json")
+    with open(spec_path, "r", encoding="utf-8") as fh:
+        specs = json.load(fh)
+    return str(specs.get("engine", {}).get("sound_id", "v8"))
 
 class Car:
     def __init__(self, x, y, name, is_ai=False, car_type="ae86"):
@@ -184,6 +194,7 @@ class Car:
             gear_ratios=specs_vals["GEAR_RATIOS"],
             final_drive=specs_vals["FINAL_DRIVE"]
         )
+        self.engine_sound_id = specs_vals["ENGINE_SOUND_ID"]
         self.palette_colors = specs_vals["PALETTE_COLORS"]
         
     def set_car_type(self, car_type):
@@ -200,6 +211,7 @@ class Car:
             gear_ratios=specs_vals["GEAR_RATIOS"],
             final_drive=specs_vals["FINAL_DRIVE"]
         )
+        self.engine_sound_id = specs_vals["ENGINE_SOUND_ID"]
         self.palette_colors = specs_vals["PALETTE_COLORS"]
 
     def step(self, inputs, dt, players, bounds, compute_debug=False, cursor_follow=False, cam=None):        
