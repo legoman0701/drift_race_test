@@ -253,20 +253,28 @@ class Car:
             dy = world_mouse_y - self.y
             self.target_angle = math.atan2(dy, dx)
         else:
-            # Keyboard/joystick mode: accumulate steering input
-            target_angle_change_rate = 2.0  # radians per second
-            self.target_angle += raw_steering_input * target_angle_change_rate * dt
-            # Normalize target angle to [-pi, pi]
-            self.target_angle = ((self.target_angle + math.pi) % (2 * math.pi)) - math.pi
-            
-            # Clamp target angle to maximum difference from current angle
-            max_angle_difference = math.radians(45)  # Maximum 45 degrees difference
-            angle_diff = ((self.target_angle - self.angle + math.pi) % (2 * math.pi)) - math.pi
-            if abs(angle_diff) > max_angle_difference:
-                # Clamp to maximum allowed difference
-                self.target_angle = self.angle + math.copysign(max_angle_difference, angle_diff)
-                # Normalize again
+            if ffb_active:
+                # Real steering wheel: absolute position → direct angle offset.
+                # raw_steering_input is already -1..1 representing the wheel's full range,
+                # so map it straight to the clamped target offset without integration.
+                max_angle_difference = math.radians(45)
+                self.target_angle = self.angle + raw_steering_input * max_angle_difference
                 self.target_angle = ((self.target_angle + math.pi) % (2 * math.pi)) - math.pi
+            else:
+                # Keyboard/gamepad mode: accumulate steering input
+                target_angle_change_rate = 2.0  # radians per second
+                self.target_angle += raw_steering_input * target_angle_change_rate * dt
+                # Normalize target angle to [-pi, pi]
+                self.target_angle = ((self.target_angle + math.pi) % (2 * math.pi)) - math.pi
+                
+                # Clamp target angle to maximum difference from current angle
+                max_angle_difference = math.radians(45)  # Maximum 45 degrees difference
+                angle_diff = ((self.target_angle - self.angle + math.pi) % (2 * math.pi)) - math.pi
+                if abs(angle_diff) > max_angle_difference:
+                    # Clamp to maximum allowed difference
+                    self.target_angle = self.angle + math.copysign(max_angle_difference, angle_diff)
+                    # Normalize again
+                    self.target_angle = ((self.target_angle + math.pi) % (2 * math.pi)) - math.pi
                 
         # Orientation and basis vectors
         forward_x, forward_y = math.cos(self.angle), math.sin(self.angle)
@@ -283,8 +291,11 @@ class Car:
 
         # Understeer tuning from previous-frame front grip state.
         front_understeer = (self.has_grip[0] < 0.5) or (self.has_grip[1] < 0.5)
-        steering_multiplier = steering_multiplier * 0.95 if front_understeer else steering_multiplier * 1.05
-        steering_multiplier = min(1.0, max(0.2, steering_multiplier))
+        if not ffb_active:
+            steering_multiplier = steering_multiplier * 0.95 if front_understeer else steering_multiplier * 1.05
+            steering_multiplier = min(1.0, max(0.2, steering_multiplier))
+        else:
+            steering_multiplier = 1.0
         self.steering_multiplier = steering_multiplier
         #steering_input *= steering_multiplier
 
