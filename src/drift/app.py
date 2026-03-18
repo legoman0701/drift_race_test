@@ -838,19 +838,21 @@ def main():
                         stage1 = new_mode
                 else:
                     stage1 = new_mode
+                    # Non-host: load race track once on race start transition.
+                    start_track = net_result.get("start_track")
+                    if not I_AM_HOST and isinstance(start_track, str) and start_track.startswith("track"):
+                        try:
+                            new_map_num = int(start_track[5:])
+                        except Exception:
+                            new_map_num = const.MAP_NUM
+                        if new_map_num != const.MAP_NUM:
+                            const.MAP_NUM = new_map_num
+                            track_image = pygame.image.load(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
+                            chunked_map = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=const.TILE_SIZE)
+                            renderer.track_image = track_image
+                            renderer.chunked_map = chunked_map
             if game_mode is not None and net_result.get("race_results"):
                 game_mode.apply_network_results(net_result["race_results"])
-                # Non-host: reload the correct map when race starts
-                if not I_AM_HOST and net_result.get("start_track"):
-                    try:
-                        new_map_num = int(net_result["start_track"][5:])
-                    except Exception:
-                        new_map_num = 1
-                    const.MAP_NUM = new_map_num
-                    track_image = pygame.image.load(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
-                    chunked_map = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=const.TILE_SIZE)
-                    renderer.track_image = track_image
-                    renderer.chunked_map = chunked_map
             err = net_result.get("error")
             if err:
                 # Switch to offline on relay errors
