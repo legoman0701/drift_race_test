@@ -1,23 +1,41 @@
 {
-    "model": "Barracuda",
-    "manufacturer": "Plymouth",
-    "type": "drift",
-    "year": 1970,
+    "id": "barracuda",
+    "metadata": {
+        "year": 1970,
+        "manufacturer": "Plymouth",
+        "model": "Barracuda 440",
+        "country": "USA"
+    },
+    "specs": {
+        "mass": 1597,
+        "horsepower": 390,
+        "drivetrain": "RWD",
+        "dimensions": {
+            "length": 4743,
+            "width": 1899,
+            "height": 1270,
+            "wheelbase": 2743
+        },
+        "default_pallet": [[154, 28, 66], [10, 10, 10], [128, 128, 128]]
+    },
     "engine": {
-        "sound": "cars/barracuda/sound"
+        "type": "7.2L 440 V8",
+        "sound_id": "v8",
+        "max_rpm": 5000,
+        "gear_ratios": [2.45, 1.45, 1.00],
+        "final_drive": 3.23
     },
-    "dimensions": {
-        "CAR_LEN": 38.0,
-        "CAR_WID": 20.0
-    },
-    "performance": {
-        "ENGINE_ACC": 450.0,
-        "MASS": 5,
-        "BRAKE_COEFF": 600.0,
-        "CORNERING_STIFFNESS": 2
-    },
-    "drivetrain": {
-        "layout": "RWD",
-        "gear_ratios": [3.166, 1.481, 1.1, 0.8]
+    "physics": {
+        "braking": {
+            "max_torque": 4500,
+            "bias": 0.72,
+            "handbrake_force": 0.1
+        },
+        "wheels": {
+            "front_grip": 0.78,
+            "rear_grip": 0.75,
+            "stiffness_factor": 0.45
+        },
+        "cornering_stiffness": 0.48
     }
 }

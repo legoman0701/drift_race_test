@@ -17,6 +17,7 @@ from drift.ai.ai import ai_algorithme
 from drift.core.inputs import read_inputs
 from drift.net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, recv_jsons
 from drift.ui.ui import handle_game_events, draw_stage_ui, invalidate_ui_text_cache, invalidate_palette_cache
+from drift.ui.draw_stage import set_palette_colors_from_car
 from drift.core.rpm import calc_engine_rpm
 from drift.audio.engine_audio import EngineAudio
 from drift.render.map_chunks import ChunkedMap
@@ -435,7 +436,7 @@ def main():
     chunked_map = loaded_assets["chunk_map"]
     engine_sound = loaded_assets["engine_sound"]
     audio_controller = loaded_assets["audio_controller"]
-    
+
     stage1 = "lobby" # lobby | game | error | mode1 | mode2
     stage2 = "" # new_game | join_game | settings
     stage3 = "" # key_binds
@@ -459,6 +460,8 @@ def main():
     spawny = random.uniform(const.WINDOW_HEIGHT*0.3, const.WINDOW_HEIGHT*0.7)
     default_car = const.AVAILABLE_CARS[0] if const.AVAILABLE_CARS else "AE86"
     my_car = car.Car(spawnx, spawny, my_name, is_ai=False, car_type=default_car)
+    # Set palette colors from car specs
+    set_palette_colors_from_car(my_car.palette_colors)
     # Local player's engine state (avoid mutating Car which may use __slots__)
     engine_state = {"gear": 0, "last_rpm": None}
 
@@ -641,6 +644,7 @@ def main():
                     current_index = lower_types.index(my_car.car_type.lower()) if my_car.car_type.lower() in lower_types else 0
                 next_index = (current_index + 1) % len(available_types)
                 my_car.set_car_type(available_types[next_index])
+                set_palette_colors_from_car(my_car.palette_colors)
                 invalidate_palette_cache()  # Recalculate colored sprites for new car type
             if ev.type == pygame.KEYDOWN and ev.key == const.DEBUG_TOGGLE_KEY: # F3 to toggle debug mode
                 # Toggle debug mode
@@ -712,6 +716,7 @@ def main():
                 current_index = available_types.index(my_car.car_type)
                 next_index = (current_index + 1) % len(available_types)
                 my_car.set_car_type(    available_types[next_index])
+                set_palette_colors_from_car(my_car.palette_colors)
                 invalidate_palette_cache()  # Recalculate colored sprites for new car type
             if js.get_button(3) and time.time() - ctlr_btn3_time > 0.2: # Y to spawn ai car
                 ctlr_btn3_time = time.time()
@@ -812,7 +817,7 @@ def main():
                         throttle=th,
                         prev_rpm=prev_rpm,
                         dt=dt,
-                        params=None,
+                        params=my_car.rpm_params,
                         _state=engine_state,
                     )
                     engine_state["last_rpm"] = rpm

@@ -56,3 +56,53 @@ def read_inputs(gamepad, car, cam, mouse_follow_mode: bool, ai_path_mode: bool) 
             br = handbrake if handbrake > 0.1 else br
     
     return {"th": float(th), "st": float(st), "br": float(br)}
+
+
+def apply_driver_assists(inputs: Dict[str, float], car, dt: float) -> Dict[str, float]:
+    """Apply oversteer and understeer assists, modifying steer_angle smoothing on the car.
+
+    Oversteer assist: counter-steer nudge is added to the raw input and the steer-angle
+    tracking rate is slowed proportionally to drift severity so the wheel cannot be turned
+    faster than the car can recover from the slide.
+
+    Understeer assist: at high speed, steering authority is reduced so the car does not
+    snap into a spin from excessive front input.
+    """
+    import math
+    import drift.config.const as _const
+
+    drivetrain = car.specs.get("specs", {}).get("drivetrain",
+                    car.specs.get("drivetrain", "RWD"))
+    steer_bias = _const.STEER_BIAS if drivetrain == "RWD" else _const.STEER_BIAS * 0.1
+
+    user_st = float(inputs.get("st", 0.0))
+    ca, sa = math.cos(car.angle), math.sin(car.angle)
+    body_fwd = car.vx * ca + car.vy * sa
+    body_lat = car.vx * (-sa) + car.vy * ca
+    spd = (body_fwd**2 + body_lat**2 + 1e-4) ** 0.5
+    vel_dir_f = body_fwd / spd
+    vel_dir_r = body_lat / spd
+    drift_angle = ((math.atan2(vel_dir_f, vel_dir_r) - math.pi/2 + math.pi) % (2*math.pi) - math.pi)
+    speed_norm = (car.vx**2 + car.vy**2) ** 0.5
+
+    # Understeer assist: reduce driver steer authority at high speed for RWD.
+    # This is applied to user input only so it doesn't weaken auto counter-steer.
+    if drivetrain == "RWD" and vel_dir_f > 0:
+        user_st /= max(1.0, speed_norm / 200)
+
+    assist_st = 0.0
+    if vel_dir_f > 0 and steer_bias > 0:
+        # Stronger counter-steer assist normalized by drift angle.
+        assist_st = max(-1.0, min(1.0, (-drift_angle / math.radians(25.0)) * 0.9 * steer_bias))
+
+        # Slow steering while sliding, but keep enough response for visible counter-steer.
+        drift_severity = min(abs(drift_angle) / math.radians(30.0), 1.0)
+        car._steer_rate_scale = max(0.70, min(1.0, 1.0 - 0.30 * drift_severity * steer_bias))
+    else:
+        car._steer_rate_scale = 1.0
+
+    raw_st = user_st + assist_st
+
+    inputs = dict(inputs)
+    inputs["st"] = float(max(-1.0, min(1.0, raw_st)))
+    return inputs

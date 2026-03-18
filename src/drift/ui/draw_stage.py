@@ -42,6 +42,18 @@ _color_palette = {
     "active_picker": None,    # Which color is being edited (1, 2, 3, or None)
 }
 
+def set_palette_colors_from_car(palette_colors):
+    """Set palette colors from car specs.
+    
+    Args:
+        palette_colors: Tuple of 3 RGB tuples (color1, color2, color3)
+    """
+    global _color_palette
+    if palette_colors and len(palette_colors) >= 3:
+        _color_palette["color1"] = tuple(palette_colors[0]) if isinstance(palette_colors[0], (list, tuple)) else palette_colors[0]
+        _color_palette["color2"] = tuple(palette_colors[1]) if isinstance(palette_colors[1], (list, tuple)) else palette_colors[1]
+        _color_palette["color3"] = tuple(palette_colors[2]) if isinstance(palette_colors[2], (list, tuple)) else palette_colors[2]
+
 def _load_car_specs(car_type):
     """Load car specifications from JSON file."""
     try:

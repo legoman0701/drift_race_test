@@ -28,7 +28,7 @@ class WorldRenderer:
         # chuncked tire mark grid
         self.tire_mark_grid = TireMarkGrid(chunked_map.tile_size) if chunked_map else None
 
-        self._drift_points_old_remotes: Dict[str, Tuple[Tuple[int, int], Tuple[int, int]]] = {}
+        self._drift_points_old_remotes: Dict[str, Tuple[Tuple[int, int], ...]] = {}
         self._last_world_size: Optional[Tuple[int, int]] = (track_image.get_width(), track_image.get_height())
         
         # Frame counter for fade optimization
@@ -77,15 +77,23 @@ class WorldRenderer:
             world_surf.blit(visible, inter.topleft)
 
     def _update_tire_marks(self, my_car, ai_cars: List, remotes: Dict[str, Dict], stage: str) -> None:
-        # Local car drift marks
-        if my_car.drift_ratio > 0.5 and my_car.drift_points_old:
-            pygame.draw.line(self.tire_mark, const.TIRE_MARK_SMOKE, my_car.drift_points[0], my_car.drift_points_old[0], 3)
-            pygame.draw.line(self.tire_mark, const.TIRE_MARK_SMOKE, my_car.drift_points[1], my_car.drift_points_old[1], 3)
-        # AIs
+        def draw_car_marks(car_obj) -> None:
+            if not car_obj.drift_points_old or not getattr(car_obj, "has_grip", None):
+                return
+            for i, grip in enumerate(car_obj.has_grip):
+                if i >= len(car_obj.drift_points) or i >= len(car_obj.drift_points_old):
+                    continue
+                if float(grip) >= 0.3:
+                    continue
+                # Lower grip means stronger tire mark for that specific wheel.
+                slip = max(0.0, min(1.0, 1.0 - float(grip)))
+                alpha = int(60 + 180 * slip)
+                smoke_color = (const.TIRE_MARK_SMOKE[0], const.TIRE_MARK_SMOKE[1], const.TIRE_MARK_SMOKE[2], alpha)
+                pygame.draw.line(self.tire_mark, smoke_color, car_obj.drift_points[i], car_obj.drift_points_old[i], 3)
+
+        draw_car_marks(my_car)
         for ai_car in ai_cars:
-            if ai_car.drift_ratio > 0.5 and ai_car.drift_points_old:
-                pygame.draw.line(self.tire_mark, const.TIRE_MARK_SMOKE, ai_car.drift_points[0], ai_car.drift_points_old[0], 3)
-                pygame.draw.line(self.tire_mark, const.TIRE_MARK_SMOKE, ai_car.drift_points[1], ai_car.drift_points_old[1], 3)
+            draw_car_marks(ai_car)
         # Remote players only when on game stage
         if stage in ["mode1", "mode2"]:
             for pid, d in remotes.items():
@@ -122,14 +130,22 @@ class WorldRenderer:
             # Stronger fade (185 instead of 200) compensates for less frequent updates
             self.tire_mark_grid.fade_visible(camera_rect, (185, 185, 185, 255))
 
-        def add_two_lines(p_cur, p_old, ratio: float):
-            if ratio > 0.5 and p_old:
-                self.tire_mark_grid.draw_line_world(p_cur[0], p_old[0], const.TIRE_MARK_SMOKE, 3, self.chunked_map.tile_size)
-                self.tire_mark_grid.draw_line_world(p_cur[1], p_old[1], const.TIRE_MARK_SMOKE, 3, self.chunked_map.tile_size)
+        def add_per_wheel_lines(car_obj) -> None:
+            if not car_obj.drift_points_old or not getattr(car_obj, "has_grip", None):
+                return
+            for i, grip in enumerate(car_obj.has_grip):
+                if i >= len(car_obj.drift_points) or i >= len(car_obj.drift_points_old):
+                    continue
+                if float(grip) >= 0.3:
+                    continue
+                slip = max(0.0, min(1.0, 1.0 - float(grip)))
+                alpha = int(60 + 180 * slip)
+                smoke_color = (const.TIRE_MARK_SMOKE[0], const.TIRE_MARK_SMOKE[1], const.TIRE_MARK_SMOKE[2], alpha)
+                self.tire_mark_grid.draw_line_world(car_obj.drift_points[i], car_obj.drift_points_old[i], smoke_color, 3, self.chunked_map.tile_size)
 
-        add_two_lines(my_car.drift_points, my_car.drift_points_old, my_car.drift_ratio)
+        add_per_wheel_lines(my_car)
         for ai_car in ai_cars:
-            add_two_lines(ai_car.drift_points, ai_car.drift_points_old, ai_car.drift_ratio)
+            add_per_wheel_lines(ai_car)
 
     def _blit_tire_marks_chunked(self, viewport_surf: pygame.Surface, camera_rect: pygame.Rect) -> None:
         self.tire_mark_grid.blit_visible(viewport_surf, camera_rect)
@@ -207,19 +223,23 @@ class WorldRenderer:
                                          car_sprites_list=remote_car_sprites,
                                          lights_on=lights_on,
                                          palette_colors=d.get("palette"))
-                    if d.get("drift_ratio", 0.0) > 0.8 and pid in self._drift_points_old_remotes and drift_pts is not None:
+                    if pid in self._drift_points_old_remotes and drift_pts is not None:
                         old_pts = self._drift_points_old_remotes[pid]
-                        # convert local back to world for the tire grid
-                        w0 = (drift_pts[0][0] + offx, drift_pts[0][1] + offy)
-                        w1 = (drift_pts[1][0] + offx, drift_pts[1][1] + offy)
-                        o0 = (old_pts[0][0], old_pts[0][1])
-                        o1 = (old_pts[1][0], old_pts[1][1])
-                        self.tire_mark_grid.draw_line_world(w0, o0, const.TIRE_MARK_SMOKE, 3, self.chunked_map.tile_size)
-                        self.tire_mark_grid.draw_line_world(w1, o1, const.TIRE_MARK_SMOKE, 3, self.chunked_map.tile_size)
-                    self._drift_points_old_remotes[pid] = (
-                        (drift_pts[0][0] + offx, drift_pts[0][1] + offy),
-                        (drift_pts[1][0] + offx, drift_pts[1][1] + offy),
-                    ) if drift_pts else None
+                        remote_grip = d.get("has_grip", (1.0, 1.0, 1.0, 1.0))
+                        for i, grip in enumerate(remote_grip):
+                            if i >= len(drift_pts) or i >= len(old_pts):
+                                continue
+                            if float(grip) >= 0.3:
+                                continue
+                            slip = max(0.0, min(1.0, 1.0 - float(grip)))
+                            alpha = int(60 + 180 * slip)
+                            smoke_color = (const.TIRE_MARK_SMOKE[0], const.TIRE_MARK_SMOKE[1], const.TIRE_MARK_SMOKE[2], alpha)
+                            w_cur = (drift_pts[i][0] + offx, drift_pts[i][1] + offy)
+                            w_old = old_pts[i]
+                            self.tire_mark_grid.draw_line_world(w_cur, w_old, smoke_color, 3, self.chunked_map.tile_size)
+                    self._drift_points_old_remotes[pid] = tuple(
+                        (pt[0] + offx, pt[1] + offy) for pt in drift_pts
+                    ) if drift_pts else ()
 
             # No classic resize event here
             resized = False
@@ -269,10 +289,18 @@ class WorldRenderer:
                                      car_sprites_list=remote_car_sprites,
                                      lights_on=lights_on,
                                      palette_colors=d.get("palette"))
-                if d.get("drift_ratio", 0.0) > 0.8 and pid in self._drift_points_old_remotes and drift_pts is not None:
+                if pid in self._drift_points_old_remotes and drift_pts is not None:
                     old_pts = self._drift_points_old_remotes[pid]
-                    pygame.draw.line(self.tire_mark, const.TIRE_MARK_SMOKE, drift_pts[0], old_pts[0], 3)
-                    pygame.draw.line(self.tire_mark, const.TIRE_MARK_SMOKE, drift_pts[1], old_pts[1], 3)
-                self._drift_points_old_remotes[pid] = drift_pts
+                    remote_grip = d.get("has_grip", (1.0, 1.0, 1.0, 1.0))
+                    for i, grip in enumerate(remote_grip):
+                        if i >= len(drift_pts) or i >= len(old_pts):
+                            continue
+                        if float(grip) >= 0.3:
+                            continue
+                        slip = max(0.0, min(1.0, 1.0 - float(grip)))
+                        alpha = int(60 + 180 * slip)
+                        smoke_color = (const.TIRE_MARK_SMOKE[0], const.TIRE_MARK_SMOKE[1], const.TIRE_MARK_SMOKE[2], alpha)
+                        pygame.draw.line(self.tire_mark, smoke_color, drift_pts[i], old_pts[i], 3)
+                self._drift_points_old_remotes[pid] = tuple(drift_pts) if drift_pts else ()
 
         return world_surf, resized, False
