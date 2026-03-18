@@ -124,11 +124,14 @@ class WorldRenderer:
         return camera_rect
 
     def _update_tire_marks_chunked(self, my_car, ai_cars: List, remotes: Dict[str, Dict], camera_rect: pygame.Rect) -> None:
-        # Fade every 3rd frame with stronger multiplier for better performance
         self._fade_frame_counter += 1
         if self._fade_frame_counter % 3 == 0:
-            # Stronger fade (185 instead of 200) compensates for less frequent updates
+            # Fade visible chunks more aggressively each tick
             self.tire_mark_grid.fade_visible(camera_rect, (185, 185, 185, 255))
+            # Fade off-screen chunks too so they decay even when not visible
+            self.tire_mark_grid.fade_offscreen(camera_rect, (150, 150, 150, 255))
+        # Evict off-screen chunks every frame (O(n) dict walk, cheap)
+        self.tire_mark_grid.remove_offscreen_chunks(camera_rect, margin=1)
 
         def add_per_wheel_lines(car_obj) -> None:
             if not car_obj.drift_points_old or not getattr(car_obj, "has_grip", None):
@@ -223,7 +226,8 @@ class WorldRenderer:
                                          car_sprites_list=remote_car_sprites,
                                          lights_on=lights_on,
                                          palette_colors=d.get("palette"))
-                    if pid in self._drift_points_old_remotes and drift_pts is not None:
+                    remote_in_view = camera_rect.collidepoint(d["x"], d["y"])
+                    if remote_in_view and pid in self._drift_points_old_remotes and drift_pts is not None:
                         old_pts = self._drift_points_old_remotes[pid]
                         remote_grip = d.get("has_grip", (1.0, 1.0, 1.0, 1.0))
                         for i, grip in enumerate(remote_grip):

@@ -202,6 +202,30 @@ class TireMarkGrid:
             pygame.draw.line(loc, color, (p0[0] - ox, p0[1] - oy), (p1[0] - ox, p1[1] - oy), width)
         self._ensure_budget()
 
+    def remove_offscreen_chunks(self, camera_rect: pygame.Rect, margin: int = 1) -> None:
+        """Remove chunks outside camera_rect + margin tiles. Called every frame."""
+        ts = self.tile_size
+        ix0 = int(camera_rect.left // ts) - margin
+        iy0 = int(camera_rect.top // ts) - margin
+        ix1 = int((camera_rect.right - 1) // ts) + margin
+        iy1 = int((camera_rect.bottom - 1) // ts) + margin
+        for key in list(self._marks.keys()):
+            ix, iy = key
+            if ix < ix0 or ix > ix1 or iy < iy0 or iy > iy1:
+                self._marks.pop(key, None)
+                self._last_used.pop(key, None)
+
+    def fade_offscreen(self, camera_rect: pygame.Rect, color_mult=(150, 150, 150, 255)) -> None:
+        """Apply fade to chunks that are outside the visible camera rect."""
+        ts = self.tile_size
+        ix0 = int(camera_rect.left // ts)
+        iy0 = int(camera_rect.top // ts)
+        ix1 = int((camera_rect.right - 1) // ts)
+        iy1 = int((camera_rect.bottom - 1) // ts)
+        for (ix, iy), surf in self._marks.items():
+            if ix < ix0 or ix > ix1 or iy < iy0 or iy > iy1:
+                surf.fill(color_mult, special_flags=pygame.BLEND_RGBA_MULT)
+
     def blit_visible(self, dest: pygame.Surface, camera_rect: pygame.Rect) -> None:
         ts = self.tile_size
         offx, offy = camera_rect.left, camera_rect.top

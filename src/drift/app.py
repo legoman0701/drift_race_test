@@ -291,6 +291,7 @@ def sync_engine_audio_system(current_engine_audio, audio_initialized, current_en
 
 
 def draw_engine_audio_debug(surface, engine_audio):
+    """Compact audio debug strip anchored to bottom-left."""
     if engine_audio is None or not const.DEBUG:
         return
 
@@ -300,96 +301,107 @@ def draw_engine_audio_debug(surface, engine_audio):
         return
 
     if not hasattr(draw_engine_audio_debug, "_font"):
-        draw_engine_audio_debug._font = pygame.font.SysFont(None, 16)
-        draw_engine_audio_debug._header_font = pygame.font.SysFont(None, 20)
-        draw_engine_audio_debug._tiny_font = pygame.font.SysFont(None, 14)
+        draw_engine_audio_debug._font = pygame.font.SysFont(None, 13)
 
     font = draw_engine_audio_debug._font
-    header_font = draw_engine_audio_debug._header_font
-    tiny_font = draw_engine_audio_debug._tiny_font
-    panel_x = 10
-    panel_y = const.TOP_LINE_Y + 10
-    panel_width = min(920, const.WINDOW_WIDTH - 20)
-    panel_height = min(const.WINDOW_HEIGHT - panel_y - const.BOTTOM_LINE_Y - 10, const.WINDOW_HEIGHT - 120)
-    panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
-    panel = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
-    panel.fill((8, 10, 14, 205))
-    pygame.draw.rect(panel, (110, 170, 220, 220), panel.get_rect(), 1)
+    rpm  = snapshot.get("rpm", 0.0)
+    th   = snapshot.get("throttle", 0.0)
 
-    rpm = snapshot.get("rpm", 0.0)
-    throttle = snapshot.get("throttle", 0.0)
-    header = header_font.render(
-        f"Engine Audio Debug  rpm={rpm:6.0f}  th={throttle:0.2f}",
-        True,
-        (210, 235, 255),
-    )
-    panel.blit(header, (8, 6))
+    row_h = 13
+    bar_w = 80
+    col_label = 4
+    col_bar   = 90
+    col_pct   = col_bar + bar_w + 3
+    panel_w   = col_pct + 36
 
-    group_order = [group_name for group_name in ("eng", "exh") if group_name in groups]
-    if not group_order:
-        group_order = list(groups.keys())
+    lines = [f"SND  rpm={rpm:.0f}  th={th:.2f}"]
+    group_order = [g for g in ("eng", "exh") if g in groups] or list(groups.keys())
+    for gname in group_order:
+        g = groups[gname]
+        lines.append(f"--- {gname.upper()} vol={g.get('master_volume',0):.2f}")
+        for tr in g.get("tracks", [])[:6]:
+            lines.append((gname, tr))
 
-    inner_width = panel_rect.width - 24
-    gap = 12
-    group_width = max(220, (inner_width - (gap * max(0, len(group_order) - 1))) // max(1, len(group_order)))
-    rows_per_group = max(1, len(group_order))
+    panel_h = len(lines) * row_h + 4
+    panel_y = const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y - panel_h - 4
+    panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+    panel.fill((8, 10, 14, 180))
+    pygame.draw.rect(panel, (80, 110, 160, 160), panel.get_rect(), 1)
 
-    for group_index, group_name in enumerate(group_order):
-        group = groups[group_name]
-        tracks = group.get("tracks", [])
-        bank_mix = group.get("bank_mix", [])
-        group_x = 8 + (group_index * (group_width + gap))
-        group_rect = pygame.Rect(group_x, 32, group_width, panel_rect.height - 40)
-        group_panel = pygame.Surface(group_rect.size, pygame.SRCALPHA)
-        group_panel.fill((16, 20, 26, 190))
-        border_color = (110, 180, 255, 220) if group_name == "eng" else (255, 170, 110, 220)
-        pygame.draw.rect(group_panel, border_color, group_panel.get_rect(), 1)
+    y = 2
+    for line in lines:
+        if isinstance(line, str):
+            surf = font.render(line, True, (190, 210, 240))
+            panel.blit(surf, (col_label, y))
+        else:
+            gname, tr = line
+            vol = max(0.0, min(1.0, float(tr["volume"])))
+            lbl = font.render(f"{tr['label'][:7]}", True, (180, 190, 205))
+            panel.blit(lbl, (col_label, y))
+            bar_rect = pygame.Rect(col_bar, y + 1, bar_w, row_h - 3)
+            pygame.draw.rect(panel, (35, 40, 50), bar_rect)
+            fill = max(0, int(bar_w * vol))
+            if fill:
+                fill_color = (100, 200, 130) if gname == "eng" else (220, 150, 80)
+                pygame.draw.rect(panel, fill_color, (col_bar, y + 1, fill, row_h - 3))
+            pygame.draw.rect(panel, (90, 100, 115), bar_rect, 1)
+            pct = font.render(f"{vol*100:4.0f}%", True, (200, 210, 220))
+            panel.blit(pct, (col_pct, y))
+        y += row_h
 
-        title = header_font.render(
-            f"{group_name.upper()}  master={group.get('master_volume', 0.0):.2f}  rpm={group.get('rpm', 0.0):.0f}",
-            True,
-            (230, 240, 255),
-        )
-        group_panel.blit(title, (8, 6))
+    surface.blit(panel, (4, panel_y))
 
-        if bank_mix:
-            normal_pct = bank_mix[0] * 100.0
-            load_pct = (bank_mix[1] * 100.0) if len(bank_mix) > 1 else 0.0
-            bank_text = tiny_font.render(f"N {normal_pct:4.0f}%   P {load_pct:4.0f}%", True, (180, 200, 220))
-            group_panel.blit(bank_text, (8, 22))
 
-        bar_left = 138
-        bar_width = max(70, group_rect.width - bar_left - 44)
-        row_height = 18
-        max_rows = max(1, (group_rect.height - 48) // row_height)
+def draw_chunk_minimap(surface, renderer):
+    """Top-right debug minimap: shows tire-mark chunks vs camera viewport."""
+    if not const.DEBUG:
+        return
+    if renderer is None or not hasattr(renderer, "tire_mark_grid") or renderer.tire_mark_grid is None:
+        return
+    if not hasattr(draw_chunk_minimap, "_font"):
+        draw_chunk_minimap._font = pygame.font.SysFont(None, 12)
+    font = draw_chunk_minimap._font
 
-        for row_index, track in enumerate(tracks[:max_rows]):
-            y = 46 + (row_index * row_height)
-            label = tiny_font.render(f"{int(track['rpm']):4d} {track['banks'][:3]:<3} {track['label'][:8]}", True, (205, 215, 225))
-            group_panel.blit(label, (8, y + 1))
+    grid = renderer.tire_mark_grid
+    marks = grid._marks
+    if not marks:
+        return
 
-            track_volume = max(0.0, min(1.0, float(track["volume"])))
-            bar_rect = pygame.Rect(bar_left, y + 3, bar_width, 10)
-            fill_width = max(0, int(bar_rect.width * track_volume))
-            fill_color = (120, 220, 150) if group_name == "eng" else (255, 170, 95)
-            pygame.draw.rect(group_panel, (42, 48, 58), bar_rect, border_radius=3)
-            if fill_width > 0:
-                pygame.draw.rect(group_panel, fill_color, (bar_rect.x, bar_rect.y, fill_width, bar_rect.height), border_radius=3)
-            pygame.draw.rect(group_panel, (120, 130, 145), bar_rect, 1, border_radius=3)
+    all_keys = list(marks.keys())
+    min_ix = min(k[0] for k in all_keys)
+    max_ix = max(k[0] for k in all_keys)
+    min_iy = min(k[1] for k in all_keys)
+    max_iy = max(k[1] for k in all_keys)
+    cols = max_ix - min_ix + 1
+    rows = max_iy - min_iy + 1
 
-            pct_text = tiny_font.render(f"{track_volume * 100:5.1f}%", True, (225, 232, 238))
-            group_panel.blit(pct_text, (bar_rect.right + 6, y))
+    cell = max(4, min(14, 120 // max(cols, rows, 1)))
+    map_w = cols * cell + 2
+    map_h = rows * cell + 14  # 14px header
+    panel_x = const.WINDOW_WIDTH - map_w - 6
+    panel_y = const.TOP_LINE_Y + 6
 
-            weight_text = tiny_font.render(f"w {track['weight'] * 100:4.0f}%", True, (150, 180, 200))
-            group_panel.blit(weight_text, (bar_left, y - 11))
+    panel = pygame.Surface((map_w, map_h), pygame.SRCALPHA)
+    panel.fill((10, 12, 18, 200))
+    pygame.draw.rect(panel, (80, 110, 160, 180), panel.get_rect(), 1)
 
-        if len(tracks) > max_rows:
-            overflow = tiny_font.render(f"+{len(tracks) - max_rows} more", True, (160, 170, 180))
-            group_panel.blit(overflow, (8, group_rect.height - 18))
+    hdr = font.render(f"chunks {len(marks)}", True, (170, 195, 230))
+    panel.blit(hdr, (2, 1))
 
-        panel.blit(group_panel, group_rect.topleft)
+    for (ix, iy), surf in marks.items():
+        cx = (ix - min_ix) * cell + 1
+        cy = (iy - min_iy) * cell + 14
+        # Sample alpha of centre pixel to estimate mark intensity
+        try:
+            px = surf.get_at((grid.tile_size // 2, grid.tile_size // 2))
+            intensity = 255 - px[3]  # transparent = no marks
+        except Exception:
+            intensity = 128
+        brightness = max(40, 255 - intensity)
+        color = (brightness // 2, brightness, brightness // 2)
+        pygame.draw.rect(panel, color, (cx, cy, cell - 1, cell - 1))
 
-    surface.blit(panel, panel_rect.topleft)
+    surface.blit(panel, (panel_x, panel_y))
 
 # ======= MAIN LOOP =======
   
@@ -835,9 +847,11 @@ def main():
                         my_car.x = const.WINDOW_WIDTH // 2
                         my_car.y = const.WINDOW_HEIGHT // 2
                         my_car.vx, my_car.vy = 0.0, 0.0
+                        renderer.clear_tire_marks()
                         stage1 = new_mode
                 else:
                     stage1 = new_mode
+                    renderer.clear_tire_marks()
                     # Non-host: load race track once on race start transition.
                     start_track = net_result.get("start_track")
                     if not I_AM_HOST and isinstance(start_track, str) and start_track.startswith("track"):
@@ -1073,6 +1087,7 @@ def main():
             controls, engine_state, fps, dt, I_AM_HOST, host_name, car_sprites_cache
         )
         draw_engine_audio_debug(ui_surf, engine_audio)
+        draw_chunk_minimap(ui_surf, renderer)
 
         # Game mode overlays (countdown, lap counter, leaderboard)
         _return_btn_rect = None
