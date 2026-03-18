@@ -503,11 +503,11 @@ def draw_new_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.0
     pygame.draw.rect(ui_surf, track1_color, track1_rect, 2)
     pygame.draw.rect(ui_surf, track2_color, track2_rect, 2)
 
-    track1_text = font_medium.render("Track 1", True, const.WHITE_240)
+    track1_text = font_medium.render("Acre Fields", True, const.WHITE_240)
     ui_surf.blit(track1_text, (track1_rect.centerx - track1_text.get_width() // 2, 
                                track1_rect.centery - track1_text.get_height() // 2))
     
-    track2_text = font_medium.render("Track 2", True, const.WHITE_240)
+    track2_text = font_medium.render("Beta Center", True, const.WHITE_240)
     ui_surf.blit(track2_text, (track2_rect.centerx - track2_text.get_width() // 2, 
                                track2_rect.centery - track2_text.get_height() // 2))
     
@@ -528,11 +528,11 @@ def draw_new_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.0
     pygame.draw.rect(ui_surf, mode1_color, mode1_rect, 2)
     pygame.draw.rect(ui_surf, mode2_color, mode2_rect, 2)
 
-    mode1_text = font_medium.render("Mode 1", True, const.WHITE_240)
+    mode1_text = font_medium.render("Classic Race", True, const.WHITE_240)
     ui_surf.blit(mode1_text, (mode1_rect.centerx - mode1_text.get_width() // 2, 
                               mode1_rect.centery - mode1_text.get_height() // 2))
     
-    mode2_text = font_medium.render("Mode 2", True, const.WHITE_240)
+    mode2_text = font_medium.render("Coming Soon", True, const.WHITE_240)
     ui_surf.blit(mode2_text, (mode2_rect.centerx - mode2_text.get_width() // 2, 
                               mode2_rect.centery - mode2_text.get_height() // 2))
 
@@ -834,7 +834,7 @@ def host_new_game(my_id):
     Returns: (stage1, my_name, code, sock, is_host, host_name) tuple
     """
     
-    my_name = _game_setup["username"] or "Player"
+    my_name = _game_setup["username"] or "Player_" + str(my_id)[:4]
     code = rand_code()
     sock = None
     is_host = True
@@ -916,7 +916,7 @@ def join_new_game(my_id):
     Join an existing game with the configured settings.
     Returns: (stage1, my_name, code, sock, is_host, host_name) tuple
     """    
-    my_name = _game_setup["username"] or "Player"
+    my_name = _game_setup["username"] or "Player_" + str(my_id)[:4]
     code = _game_setup["room_code"].upper() if _game_setup["room_code"] else ""
     sock = None
     is_host = False
@@ -956,14 +956,12 @@ def join_new_game(my_id):
             time.sleep(0.02)
         
         if not join_ok_received:
-            # Relay didn't confirm; fall back to offline mode
+            # Relay didn't confirm; keep user in lobby with explicit error
             try:
                 sock.close()
             except Exception:
                 pass
-            sock = None
-            code = "Offline"
-            is_host = False
+            return ("lobby", my_name, "", None, False, "Host", "join_timeout", None, None, [])
         
     except Exception as e:
         # Handle specific error cases
@@ -975,13 +973,9 @@ def join_new_game(my_id):
         except Exception:
             pass
         sock = None
-        
-        # If room not found, return error instead of falling back to offline
-        if "room_not_found" in error:
-            return ("lobby", my_name, "", None, False, "Host", error)
-        # For other errors (relay unreachable, etc), fall back to offline mode
-        code = "Offline"
-        is_host = False
+
+        # Join failures should not silently create an offline room/session.
+        return ("lobby", my_name, "", None, False, "Host", error, None, None, [])
 
     try: const.MAP_NUM = int(_game_setup["selected_track"][5:]) 
     except Exception: pass

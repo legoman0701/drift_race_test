@@ -406,7 +406,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
             draw_mode1(ui_surf, font_big, font_medium, cam, checkpoints)
             palette_picker_rects = draw_color_palette_picker(ui_surf, font_small)
             _palette_picker_rects_cache = palette_picker_rects
-            draw_header(ui_surf, font_big, font_small, "Mode 1", fps, host_name)
+            draw_header(ui_surf, font_big, font_small, "Classic Race", fps, host_name)
             draw_controls_hud(ui_surf, ai_path_mode_controls, gamepad, my_car, cam, font_small, dt, engine_state, 7000)
         draw_footer(ui_surf, font_small, code)
 
@@ -460,7 +460,6 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                     reset_game_setup()
                 if ev.key in const.RETURN_KEYS:
                     setup = get_game_setup()
-                    if not setup["username"]: setup["username"] = "Player" + str(my_id)[:4]
                     stage1, my_name, code, sock, is_host, host_name, track_image, chunked_map, checkpoints = host_new_game(my_id) # keyboard press
                     stage2 = "" # Close new_game UI
                     is_host_flag_ref[0] = is_host
@@ -476,11 +475,8 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                     reset_game_setup()
                 if ev.key in const.RETURN_KEYS:
                     setup = get_game_setup()
-                    if not setup["username"]: setup["username"] = "Player" + str(my_id)[:4]
-                    elif not setup["room_code"]:
-                        set_error_message("room code missing")
-                    elif len(setup["room_code"]) < 4:
-                        set_error_message("room code too short")
+                    if not setup["room_code"]: set_error_message("room code missing")
+                    elif len(setup["room_code"]) < 4: set_error_message("room code too short")
                     else: # Only proceed if username is entered
                         clear_error_message()
                         stage1, my_name, code, sock, is_host, host_name, error, track_image, chunked_map, checkpoints = join_new_game(my_id) # keyboard press
@@ -491,7 +487,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                             my_car.name = my_name # update car with new name
                             my_car.set_car_type(setup["selected_car"]) # update car selected car type                            invalidate_palette_cache()  # Reset sprite cache for newly selected car                            my_car.x = const.WINDOW_WIDTH // 2
                             my_car.y = const.WINDOW_HEIGHT // 2
-        elif stage1 in ["game", "mode1", "mode2"]: # in game
+        elif stage1 in ["game", "mode1", "mode2", "leaderboard"]: # in game
             if stage2 == "" and ev.key == const.ESCAPE_KEY: 
                 stage2 = "settings" # open settings
             elif stage2 == "settings":
@@ -534,48 +530,49 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
             if action == "host_game":
                 # Get game setup and start hosting
                 setup = get_game_setup()
-                if setup["username"]:  # Only proceed if username is entered
-                    stage1, my_name, code, sock, is_host, host_name, track_image, chunked_map, checkpoints = host_new_game(my_id) # mouse click
-                    is_host_flag_ref[0] = is_host
-                    stage2 = ""  # Close new_game UI
-                    
-                    # Update car with new name and selected car type
-                    my_car.name = my_name
-                    my_car.set_car_type(setup["selected_car"])
-                    invalidate_palette_cache()  # Reset sprite cache for newly selected car
+                stage1, my_name, code, sock, is_host, host_name, track_image, chunked_map, checkpoints = host_new_game(my_id) # mouse click
+                is_host_flag_ref[0] = is_host
+                stage2 = ""  # Close new_game UI
+                
+                # Update car with new name and selected car type
+                my_car.name = my_name
+                my_car.set_car_type(setup["selected_car"])
+                invalidate_palette_cache() # Reset sprite cache for newly selected car
         elif stage1 == "lobby" and stage2 == "join_game" and _join_game_rects_cache:
             action = handle_join_game_click(ev.pos, _join_game_rects_cache)
 
             if action == "join_game":
                 # Get game setup and start joining
                 setup = get_game_setup()
-                if setup["username"]:  # Only proceed if username is entered
-                    stage1, my_name, code, sock, is_host, host_name, error, track_image, chunked_map, checkpoints = join_new_game(my_id) # mouse click
-                    is_host_flag_ref[0] = is_host
-                    stage2 = ""  # Close new_game UI
-                    
-                    # Update car with new name and selected car type
-                    my_car.name = my_name
-                    my_car.set_car_type(setup["selected_car"])
-                    invalidate_palette_cache()  # Reset sprite cache for newly selected car
+                stage1, my_name, code, sock, is_host, host_name, error, track_image, chunked_map, checkpoints = join_new_game(my_id) # mouse click
+                is_host_flag_ref[0] = is_host
+                stage2 = ""  # Close new_game UI
+                
+                # Update car with new name and selected car type
+                my_car.name = my_name
+                my_car.set_car_type(setup["selected_car"])
+                invalidate_palette_cache() # Reset sprite cache for newly selected car
         elif stage1 == "game" and stage2 == "" and _game_rects_cache:
             start_btn = _game_rects_cache.get("start_btn") # Start button
             if start_btn and start_btn.collidepoint(ev.pos):
                 setup = get_game_setup()
-                if not setup["username"]: set_error_message("username missing")
-                # print(f"Start button clicked - {setup['selected_track']}")
-                stage1 = setup['selected_mode']  # Switch to selected game mode
-                track_image = None
-                chunked_map = None
-                if sock:
+                if not is_host_flag_ref[0]:
+                    set_error_message("only host can start game")
+                elif sock:
                     try:
+                        # Wait for relay echo/world update before changing stage locally.
                         sock.send(json.dumps({"t": "start_race", "code": code, "id": my_id, "mode": setup['selected_mode']}).encode("utf-8")) # client -> server
                     except Exception as e:
                         print(f"Error sending start: {e}")
+                else:
+                    # Offline fallback: no relay echo will arrive, so switch mode locally.
+                    selected_mode = setup.get("selected_mode", "mode1")
+                    stage1 = selected_mode if selected_mode in ["mode1", "mode2"] else "mode1"
+                    clear_error_message()
 
         elif stage1 in ["mode1", "mode2"] and stage2 == "" and _palette_picker_rects_cache:
             handle_palette_picker_click(ev.pos, _palette_picker_rects_cache)
-        elif stage1 in ["game", "mode1", "mode2"] and stage2 == "settings" and stage3 == "key_binds" and _controls_rects_cache:
+        elif stage1 in ["game", "mode1", "mode2", "leaderboard"] and stage2 == "settings" and stage3 == "key_binds" and _controls_rects_cache:
             res = handle_key_binds_click(ev.pos, _controls_rects_cache, gamepad)
             if res and res.startswith("gp_connected_"):
                 stage2 = "" ; stage3 = "" # close controls & settings to confirm connection
@@ -596,7 +593,6 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                     reset_game_setup()
                 elif js.get_button(9): # right stick press -> confirm (enter)
                     setup = get_game_setup()
-                    if not setup["username"]: setup["username"] = "Player" + str(my_id)[:4]
                     stage1, my_name, code, sock, is_host, host_name, track_image, chunked_map, checkpoints = host_new_game(my_id) # keyboard press
                     stage2 = "" # Close new_game UI
                     is_host_flag_ref[0] = is_host
@@ -613,7 +609,6 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                     if not setup["room_code"]: set_error_message("room code missing")
                     elif len(setup["room_code"]) < 4: set_error_message("room code too short")
                     else: # Only proceed if username is entered
-                        if not setup["username"]: setup["username"] = "Player" + str(my_id)[:4]
                         clear_error_message()
                         stage1, my_name, code, sock, is_host, host_name, error, track_image, chunked_map, checkpoints = join_new_game(my_id) # keyboard press
                         is_host_flag_ref[0] = is_host
@@ -624,7 +619,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                             my_car.set_car_type(setup["selected_car"]) # update car selected car type
                             my_car.x = const.WINDOW_WIDTH // 2
                             my_car.y = const.WINDOW_HEIGHT // 2
-        elif stage1 in ["game", "mode1", "mode2"]: # in game
+        elif stage1 in ["game", "mode1", "mode2", "leaderboard"]: # in game
             if stage2 == "": # main game screen
                 if js.get_button(8): # left stick press -> open settings (esc)
                     stage2 = "settings"
@@ -637,7 +632,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                         stage2 = ""
     
     # Handle slider events in settings menu (all event types)
-    if ((stage1 in ["game", "mode1", "mode2"] and stage2 == "settings" and stage3 == "") or 
+    if ((stage1 in ["game", "mode1", "mode2", "leaderboard"] and stage2 == "settings" and stage3 == "") or 
         (stage1 == "lobby" and stage2 == "settings" and stage3 == "")):
         settings_manager.handle_slider_events(ev)
 
