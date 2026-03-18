@@ -306,7 +306,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
         else:
             _controls_rects_cache = None  # Clear cache when not in settings
             draw_mode1(ui_surf, font_big, font_medium, cam, checkpoints)
-            draw_header(ui_surf, font_big, font_small, "Mode 1", fps, host_name)
+            draw_header(ui_surf, font_big, font_small, "Classic Race", fps, host_name)
             draw_controls_hud(ui_surf, ai_path_mode_controls, gamepad, my_car, cam, font_small, dt, engine_state, 7000)
         draw_footer(ui_surf, font_small, code)
 
