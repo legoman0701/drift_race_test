@@ -3,11 +3,19 @@
     "width": "3000",
     "height": "2000",
     "checkpoints": [
-        {"id": 0, "name": "Top Line 1", "x": 830, "y": 170, "width": 100, "height": 350},
-        {"id": 1, "name": "Left Line", "x": 210, "y": 865, "width": 320, "height": 100},
-        {"id": 2, "name": "Bottom Line 1", "x": 1050, "y": 1520, "width": 100, "height": 310},
-        {"id": 3, "name": "Bottom Line 2", "x": 1840, "y": 1520, "width": 100, "height": 310},
-        {"id": 4, "name": "Right Line", "x": 2440, "y": 1060, "width": 350, "height": 100},
-        {"id": 5, "name": "Top Line 2", "x": 2100, "y": 175, "width": 100, "height": 350}
+        {"id": 0, "name": "top right", "x": 2100, "y": 175, "width": 100, "height": 350},
+        {"id": 1, "name": "middle right", "x": 2440, "y": 1060, "width": 350, "height": 100},
+        {"id": 2, "name": "bottom right", "x": 1840, "y": 1520, "width": 100, "height": 310},
+        {"id": 3, "name": "bottom left", "x": 1050, "y": 1520, "width": 100, "height": 310},
+        {"id": 4, "name": "middle left", "x": 210, "y": 865, "width": 320, "height": 100},
+        {"id": 5, "name": "top left", "x": 830, "y": 170, "width": 100, "height": 350}
+    ],
+    "start": [
+        {"id": 0, "x": 2030, "y": 415, "a": 0},
+        {"id": 1, "x": 2030, "y": 335, "a": 0},
+        {"id": 2, "x": 2030, "y": 255, "a": 0},
+        {"id": 3, "x": 1930, "y": 415, "a": 0},
+        {"id": 4, "x": 1930, "y": 335, "a": 0},
+        {"id": 5, "x": 1930, "y": 255, "a": 0}
     ]
 }

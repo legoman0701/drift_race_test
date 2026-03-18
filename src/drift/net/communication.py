@@ -38,10 +38,22 @@ def connect_to_relay() -> socket.socket:
     return s
 
 
-def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str, is_host: bool):
-    result = {"error": None, "start_mode": None, "start_track": None, "host_name": None, "host_id": None}
+def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str, is_host: bool, room_code: str | None = None):
+    result = {
+        "error": None,
+        "start_mode": None,
+        "start_track": None,
+        "host_name": None,
+        "host_id": None,
+        "race_results": None,
+    }
     players = {}
     for msg in recv_jsons(sock):
+        msg_code = msg.get("code")
+        if room_code and isinstance(msg_code, str) and msg_code.upper() != str(room_code).upper():
+            # Ignore stale/wrong-room packets so stage transitions stay session-scoped.
+            continue
+
         t = msg.get("t")
         if t == "join_ok":
             host_name = msg.get("host_name")
@@ -64,10 +76,21 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
             host_id = msg.get("host_id")
             if isinstance(host_id, str):
                 result["host_id"] = host_id
+            world_results = msg.get("results")
+            if isinstance(world_results, dict):
+                result["race_results"] = world_results
+            mode = msg.get("mode")
+            track = msg.get("track")
             if msg.get("race_started"):
-                mode = msg.get("mode")
                 if isinstance(mode, str) and mode:
                     result["start_mode"] = mode
+                if isinstance(track, str) and track:
+                    result["start_track"] = track
+            elif isinstance(mode, str) and mode == "game":
+                # Use world snapshots as a reliable fallback for lobby return.
+                result["start_mode"] = "game"
+                if isinstance(track, str) and track:
+                    result["start_track"] = track
             players = msg.get("players", {}) or {}
             POS_SMOOTHING_MULTIPLIER = 300.0
             ANGLE_SMOOTHING_MULTIPLIER = 300.0
