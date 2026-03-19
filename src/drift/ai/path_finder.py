@@ -4,7 +4,7 @@ from PIL import Image
 from drift.config import const
 from drift.tools.paths import normalize_asset_path
 
-def discover_track(map_path, start_pos=(1000, 450), start_angle=0, sample_rate=8, max_iterations=10000):
+def discover_track(map_path, start_pos=(220, 1700), start_angle=90, sample_rate=8, max_iterations=10000):
     """
     Discover track outline by following the track edges using PIL (no pygame).
     Args:
@@ -33,8 +33,7 @@ def discover_track(map_path, start_pos=(1000, 450), start_angle=0, sample_rate=8
             if 0 <= rx < width and 0 <= ry < height:
                 color = px[rx, ry]
                 # color can be (r,g,b) or (r,g,b,a)
-                blue = color[2] if len(color) >= 3 else 0
-                if blue > 70:  # same heuristic as before
+                if color[1] > 180:  # same heuristic as before
                     return l
         return length
 
@@ -74,7 +73,7 @@ def discover_track(map_path, start_pos=(1000, 450), start_angle=0, sample_rate=8
     return positions
 
 
-def discover_track_visual(map_path, start_pos=(1000, 450), start_angle=0, sample_rate=8):
+def discover_track_visual(map_path, start_pos=(220, 1700), start_angle=90, sample_rate=8):
     """
     Discover track with visual display (original functionality).
     Returns the polygon when window is closed.
@@ -111,7 +110,7 @@ def discover_track_visual(map_path, start_pos=(1000, 450), start_angle=0, sample
             ry = int(y + math.sin(math.radians(angle)) * l)
             if 0 <= rx < surface.get_width() and 0 <= ry < surface.get_height():
                 color = surface.get_at((rx, ry))
-                if color[2] > 70:
+                if color[1] > 180:
                     return l
         return length
 
@@ -179,5 +178,5 @@ def discover_track_visual(map_path, start_pos=(1000, 450), start_angle=0, sample
 
 if __name__ == "__main__":
     # Run visual version when called directly
-    polygon = discover_track_visual(f"track/map{const.MAP_NUM}/main.png")
+    polygon = discover_track_visual(f"track/map1/main.png")
     print(f"Discovered track polygon with {len(polygon)} points")

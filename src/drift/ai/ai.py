@@ -104,13 +104,16 @@ def ai_algorithme(
                 sa = path_poly[best_idx]
                 pygame.draw.circle(surface, (255, 255, 0), (int(sa[0]), int(sa[1])), 4)
 
-            st = angle_diff * 2
+            # Set the car's target angle directly — bypasses the steering
+            # accumulation loop in car.step() entirely.
+            my_car.target_angle = angle_to_point
+
             speed = math.hypot(my_car.vx, my_car.vy)
-            th = 1 - clamp(abs(angle_diff) * speed / 120, 0, 1) + 0.1
-            br = clamp(abs(angle_diff) * speed / 120, 0, 1)
+            th = 1 - clamp(abs(angle_diff) * speed / 240, 0, 1) + 0.1
+            br = clamp(abs(angle_diff) * speed / 240-0.2, 0, 1)
             if ai_path_mode and surface is not None:
-                return {"th": th, "st": st, "br": br}, surface
-            return {"th": th, "st": st, "br": br}
+                return {"th": th, "st": 0.0, "br": br}, surface
+            return {"th": th, "st": 0.0, "br": br}
 
     # default gentle forward if no path
     return {"th": 0.1, "st": 0.0, "br": 0.0}
