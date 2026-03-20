@@ -318,6 +318,8 @@ class SimpleRace(BaseGameMode):
             # When expected_cp == num_cp, test against CP0 (the finish line)
             rect = self._cp_rects[0] if expected_cp == num_cp else self._cp_rects[expected_cp]
             if rect.collidepoint(pos[0], pos[1]):
+                if pid == self.local_player_id:
+                    my_car.last_checkpoint_coordinates = (my_car.x, my_car.y, my_car.angle)
                 ps.current_checkpoint += 1
                 # Completed all checkpoints + return to CP0 → lap done
                 if ps.current_checkpoint > num_cp:

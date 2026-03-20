@@ -801,6 +801,13 @@ def main():
                 )
                 set_palette_colors_from_car(my_car.palette_colors)
                 invalidate_palette_cache()  # Recalculate colored sprites for new car type
+            if ev.type == pygame.KEYDOWN and ev.key == const.RESET_KEY: # R to reset car to last checkpoint
+                if stage1.startswith("mode") and my_car.last_checkpoint_coordinates is not None:
+                    lx, ly, la = my_car.last_checkpoint_coordinates
+                    my_car.x, my_car.y = lx, ly
+                    my_car.angle = la
+                    my_car.vx, my_car.vy = 0.0, 0.0
+                    my_car.v_angle = 0.0
             if ev.type == pygame.KEYDOWN and ev.key == const.DEBUG_TOGGLE_KEY: # F3 to toggle debug mode
                 # Toggle debug mode
                 const.DEBUG = not const.DEBUG
