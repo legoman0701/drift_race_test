@@ -32,9 +32,9 @@
             "handbrake_force": 0.1
         },
         "wheels": {
-            "front_grip": 0.78,
-            "rear_grip": 0.75,
-            "stiffness_factor": 0.45
+            "front_grip": 0.98,
+            "rear_grip": 0.95,
+            "stiffness_factor": 0.7
         },
         "cornering_stiffness": 0.48
     }

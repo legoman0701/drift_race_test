@@ -4,6 +4,7 @@
 
 # global imports
 import pygame, json, time, random, sys, math, uuid, argparse
+from collections import deque
 # local imports
 from drift.tools.paths import asset_path, chdir_to_exe_folder_if_frozen, get_available_cars, normalize_asset_path, get_available_sprite_layers
 import drift.config.const as const
@@ -290,6 +291,116 @@ def sync_engine_audio_system(current_engine_audio, audio_initialized, current_en
     )
 
 
+# ─── Frame profiler ──────────────────────────────────────────────────────────
+class FrameProfiler:
+    """Lightweight rolling-window frame timer.
+
+    Usage:
+        profiler.begin('physics')
+        ...code...
+        profiler.end('physics')
+
+    Then each frame call profiler.commit() to store the snapshot.
+    draw_frame_analysis(surface, profiler) draws the overlay.
+    """
+    HISTORY = 120  # frames kept
+    # Warm display colours per segment
+    COLOURS = [
+        (100, 200, 255),  # physics
+        (255, 180,  60),  # render_world
+        (160, 255, 120),  # camera
+        (255, 100, 120),  # ui
+        (200, 140, 255),  # gamemode
+        (255, 220,  80),  # present
+        ( 80, 200, 200),  # network
+        (220, 220, 220),  # other
+        ( 60,  80, 100),  # p.clear
+        (255, 160,  50),  # p.world
+        (120, 220, 255),  # p.ui
+        (255, 255, 130),  # p.flip
+    ]
+
+    def __init__(self):
+        self._t0: dict[str, float] = {}
+        self._frame: dict[str, float] = {}
+        self.history: deque[dict[str, float]] = deque(maxlen=self.HISTORY)
+        self.labels: list[str] = []
+
+    def begin(self, label: str):
+        self._t0[label] = time.perf_counter()
+        if label not in self.labels:
+            self.labels.append(label)
+
+    def end(self, label: str):
+        if label in self._t0:
+            self._frame[label] = self._frame.get(label, 0.0) + (time.perf_counter() - self._t0.pop(label))
+
+    def commit(self):
+        """Call once per frame after all begin/end pairs."""
+        self.history.append(dict(self._frame))
+        self._frame.clear()
+
+
+def draw_frame_analysis(surface: pygame.Surface, profiler: 'FrameProfiler'):
+    """Draw a rolling stacked-bar frame-time graph at the bottom-right."""
+    if not profiler.history:
+        return
+
+    if not hasattr(draw_frame_analysis, "_font"):
+        draw_frame_analysis._font = pygame.font.SysFont(None, 12)
+    font = draw_frame_analysis._font
+
+    labels  = profiler.labels
+    colours = {lbl: profiler.COLOURS[i % len(profiler.COLOURS)] for i, lbl in enumerate(labels)}
+
+    BAR_W   = 4
+    GRAPH_H = 80
+    LEGEND_H = len(labels) * 12 + 4
+    PANEL_W  = max(160, len(profiler.history) * BAR_W + 4)
+    PANEL_H  = GRAPH_H + LEGEND_H + 18   # 18 = header
+    PANEL_X  = const.WINDOW_WIDTH  - PANEL_W - 6
+    PANEL_Y  = const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y - PANEL_H - 4
+
+    panel = pygame.Surface((PANEL_W, PANEL_H), pygame.SRCALPHA)
+    panel.fill((8, 10, 14, 200))
+    pygame.draw.rect(panel, (80, 110, 160, 180), panel.get_rect(), 1)
+
+    # Header: current total frame ms
+    last = profiler.history[-1]
+    total_ms = sum(last.values()) * 1000
+    avg_ms   = sum(sum(f.values()) for f in profiler.history) / len(profiler.history) * 1000
+    hdr = font.render(f"frame {total_ms:.1f}ms  avg {avg_ms:.1f}ms", True, (190, 210, 240))
+    panel.blit(hdr, (3, 2))
+
+    # Target line at 16.7 ms (60 fps)
+    TARGET_MS = 1000 / 60
+    SCALE     = GRAPH_H / max(TARGET_MS * 2, total_ms * 1.2, 1)  # px per ms
+    target_py = 18 + GRAPH_H - int(TARGET_MS * SCALE)
+    pygame.draw.line(panel, (120, 120, 120, 180), (2, target_py), (PANEL_W - 2, target_py))
+
+    # Stacked bars (newest on right)
+    frames = list(profiler.history)
+    for fi, frame in enumerate(frames):
+        bx = 2 + fi * BAR_W
+        by = 18 + GRAPH_H
+        for lbl in labels:
+            ms  = frame.get(lbl, 0.0) * 1000
+            h   = max(1, int(ms * SCALE))
+            by -= h
+            pygame.draw.rect(panel, colours[lbl], (bx, by, max(1, BAR_W - 1), h))
+
+    # Legend
+    ly = 18 + GRAPH_H + 4
+    for lbl in labels:
+        ms = last.get(lbl, 0.0) * 1000
+        pygame.draw.rect(panel, colours[lbl], (3, ly + 2, 8, 8))
+        txt = font.render(f"{lbl}  {ms:.1f}ms", True, (200, 210, 220))
+        panel.blit(txt, (14, ly))
+        ly += 12
+
+    surface.blit(panel, (PANEL_X, PANEL_Y))
+
+
 def draw_engine_audio_debug(surface, engine_audio):
     """Compact audio debug strip anchored to bottom-left."""
     if engine_audio is None or not const.DEBUG:
@@ -424,13 +535,9 @@ def main():
             from drift.render.gpu_display import GPUDisplay
             gpu_display = GPUDisplay((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), f"Drift Race v{const.VERSION}")
             print("✓ GPU display initialized via pygame._sdl2")
-            try:
-                if hasattr(gpu_display.renderer, 'get_info'):
-                    info = gpu_display.renderer.get_info()
-                    print(f"  Renderer: {info.name if hasattr(info, 'name') else 'unknown'}")
-            except Exception:
-                pass
-            screen = gpu_display.win.get_surface()
+            # With the SDL2 Renderer pipeline the window is owned by GPUDisplay.
+            # We still need a scratch Surface for loading screens / fallback blits.
+            screen = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
         except Exception as e:
             print(f"✗ GPU display initialization failed: {e}")
             print("  Using software rendering fallback")
@@ -634,6 +741,11 @@ def main():
     # Performance debugging
     frame_count = 0
     last_debug_time = time.time()
+    profiler = FrameProfiler()
+    show_frame_analysis = False
+
+    # Reusable UI surface (avoid per-frame allocation)
+    ui_surf = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), pygame.SRCALPHA)
 
     while True:
         dt = clock.tick(const.FPS) / 1000.0
@@ -694,6 +806,8 @@ def main():
                 const.DEBUG = not const.DEBUG
                 invalidate_ui_text_cache('debug')  # Clear cached debug text
                 print(f"Debug mode {'enabled' if const.DEBUG else 'disabled'}")
+            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_F4:
+                show_frame_analysis = not show_frame_analysis
             if ev.type == pygame.KEYDOWN and ev.key == const.FULLSCREEN_KEY:
                 # Toggle fullscreen mode
                 is_fullscreen = not is_fullscreen
@@ -818,6 +932,7 @@ def main():
 
         # ======== NETWORKING ========
 
+        profiler.begin("network")
         if sock:
             # print(sock)
             net_result = handle_network_messages(sock, remotes, dt, my_id, I_AM_HOST, code)
@@ -888,6 +1003,7 @@ def main():
             if now - last_ping >= 1.0 / const.PING_HZ:
                 last_ping = now
                 send_ping(sock, code)
+        profiler.end("network")
 
         # ======== GAME MODE LIFECYCLE ========
 
@@ -972,7 +1088,8 @@ def main():
         # Skip physics computations when in menus (new_game, join_game, key_binds)
         # This saves CPU on low-end devices and improves battery life
         skip_physics = stage2 in ["new_game", "join_game"] or stage3 == "key_binds"
-        
+
+        profiler.begin("physics")
         if not skip_physics:
             movement_locked = bool(mode_result.get("movement_locked"))
             # Prepare remotes view for the player: include network remotes + AI cars (so player can collide with AIs)
@@ -1050,12 +1167,16 @@ def main():
                     else:
                         ai.step(ai_algorithme(path_poly, ai), dt, remotes_with_ai_for_ais, world_size, compute_debug=const.DEBUG)
             cam.update(my_car, world_size)
+            profiler.end("physics")
         else:
+            profiler.begin("physics")
+            profiler.end("physics")
             # In menus: set default controls to prevent undefined variable errors
             controls = {"th": 0.0, "st": 0.0, "br": 0.0}
 
         # ======== RENDERING ========
 
+        profiler.begin("render_world")
         if not skip_physics:
             # draw track, drift marks and cars (online & local)
             render_stage = stage1 if stage1 != "leaderboard" else "mode1"
@@ -1063,18 +1184,23 @@ def main():
             if resized and not is_viewport:
                 path_poly = path_finder.discover_track(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png"))
 
-            # draw camera view (scaled or classic)
-            if is_viewport: final_surf = pygame.transform.scale(world_surf, (const.WINDOW_WIDTH, const.WINDOW_HEIGHT))  # chunk mode
-            else: final_surf = cam.apply(world_surf)  # classic mode
+            # draw camera view — let GPU handle upscaling when available
+            if gpu_display is not None:
+                if is_viewport: final_surf = world_surf            # chunk mode: GPU scales
+                else: final_surf = cam.apply_no_scale(world_surf) # classic: GPU scales
+            else:
+                if is_viewport: final_surf = pygame.transform.scale(world_surf, (const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
+                else: final_surf = cam.apply(world_surf)
         else:
             # blank world surface for lobby, settings, key binds
             world_surf = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
             world_surf.fill(const.GREY_20)
             final_surf = world_surf
+        profiler.end("render_world")
 
         # draw ui
-        ui_surf = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), pygame.SRCALPHA)
-        ui_surf.fill((0,0,0,0)) # transparent surface
+        profiler.begin("ui")
+        ui_surf.fill((0, 0, 0, 0))
         fps = clock.get_fps()
         ui_checkpoints = renderer.checkpoints
         if game_mode is not None and stage1 in ["mode1", "leaderboard"]:
@@ -1088,8 +1214,10 @@ def main():
         )
         draw_engine_audio_debug(ui_surf, engine_audio)
         draw_chunk_minimap(ui_surf, renderer)
+        profiler.end("ui")
 
         # Game mode overlays (countdown, lap counter, leaderboard)
+        profiler.begin("gamemode")
         _return_btn_rect = None
         if game_mode is not None:
             if stage1 == "leaderboard":
@@ -1097,7 +1225,12 @@ def main():
                 _return_btn_rect = lb_result.get("return_btn_rect")
             elif stage1 in ["mode1", "mode2"]:
                 game_mode.draw_hud(ui_surf, cam, font_big, font_medium, font_small)
-        
+        profiler.end("gamemode")
+
+        # Frame analysis overlay (F4)
+        if show_frame_analysis:
+            draw_frame_analysis(ui_surf, profiler)
+
         # Handle button results from settings menu
         for res in button_results:
             if isinstance(res, tuple) and len(res) == 5:
@@ -1108,18 +1241,7 @@ def main():
                 code = new_code
                 remotes = new_remotes
 
-        if gpu_display is not None:
-            try:
-                gpu_display.present(final_surf, ui_surf)
-            except Exception:
-                print("gpu failed, fallback to software blit (fix pls)")
-                screen.blit(final_surf, (0,0))
-                screen.blit(ui_surf, (0,0))
-                pygame.display.flip()
-        else:
-            screen.blit(final_surf, (0,0)) # world surface (cars, ai, map...)
-            screen.blit(ui_surf, (0,0)) # top and bottom borders
-        
+        # AI path debug overlay — blit onto ui_surf before present
         if const.AI_PATH_FOLLOW and stage1 == "game":
             try:
                 top_right_pos = cam.x-(const.WINDOW_WIDTH/2)/cam.zoom, cam.y-(const.WINDOW_HEIGHT/2)/cam.zoom
@@ -1128,11 +1250,24 @@ def main():
                                         const.WINDOW_WIDTH/cam.zoom,
                                         const.WINDOW_HEIGHT/cam.zoom)
                 visible_ai_debug_surface = ai_debug_surface.subsurface(camera_rect)
-                #pygame.draw.rect(world_surf, TRACK_COLOR, camera_rect)
-                screen.blit(visible_ai_debug_surface, (0, 0))
+                ui_surf.blit(visible_ai_debug_surface, (0, 0))
             except Exception: pass
-        if gpu_display is None:
+
+        if gpu_display is not None:
+            try:
+                profiler.begin("present")
+                gpu_display.present(final_surf, ui_surf, profiler=profiler)
+                profiler.end("present")
+            except Exception as _gpu_err:
+                print(f"gpu present failed: {_gpu_err}")
+                profiler.end("present")
+        else:
+            screen.blit(final_surf, (0,0))
+            screen.blit(ui_surf, (0,0))
+            profiler.begin("present")
             pygame.display.flip()
+            profiler.end("present")
+        profiler.commit()
 
 if __name__ == "__main__":
     main()

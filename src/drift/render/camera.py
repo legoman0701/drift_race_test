@@ -46,4 +46,15 @@ class Camera:
         view_rect = pygame.Rect(left, top, view_w, view_h)
         view = world_surf.subsurface(view_rect) # subsurface of the world (visible slice)
         return pygame.transform.scale(view, (self.width, self.height))
+
+    def apply_no_scale(self, world_surf):
+        """Extract the visible view rect without CPU scaling (for GPU upscale)."""
+        view_w = int(self.width / self.zoom)
+        view_h = int(self.height / self.zoom)
+        left = int(self.x - view_w // 2)
+        top = int(self.y - view_h // 2)
+        left = max(0, min(world_surf.get_width() - view_w, left))
+        top = max(0, min(world_surf.get_height() - view_h, top))
+        view_rect = pygame.Rect(left, top, view_w, view_h)
+        return world_surf.subsurface(view_rect)
     

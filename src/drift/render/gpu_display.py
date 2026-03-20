@@ -12,88 +12,122 @@ from typing import Optional, Tuple
 
 
 class GPUDisplay:
+    """Hardware-accelerated presentation layer using pygame._sdl2.
+
+    Pipeline:
+      1. Game renders to regular ``pygame.Surface`` objects (world, ui).
+      2. ``present()`` uploads each directly to a re-used streaming texture
+         (no CPU-side compositing — zero intermediate blits).
+      3. The GPU composites them (world first, then alpha-blended UI on top).
+      4. ``Renderer.present()`` page-flips.
+    """
+
     def __init__(self, size: Tuple[int, int], title: str = "Drift Race") -> None:
         if not _HAS_SDL2:
             raise ImportError("pygame._sdl2.video is not available")
         self.size = size
-        
-        # Streaming textures for dynamic content (can be updated)
-        self._world_texture = None
-        self._ui_texture = None
-        self._last_sizes = (None, None)
-        
-        self.win = None
-        
-        if hasattr(Window, "from_display"):
+        self.win: Window = None
+        self.renderer: Renderer = None
+
+        # Register a pixel format for .convert() / .convert_alpha().
+        # We create a tiny hidden pygame display — it never conflicts with the
+        # SDL2 Window because it's a separate native window.
+        if not pygame.display.get_surface():
             try:
-                self.win = Window.from_display()
-            except Exception as e:
-                print(f"from_display() failed: {e}")
-        
-        if self.win is None and hasattr(Window, "from_window"):
-            try:
-                import pygame.display
-                surf = pygame.display.get_surface()
-                if surf:
-                    self.win = Window.from_window(surf)
-            except Exception as e:
-                print(f"from_window() failed: {e}")
-        
-        if self.win is None:
-            try:
-                # Force Direct3D 11 renderer for better GPU detection on Windows
-                import os
-                os.environ['SDL_RENDER_DRIVER'] = 'direct3d11'
-                self.win = Window(title, size)
-                print("Created new SDL2 window")
-            except Exception as e:
-                raise ImportError(f"Could not create SDL2 Window: {e}")
-        
-        self.renderer = Renderer(self.win, index=0, accelerated=1, vsync=0)
-        
+                pygame.display.set_mode((1, 1), pygame.HIDDEN)
+            except Exception:
+                pygame.display.set_mode((1, 1), pygame.NOFRAME)
+
+        # --- Create SDL2 Window -----------------------------------------------
         try:
-            import subprocess
-            
-            print("\n=== GPU Information ===")
-            try:
-                result = subprocess.check_output(
-                    ["wmic", "path", "win32_VideoController", "get", "name,AdapterRAM,DriverVersion"],
-                    shell=True,
-                    text=True,
-                    timeout=2
-                )
-                lines = [line.strip() for line in result.split('\n') if line.strip()]
-                if len(lines) > 1:
-                    print("Detected GPUs:")
-                    for line in lines[1:]:  # Skip header
-                        if line and "Virtual" not in line:  # Show non-virtual GPUs
-                            print(f"  - {line}")
-            except Exception as e:
-                print(f"Could not detect GPU: {e}")
-            
-            # Show SDL2 render backend info
+            self.win = Window(title, size)
+        except Exception as exc:
+            raise ImportError(f"Could not create SDL2 Window: {exc}")
+
+        # --- Create hardware Renderer ----------------------------------------
+        self.renderer = Renderer(self.win, accelerated=1, vsync=0)
+
+        # --- Texture pool (re-created lazily when size changes) ---------------
+        self._textures: list = []  # list[Texture]
+        # 32-bit conversion buffers keyed by (w,h) — avoids alloc per frame
+        self._conv_bufs: dict = {}
+        self._log_gpu_info()
+
+    # ------------------------------------------------------------------
+    def _log_gpu_info(self) -> None:
+        try:
             from pygame import _sdl2 as sdl2
-            num_drivers = sdl2.get_num_render_drivers()
-            print(f"\nSDL2 Render Drivers ({num_drivers}):")
-            for i in range(num_drivers):
-                driver_name = sdl2.get_render_driver_name(i)
-                marker = " <- ACTIVE" if i == 0 else ""
-                print(f"  [{i}] {driver_name}{marker}")
-            print("="*40)
-        except Exception as e:
-            print(f"GPU: Hardware-accelerated rendering active")
+            num = sdl2.get_num_render_drivers()
+            names = [sdl2.get_render_driver_name(i) for i in range(num)]
+            print(f"  SDL2 render drivers: {', '.join(names)}")
+        except Exception:
+            pass
 
-    def present(self, *surfaces: pygame.Surface) -> None:
-        """Present surfaces directly using window surface (fastest method)."""
-        # Get the window's framebuffer surface
-        window_surf = self.win.get_surface()
-        
-        # Blit all surfaces to window surface (CPU blit, then GPU present)
-        for surf in surfaces:
-            window_surf.blit(surf, (0, 0))
-        
-        # Update the window with GPU flip
-        self.win.flip()
+    def _get_tex(self, idx: int, w: int, h: int, blend: bool) -> "Texture":
+        """Return or create a streaming texture at *idx* with the right size."""
+        while len(self._textures) <= idx:
+            self._textures.append(None)
+        tex = self._textures[idx]
+        if tex is None or tex.width != w or tex.height != h:
+            tex = Texture(self.renderer, size=(w, h), streaming=True)
+            if blend:
+                tex.blend_mode = 1  # SDL_BLENDMODE_BLEND
+            self._textures[idx] = tex
+        return tex
 
-    def size(self) -> Tuple[int, int]:
-        return self.size
+    # ------------------------------------------------------------------
+    def _ensure_32bit(self, surf: pygame.Surface) -> pygame.Surface:
+        """Return a 32-bit RGBA surface. Reuses a cached buffer to avoid alloc."""
+        if surf.get_bitsize() == 32:
+            return surf
+        key = surf.get_size()
+        buf = self._conv_bufs.get(key)
+        if buf is None or buf.get_size() != key:
+            buf = pygame.Surface(key, pygame.SRCALPHA)
+            self._conv_bufs[key] = buf
+        buf.fill((0, 0, 0, 0))
+        buf.blit(surf, (0, 0))
+        return buf
+
+    # ------------------------------------------------------------------
+    def present(self, *surfaces: pygame.Surface, profiler=None) -> None:
+        """Upload each surface to its own GPU texture and composite on the GPU.
+
+        Typically called as ``gpu_display.present(world_surf, ui_surf)``.
+        The first surface (world) may be smaller than the screen — the GPU
+        will upscale it.  Subsequent surfaces are drawn with alpha blending.
+        No CPU-side compositing is performed.
+        """
+        _names = ("p.clear", "p.world", "p.ui", "p.surf2", "p.surf3")
+
+        def _begin(tag):
+            if profiler is not None:
+                profiler.begin(tag)
+        def _end(tag):
+            if profiler is not None:
+                profiler.end(tag)
+
+        r = self.renderer
+
+        _begin("p.clear")
+        r.draw_color = (0, 0, 0, 255)
+        r.clear()
+        _end("p.clear")
+
+        tw, th = self.size
+        for i, surf in enumerate(surfaces):
+            tag = _names[min(i + 1, len(_names) - 1)]
+            _begin(tag)
+            surf32 = self._ensure_32bit(surf)
+            sw, sh = surf32.get_size()
+            tex = self._get_tex(i, sw, sh, blend=(i > 0))
+            tex.update(surf32)
+            if sw != tw or sh != th:
+                tex.draw(dstrect=(0, 0, tw, th))  # GPU upscale
+            else:
+                tex.draw()
+            _end(tag)
+
+        _begin("p.flip")
+        r.present()
+        _end("p.flip")
