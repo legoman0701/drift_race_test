@@ -114,7 +114,7 @@ JOIN_CODE_LEN = 4
 MAX_CODE_LENGTH = 12
 MIN_NAME_LENGTH = 3
 MAX_NAME_LENGTH = 12
-PROFANITY_SET = {"ON VA EVITER"}
+PROFANITY_SET = {"cerise", "fraise"} # unused
 
 # Keyboard input settings
 KEY_REPEAT_DELAY = 250

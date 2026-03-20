@@ -178,6 +178,8 @@ class Car:
         self.steering_multiplier = 1.0
         # Target angle steering system
         self.target_angle = 0.0
+        # Last checkpoint position for respawn (set when entering a checkpoint rect)
+        self.last_checkpoint_coordinates = None  # (x, y, angle) or None
         # Per-wheel debug data populated each step
         self.wheel_debug = {
             "wheels": []  # list of dicts per wheel
