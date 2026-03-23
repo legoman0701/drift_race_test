@@ -93,6 +93,7 @@ class SimpleRace(BaseGameMode):
         self.countdown_duration = 3.0 # seconds
         self.cooldown_start = 0.0
         self.cooldown_duration = 5.0 # seconds
+        self.max_time = 10.0 # seconds (2 min race time limit)
 
         # Optional spawn coordinates from map_meta.json -> "start"
         # expected format: [{"x":..., "y":..., "a":...}, ...]
@@ -182,6 +183,15 @@ class SimpleRace(BaseGameMode):
         if self.phase == self.PHASE_RACING:
             self.race_time += dt
             self._check_checkpoints(players, my_car)
+
+            # Time limit exceeded — force-finish all remaining players
+            if self.race_time >= self.max_time:
+                for ps in self.player_states.values():
+                    if not ps.finished:
+                        self._mark_player_finished(ps, self.race_time)
+                self.phase = self.PHASE_COOLDOWN
+                self.cooldown_start = time.monotonic()
+                return result
 
             # Check if all players finished
             if self.player_states and all(ps.finished for ps in self.player_states.values()):
@@ -536,12 +546,14 @@ class SimpleRace(BaseGameMode):
         row_y = header_y + 40
         for rank, ps in enumerate(self.leaderboard, start=1):
             color = (255, 215, 0) if rank == 1 else (200, 200, 200) if rank == 2 else (180, 140, 100) if rank == 3 else const.WHITE_240
-            rank_s = font_medium.render(f"#{rank}", True, color)
+            if ps.finish_time < self.max_time: rank_s = font_medium.render(f"#{rank}", True, color)
+            else: rank_s = font_medium.render(f"DNF", True, const.WHITE_240)
             name_s = font_medium.render(ps.name[:16], True, const.WHITE_240)
             car_s = font_medium.render(ps.car_type, True, const.GREY_200)
             mins = int(ps.finish_time) // 60
             secs = ps.finish_time - mins * 60
-            time_s = font_medium.render(f"{mins}:{secs:05.2f}", True, const.WHITE_240)
+            time_str = f"{mins}:{secs:05.2f}" if ps.finish_time < self.max_time else "DNF"
+            time_s = font_medium.render(time_str, True, const.WHITE_240)
 
             ui_surf.blit(rank_s, (col_rank_x, row_y))
             ui_surf.blit(name_s, (col_name_x, row_y))
