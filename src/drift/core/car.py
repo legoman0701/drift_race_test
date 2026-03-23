@@ -14,9 +14,7 @@ TRANSMITION_SETUP_DICT = {
     "AWDS": [0, 1, 2, 3], # all wheels drive with rear steering
 }
 
-# Isometric perspective correction factor for 45° rendering (16cm/pix scale)
-# Corrects collision mesh dimensions to match visual appearance
-ISOMETRIC_CORRECTION = 1.0 / math.sqrt(2)  # ≈ 0.707
+
 # 16 cm per pixel -> 160 mm per pixel
 MM_PER_PIXEL = 80.0
 
@@ -37,7 +35,6 @@ WHEEL_Y_OFF = CAR_WID * 0.45
 #DRIFT_SENS      = 1/8000
 OVERSTEER       = 1.5/100
 #MAX_SPEED       = 1200.0
-WALL_RESTITUTION = 0.3
 #ANGLE_DAMP      = 25
 
 # Simple physics constants (default values, will be overridden by specs)
@@ -52,7 +49,6 @@ GRAVITY = 9.81
 ROLLING_RES_COEFF = 0.015  # typical car tire rolling resistance coefficient
 AERO_DRAG_COEFF = 0.005    # combined 0.5*rho*CdA scaling (tune to taste)
 BRAKE_DRAG_COEFF = 800.0    # body-level brake drag (opposes velocity)
-steering_multiplier = 1.0  # persistent understeer/oversteer steering state across frames
 
 def clamp(x, lo, hi):
     return lo if x < lo else hi if x > hi else x
@@ -217,7 +213,6 @@ class Car:
         self.palette_colors = specs_vals["PALETTE_COLORS"]
 
     def step(self, inputs, dt, players, bounds, compute_debug=False, cursor_follow=False, cam=None):        
-        global steering_multiplier
         # Load specs values using new format
         specs_vals = extract_specs_values(self.specs)
         CAR_LEN = specs_vals["CAR_LEN"]
@@ -285,9 +280,8 @@ class Car:
 
         # Understeer tuning from previous-frame front grip state.
         front_understeer = (self.has_grip[0] < 0.5) or (self.has_grip[1] < 0.5)
-        steering_multiplier = steering_multiplier * 0.95 if front_understeer else steering_multiplier * 1.05
-        steering_multiplier = min(1.0, max(0.2, steering_multiplier))
-        self.steering_multiplier = steering_multiplier
+        self.steering_multiplier = self.steering_multiplier * 0.95 if front_understeer else self.steering_multiplier * 1.05
+        self.steering_multiplier = min(1.0, max(0.2, self.steering_multiplier))
         #steering_input *= steering_multiplier
 
         # Drift angle/ratio (difference between velocity vector and heading)
@@ -317,7 +311,7 @@ class Car:
         if vel_dir_f > 0:
             wheel_steer_angle = -drift_angle*0.8* steer_bias
 
-        wheel_steer_angle += steering_input * MAX_STEER_ANGLE * steering_multiplier
+        wheel_steer_angle += steering_input * MAX_STEER_ANGLE * self.steering_multiplier
 
         fl_steer = fr_steer = wheel_steer_angle
         if TRANSMITION_SETUP == "AWDS":
@@ -482,30 +476,7 @@ class Car:
                 "aero_drag": (drag_x, drag_y),
                 "brake": (brake_x, brake_y),
             }
-        self._handle_track_bounds(dt, bounds)
 
-        # OBB vs OBB collisions with other cars (players dict contains x,y,a)
-        for pid, d in players.items():
-            if d["name"] == self.name:
-                continue
-            # Build oriented boxes for self and the other car
-            my_pts = self._obb_corners(self.x, self.y, self.angle)
-            other_pts = self._obb_corners(d["x"], d["y"], d.get("a", 0.0))
-            collides, mtv = self._sat_mtv(my_pts, other_pts, (self.x, self.y), (d["x"], d["y"]))
-            if collides:
-                # Push self out along MTV and damp velocity along the collision normal
-                nx, ny = mtv
-                self.x += nx
-                self.y += ny
-                # Reflect velocity along normal component with some restitution
-                n_len = math.hypot(nx, ny) or 1.0
-                nxn, nyn = nx / n_len, ny / n_len
-                v_dot_n = self.vx * nxn + self.vy * nyn
-                if v_dot_n < 0:
-                    # bounce component
-                    self.vx -= (1.0 + WALL_RESTITUTION) * v_dot_n * nxn
-                    self.vy -= (1.0 + WALL_RESTITUTION) * v_dot_n * nyn
-                
         ca, sa = math.cos(self.angle), math.sin(self.angle)
         halfL, halfW = CAR_LEN * 0.5, CAR_WID * 0.5
         pts = [(+halfL, +halfW),
@@ -528,98 +499,3 @@ class Car:
         self.drift_points = tuple(wheel_world_points)
 
     # wheel_debug already updated inside step above
-            
-    
-    def _handle_track_bounds(self, dt, bounds):
-        minx, maxx = TRACK_MARGIN, bounds[0] - TRACK_MARGIN
-        miny, maxy = TRACK_MARGIN, bounds[1] - TRACK_MARGIN
-        hit = False
-        if self.x < minx:
-            self.x = minx
-            self.vx = -self.vx * WALL_RESTITUTION
-            hit = True
-        if self.x > maxx:
-            self.x = maxx
-            self.vx = -self.vx * WALL_RESTITUTION
-            hit = True
-        if self.y < miny:
-            self.y = miny
-            self.vy = -self.vy * WALL_RESTITUTION
-            hit = True
-        if self.y > maxy:
-            self.y = maxy
-            self.vy = -self.vy * WALL_RESTITUTION
-            hit = True
-        if hit:
-            self.v_angle *= 0.5
-
-    # (wheel debug and world transform now computed directly inside step)
-
-    # --- OBB collision helpers (SAT) ---
-    def _obb_corners(self, cx, cy, ang):
-        ca, sa = math.cos(ang), math.sin(ang)
-        # Load car dimensions from specs and apply isometric perspective correction
-        specs_vals = extract_specs_values(self.specs)
-        car_len = specs_vals["CAR_LEN"]
-        car_wid = specs_vals["CAR_WID"]
-        
-        # Apply isometric perspective correction (1/√2 ≈ 0.707) for 45° rendering
-        # Then apply collision mesh scaling factors (0.7 for length, 0.5 for width)
-        hl = car_len * 0.7 * ISOMETRIC_CORRECTION
-        hw = car_wid * 0.5 * ISOMETRIC_CORRECTION
-        
-        local = [(+hl, +hw), (+hl, -hw), (-hl, -hw), (-hl, +hw)]
-        world = []
-        for px, py in local:
-            rx = px * ca - py * sa
-            ry = px * sa + py * ca
-            world.append((cx + rx, cy + ry))
-        return world
-
-    def _axes_from_polygon(self, pts):
-        axes = []
-        for i in range(len(pts)):
-            x1, y1 = pts[i]
-            x2, y2 = pts[(i + 1) % len(pts)]
-            # Edge vector
-            ex, ey = x2 - x1, y2 - y1
-            # Normalized perpendicular (axis)
-            nx, ny = -ey, ex
-            length = math.hypot(nx, ny) or 1.0
-            axes.append((nx / length, ny / length))
-        return axes
-
-    def _project(self, axis, pts):
-        ax, ay = axis
-        mins = maxs = pts[0][0] * ax + pts[0][1] * ay
-        for x, y in pts[1:]:
-            p = x * ax + y * ay
-            if p < mins: mins = p
-            if p > maxs: maxs = p
-        return mins, maxs
-
-    def _interval_overlap(self, a_min, a_max, b_min, b_max):
-        return min(a_max, b_max) - max(a_min, b_min)
-
-    def _sat_mtv(self, ptsA, ptsB, centerA, centerB):
-        # Gather axes from both polygons
-        axes = self._axes_from_polygon(ptsA) + self._axes_from_polygon(ptsB)
-        min_overlap = float('inf')
-        best_axis = (0.0, 0.0)
-        for ax in axes:
-            a_min, a_max = self._project(ax, ptsA)
-            b_min, b_max = self._project(ax, ptsB)
-            overlap = self._interval_overlap(a_min, a_max, b_min, b_max)
-            if overlap <= 0:
-                return False, (0.0, 0.0)
-            if overlap < min_overlap:
-                min_overlap = overlap
-                best_axis = ax
-        # Direction from A to B to orient the MTV
-        dirABx = centerB[0] - centerA[0]
-        dirABy = centerB[1] - centerA[1]
-        if best_axis[0] * dirABx + best_axis[1] * dirABy < 0:
-            best_axis = (-best_axis[0], -best_axis[1])
-        # MTV for A to move out of B
-        mtv = (-best_axis[0] * min_overlap, -best_axis[1] * min_overlap)
-        return True, mtv

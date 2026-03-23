@@ -78,7 +78,7 @@ def draw_car(surface, x, y, angle, name,
             sprite_size = (car_sprite[sprite_index].get_width(), car_sprite[sprite_index].get_height())
             surface.blit(car_sprite[sprite_index], (int(x - sprite_size[0] // 2), int(y - sprite_size[1] // 2)))
     
-    # Draw oriented collision rectangle overlay
+    # Calculate car corner points for tire mark drawing
     ca, sa = math.cos(angle), math.sin(angle)
     halfL, halfW = CAR_LEN * 0.7, CAR_WID * 0.5
     pts_local = [(+halfL, +halfW), (+halfL, -halfW), (-halfL, -halfW), (-halfL, +halfW)]
