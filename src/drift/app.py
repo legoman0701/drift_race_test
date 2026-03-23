@@ -526,7 +526,8 @@ def main():
                 I_AM_HOST = True  # set host flag for CLI host mode
             else:
                 raise Exception("no join_ok")
-        except Exception:
+        except Exception as e:
+            print(f"Failed to connect to relay - starting in offline mode: {e!r}")
             # Offline fallback
             sock = None
             code = "Offline"
@@ -559,7 +560,8 @@ def main():
                 I_AM_HOST = False  # set host flag for CLI join mode
             else:
                 raise Exception("no join_ok")
-        except Exception:
+        except Exception as e:
+            print(f"Failed to connect to relay - starting in offline mode: {e!r}")
             # Offline fallback
             sock = None
             code = "Offline"
@@ -714,7 +716,9 @@ def main():
                     cam.zoom = 1.0
                 print(f"Fullscreen mode {'enabled' if is_fullscreen else 'disabled'}")
             if ev.type == pygame.KEYDOWN and ev.key == const.AI_KEY: # N to add AI car
-                if I_AM_HOST and stage1 in ["game", "mode1", "mode2"] and stage2 == "":
+                _max_p = game_mode.max_players if game_mode else 6
+                _total_players = 1 + len(remotes) + len(ai_cars)
+                if I_AM_HOST and stage1 in ["game", "mode1", "mode2"] and stage2 == "" and _total_players < _max_p:
                     # Randomly assign car type for AI cars
                     ai_car_type = random.choice(const.AVAILABLE_CARS)
                     ai_cars.append(
@@ -810,7 +814,9 @@ def main():
                 invalidate_palette_cache()  # Recalculate colored sprites for new car type
             if js.get_button(3) and time.time() - ctlr_btn3_time > 0.2: # Y to spawn ai car
                 ctlr_btn3_time = time.time()
-                if I_AM_HOST and stage1 in ["game", "mode1", "mode2"] and stage2 == "":
+                _max_p = game_mode.max_players if game_mode else 6
+                _total_players = 1 + len(remotes) + len(ai_cars)
+                if I_AM_HOST and stage1 in ["game", "mode1", "mode2"] and stage2 == "" and _total_players < _max_p:
                     # Randomly assign car type for AI cars
                     ai_car_type = random.choice(const.AVAILABLE_CARS)
                     ai_cars.append(
@@ -875,12 +881,13 @@ def main():
             if game_mode is not None and net_result.get("race_results"):
                 game_mode.apply_network_results(net_result["race_results"])
             err = net_result.get("error")
+            print(err) if err else None
             if err:
                 # Switch to offline on relay errors
                 try:
                     sock.close()
                 except Exception:
-                    pass
+                    print(f"Error closing socket after relay error: {err}")
                 sock = None
                 code = "Offline"
                 remotes.clear()

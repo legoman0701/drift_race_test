@@ -94,6 +94,7 @@ class SimpleRace(BaseGameMode):
         self.cooldown_start = 0.0
         self.cooldown_duration = 5.0 # seconds
         self.max_time = 120.0 # seconds (2 min race time limit)
+        self.max_players = 6
 
         # Optional spawn coordinates from map_meta.json -> "start"
         # expected format: [{"x":..., "y":..., "a":...}, ...]
