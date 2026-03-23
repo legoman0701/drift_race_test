@@ -3,7 +3,8 @@
     "metadata": {
         "year": 1983,
         "manufacturer": "Toyota",
-        "model": "Sprinter Trueno GT-APEX",
+        "model": "AE86 Sprinter Trueno GT-APEX",
+        "short": "AE86",
         "country": "Japan"
     },
     "specs": {

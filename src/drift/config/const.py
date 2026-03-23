@@ -2,7 +2,7 @@ import pygame, string, math
 from drift.tools.paths import get_available_cars
 
 # ======= APPLICATION INFO =======
-VERSION = "0.7_dev"
+VERSION = "0.7_alpha"
 
 # ======= NETWORK =======
 RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
@@ -83,6 +83,8 @@ for car in AVAILABLE_CARS:
             f"cars/{car}/Palette/Image{{i:04}}.png"
         ]
     },
+DEFAULT_CAR_ID = "ae86"
+DEFAULT_CAR_NAME = "AE86"
 
 # ======= CONTROLS =======
 # Menu controls

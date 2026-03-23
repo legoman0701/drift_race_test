@@ -4,6 +4,7 @@
         "year": 1970,
         "manufacturer": "Plymouth",
         "model": "Barracuda 440",
+        "short": "Barracuda",
         "country": "USA"
     },
     "specs": {

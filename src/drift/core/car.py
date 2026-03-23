@@ -162,7 +162,7 @@ def get_car_engine_sound_id(car_type: str) -> str:
     return str(specs.get("engine", {}).get("sound_id", "v8"))
 
 class Car:
-    def __init__(self, x, y, name, is_ai=False, car_type="ae86"):
+    def __init__(self, x, y, name, is_ai=False, car_type="ae86", car_name="AE86"):
         self.x, self.y = float(x), float(y)
         self.vx, self.vy = 0.0, 0.0
         self.angle = 0.0
@@ -171,6 +171,7 @@ class Car:
         self.drift_ratio = 0.0
         self.is_ai = is_ai
         self.car_type = car_type
+        self.car_name = car_name
         self.drift_points = [(0,0),(0,0),(0,0),(0,0)]
         self.drift_points_old = [(0,0),(0,0),(0,0),(0,0)]
         self.has_grip = (1.0, 1.0, 1.0, 1.0)  # wheel grip coefficient (FL, FR, RL, RR)

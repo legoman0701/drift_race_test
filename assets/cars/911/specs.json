@@ -4,6 +4,7 @@
         "year": 1981,
         "manufacturer": "Porsche",
         "model": "911 SC",
+        "short": "911 SC",
         "country": "Germany"
     },
     "specs": {
