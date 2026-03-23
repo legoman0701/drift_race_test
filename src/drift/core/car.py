@@ -54,6 +54,51 @@ def clamp(x, lo, hi):
     return lo if x < lo else hi if x > hi else x
 
 
+def _point_in_polygon(px, py, polygon):
+    """Ray-casting point-in-polygon test."""
+    n = len(polygon)
+    inside = False
+    j = n - 1
+    for i in range(n):
+        xi, yi = polygon[i]
+        xj, yj = polygon[j]
+        if ((yi > py) != (yj > py)) and (px < (xj - xi) * (py - yi) / (yj - yi) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+
+def _wall_pushout(px, py, polygon):
+    """If point is inside polygon, return (push_x, push_y, depth) toward nearest edge.
+    Returns (0, 0, 0) if outside."""
+    if not _point_in_polygon(px, py, polygon):
+        return 0.0, 0.0, 0.0
+    n = len(polygon)
+    min_dist_sq = float('inf')
+    nearest_x, nearest_y = px, py
+    for i in range(n):
+        x1, y1 = polygon[i]
+        x2, y2 = polygon[(i + 1) % n]
+        ex, ey = x2 - x1, y2 - y1
+        edge_len_sq = ex * ex + ey * ey
+        if edge_len_sq < 1e-8:
+            continue
+        t = max(0.0, min(1.0, ((px - x1) * ex + (py - y1) * ey) / edge_len_sq))
+        cx = x1 + t * ex
+        cy = y1 + t * ey
+        dx, dy = px - cx, py - cy
+        d_sq = dx * dx + dy * dy
+        if d_sq < min_dist_sq:
+            min_dist_sq = d_sq
+            nearest_x, nearest_y = cx, cy
+    dx = nearest_x - px
+    dy = nearest_y - py
+    depth = math.sqrt(dx * dx + dy * dy)
+    if depth < 1e-6:
+        return 0.0, 0.0, 0.0
+    return dx, dy, depth
+
+
 def extract_specs_values(specs: dict) -> dict:
     """Extract physics values from new specs format with fallback to defaults."""
     try:
@@ -194,7 +239,25 @@ class Car:
         )
         self.engine_sound_id = specs_vals["ENGINE_SOUND_ID"]
         self.palette_colors = specs_vals["PALETTE_COLORS"]
-        
+        self._init_spring_points(specs_vals)
+
+    def _init_spring_points(self, specs_vals=None):
+        """Create spring collision points around the car perimeter (local frame)."""
+        if specs_vals is None:
+            specs_vals = extract_specs_values(self.specs)
+        halfL = specs_vals["CAR_LEN"] * 0.5
+        halfW = specs_vals["CAR_WID"] * 0.5
+        self.spring_points_local = [
+            (+halfL, +halfW),
+            (+halfL, 0.0),
+            (+halfL, -halfW),
+            (0.0,    -halfW),
+            (-halfL, -halfW),
+            (-halfL, 0.0),
+            (-halfL, +halfW),
+            (0.0,    +halfW),
+        ]
+
     def set_car_type(self, car_type):
         """Change car type at runtime and reload specs."""
         self.car_type = car_type
@@ -211,8 +274,9 @@ class Car:
         )
         self.engine_sound_id = specs_vals["ENGINE_SOUND_ID"]
         self.palette_colors = specs_vals["PALETTE_COLORS"]
+        self._init_spring_points(specs_vals)
 
-    def step(self, inputs, dt, players, bounds, compute_debug=False, cursor_follow=False, cam=None):        
+    def step(self, inputs, dt, players, bounds, compute_debug=False, cursor_follow=False, cam=None, collision_mesh=None):        
         # Load specs values using new format
         specs_vals = extract_specs_values(self.specs)
         CAR_LEN = specs_vals["CAR_LEN"]
@@ -440,6 +504,65 @@ class Car:
             total_force_world_x += rolling_x + drag_x + brake_x
             total_force_world_y += rolling_y + drag_y + brake_y
 
+        # Spring-based collision forces from collision mesh
+        spring_debug = []
+        if collision_mesh:
+            SPRING_K = 100.0
+            SPRING_DAMP = 0.0
+            for lx, ly in self.spring_points_local:
+                # Transform local rest position to world
+                wx = self.x + lx * forward_x - ly * forward_y
+                wy = self.y + lx * forward_y + ly * forward_x
+                displaced_x, displaced_y = wx, wy
+                for polygon in collision_mesh:
+                    if len(polygon) < 3:
+                        continue
+                    push_x, push_y, depth = _wall_pushout(wx, wy, polygon)
+                    if depth > 0:
+                        # The displaced position is the nearest edge point
+                        displaced_x = wx + push_x
+                        displaced_y = wy + push_y
+                        # Spring force pushes car away from wall
+                        fx = SPRING_K * push_x
+                        fy = SPRING_K * push_y
+                        # Damping: oppose velocity along push direction
+                        nx = push_x / depth
+                        ny = push_y / depth
+                        v_normal = self.vx * nx + self.vy * ny
+                        fx -= SPRING_DAMP * v_normal * nx
+                        fy -= SPRING_DAMP * v_normal * ny
+                        total_force_world_x += fx
+                        total_force_world_y += fy
+                        # Torque from collision force at spring point
+                        rx = lx * forward_x - ly * forward_y
+                        ry = lx * forward_y + ly * forward_x
+                        total_torque_z += rx * fy - ry * fx
+                spring_debug.append((wx, wy, displaced_x, displaced_y))
+        self.spring_debug = spring_debug
+
+        # World-edge spring forces
+        if bounds and len(bounds) >= 2:
+            world_w, world_h = bounds
+            EDGE_K = 100.0
+            for lx, ly in self.spring_points_local:
+                wx = self.x + lx * forward_x - ly * forward_y
+                wy = self.y + lx * forward_y + ly * forward_x
+                rx = lx * forward_x - ly * forward_y
+                ry = lx * forward_y + ly * forward_x
+                efx, efy = 0.0, 0.0
+                if wx < 0:
+                    efx = EDGE_K * -wx
+                elif wx > world_w:
+                    efx = EDGE_K * (world_w - wx)
+                if wy < 0:
+                    efy = EDGE_K * -wy
+                elif wy > world_h:
+                    efy = EDGE_K * (world_h - wy)
+                if efx != 0.0 or efy != 0.0:
+                    total_force_world_x += efx
+                    total_force_world_y += efy
+                    total_torque_z += rx * efy - ry * efx
+
         # Integrate linear motion
         accel_x = total_force_world_x / MASS
         accel_y = total_force_world_y / MASS
@@ -467,6 +590,91 @@ class Car:
 
         
         self.angle   += self.v_angle * dt
+
+        # Hard position correction: push car out if any spring point is still inside geometry
+        if collision_mesh:
+            ca2, sa2 = math.cos(self.angle), math.sin(self.angle)
+            inertia_z_corr = MASS * (CAR_LEN**2 + CAR_WID**2) / 12.0
+            RESTITUTION = 0.5  # 0 = no bounce, 1 = perfect bounce
+            for _iter in range(4):
+                worst_depth = 0.0
+                total_push_x, total_push_y = 0.0, 0.0
+                contacts = 0
+                contact_offsets = []  # (rx, ry) world-frame offsets from car center
+                for lx, ly in self.spring_points_local:
+                    wx = self.x + lx * ca2 - ly * sa2
+                    wy = self.y + lx * sa2 + ly * ca2
+                    for polygon in collision_mesh:
+                        if len(polygon) < 3:
+                            continue
+                        push_x, push_y, depth = _wall_pushout(wx, wy, polygon)
+                        if depth > 0:
+                            total_push_x += push_x
+                            total_push_y += push_y
+                            contacts += 1
+                            contact_offsets.append((lx * ca2 - ly * sa2, lx * sa2 + ly * ca2))
+                            if depth > worst_depth:
+                                worst_depth = depth
+                if contacts == 0:
+                    break
+                avg_px = total_push_x / contacts
+                avg_py = total_push_y / contacts
+                avg_len = math.sqrt(avg_px * avg_px + avg_py * avg_py)
+                if avg_len < 1e-6:
+                    break
+                nx = avg_px / avg_len
+                ny = avg_py / avg_len
+                self.x += nx * worst_depth
+                self.y += ny * worst_depth
+                # Reflect velocity off the wall (bounce)
+                v_into = self.vx * nx + self.vy * ny
+                if v_into < 0:
+                    impulse_x = -(1.0 + RESTITUTION) * v_into * nx
+                    impulse_y = -(1.0 + RESTITUTION) * v_into * ny
+                    self.vx += impulse_x
+                    self.vy += impulse_y
+                    # Angular impulse: sum of r x J for each contact point
+                    ang_impulse = 0.0
+                    for crx, cry in contact_offsets:
+                        ang_impulse += crx * impulse_y - cry * impulse_x
+                    self.v_angle += ang_impulse / max(1e-4, inertia_z_corr)
+
+        # Hard position correction for world edges
+        if bounds and len(bounds) >= 2:
+            world_w, world_h = bounds
+            ca2, sa2 = math.cos(self.angle), math.sin(self.angle)
+            inertia_z_edge = MASS * (CAR_LEN**2 + CAR_WID**2) / 12.0
+            EDGE_REST = 0.3
+            for lx, ly in self.spring_points_local:
+                wx = self.x + lx * ca2 - ly * sa2
+                wy = self.y + lx * sa2 + ly * ca2
+                push_nx, push_ny, pen = 0.0, 0.0, 0.0
+                if wx < 0:
+                    push_nx, pen = 1.0, -wx
+                elif wx > world_w:
+                    push_nx, pen = -1.0, wx - world_w
+                if wy < 0:
+                    push_ny = 1.0
+                    pen = max(pen, -wy)
+                elif wy > world_h:
+                    push_ny = -1.0
+                    pen = max(pen, wy - world_h)
+                if pen > 0:
+                    plen = math.sqrt(push_nx * push_nx + push_ny * push_ny)
+                    if plen > 1e-6:
+                        push_nx /= plen
+                        push_ny /= plen
+                    self.x += push_nx * pen
+                    self.y += push_ny * pen
+                    v_into = self.vx * push_nx + self.vy * push_ny
+                    if v_into < 0:
+                        imp_x = -(1.0 + EDGE_REST) * v_into * push_nx
+                        imp_y = -(1.0 + EDGE_REST) * v_into * push_ny
+                        self.vx += imp_x
+                        self.vy += imp_y
+                        crx = lx * ca2 - ly * sa2
+                        cry = lx * sa2 + ly * ca2
+                        self.v_angle += (crx * imp_y - cry * imp_x) / max(1e-4, inertia_z_edge)
 
         # Save wheel debug for renderer (including body-level forces) - only if computed
         if compute_debug:

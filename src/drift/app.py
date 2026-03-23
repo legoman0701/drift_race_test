@@ -580,6 +580,7 @@ def main():
     path_poly = []
     checkpoints = []
     game_mode = None           # active BaseGameMode instance (SimpleRace, etc.)
+    _collision_mesh = []       # collision polygons from map_meta.json
     _prev_stage1 = "lobby"     # detect stage1 transitions
     _return_btn_rect = None    # leaderboard button rect from previous frame
     _local_result_sent = False
@@ -1031,9 +1032,13 @@ def main():
                         _meta = json.load(fh)
                     _start_grid = _meta.get("start", []) or []
                     _lines = _meta.get("lines", []) or []
+                    _collision_mesh = _meta.get("collision_mesh", []) or []
                 except Exception:
                     _start_grid = []
                     _lines = []
+                    _collision_mesh = []
+
+                renderer.collision_mesh = _collision_mesh
 
                 game_mode = SimpleRace(renderer.checkpoints or [], total_laps=1, start_grid=_start_grid, lines=_lines, local_player_id=my_id) # here to change the number of laps
                 _local_result_sent = False
@@ -1122,7 +1127,7 @@ def main():
                 my_car.vx, my_car.vy = 0.0, 0.0
                 my_car.v_angle = 0.0
             else:
-                my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG, cursor_follow=const.CURSOR_FOLLOW, cam=cam)
+                my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG, cursor_follow=const.CURSOR_FOLLOW, cam=cam, collision_mesh=_collision_mesh)
 #                 my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG, cursor_follow=const.CURSOR_FOLLOW, cam=cam)
             # Update engine audio based on RPM and throttle with enhanced drift characteristics
             try:
@@ -1172,7 +1177,7 @@ def main():
                         ai.vx, ai.vy = 0.0, 0.0
                         ai.v_angle = 0.0
                     else:
-                        ai.step(ai_algorithme(path_poly, ai), dt, remotes_with_ai_for_ais, world_size, compute_debug=const.DEBUG)
+                        ai.step(ai_algorithme(path_poly, ai), dt, remotes_with_ai_for_ais, world_size, compute_debug=const.DEBUG, collision_mesh=_collision_mesh)
             cam.update(my_car, world_size)
             profiler.end("physics")
         else:
