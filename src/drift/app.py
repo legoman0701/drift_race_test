@@ -954,7 +954,11 @@ def main():
         # Update active game mode
         mode_result = {}
         if game_mode is not None and stage1 in ["mode1", "mode2", "leaderboard"]:
-            mode_result = game_mode.update(dt, remotes, my_car, I_AM_HOST)
+            # Build a players dict that includes both network remotes and AI cars
+            _mode_players_update = dict(remotes)
+            for i, ai in enumerate(ai_cars, start=1):
+                _mode_players_update[f"AI-{i}"] = ai
+            mode_result = game_mode.update(dt, _mode_players_update, my_car, I_AM_HOST)
             local_finish_time = game_mode.get_local_finish_time()
             if (local_finish_time is not None and not _local_result_sent and sock and code and code != "Offline"):
                 try:
