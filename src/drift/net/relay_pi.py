@@ -179,7 +179,8 @@ def loop():
             if code in rooms:
                 sendto_json(sock, addr, {"t":"error","msg":"room_already_exists"}); continue
             evict_from_other_rooms(code, addr, pid)
-            room = {"clients": {}, "states": {}, "results": {}, "host_addr": addr, "host_id": pid, "host_name": name, "mode": mode, "track": track, "race_started": False, "last_broadcast": 0.0, "dirty": True}
+            max_players = max(1, min(int(msg.get("max_players", 6)), 16))
+            room = {"clients": {}, "states": {}, "results": {}, "host_addr": addr, "host_id": pid, "host_name": name, "mode": mode, "track": track, "max_players": max_players, "race_started": False, "last_broadcast": 0.0, "dirty": True}
             rooms[code] = room
             room["clients"][addr] = {"id": pid, "name": name, "car_type": car_type, "last": now}
             room["states"].setdefault(pid, {"x": 500, "y": 350, "a": 0.0, "vx": 0.0, "vy": 0.0, "name": name, "has_grip": [1.0, 1.0, 1.0, 1.0], "car_type": car_type})
@@ -200,13 +201,15 @@ def loop():
                 sendto_json(sock, addr, {"t":"error","msg":"room_not_found"}); continue
             if room.get("race_started"):
                 sendto_json(sock, addr, {"t":"error","msg":"race_in_progress"}); continue
+            if len(room["states"]) >= room.get("max_players", 6):
+                sendto_json(sock, addr, {"t":"error","msg":"room_full"}); continue
             evict_from_other_rooms(code, addr, pid)
             room["clients"][addr] = {"id": pid, "name": name, "last": now, "car_type": car_type}
             room["states"].setdefault(pid, {"x": 500, "y": 350, "a": 0.0, "vx": 0.0, "vy": 0.0, "name": name, "has_grip": [1.0, 1.0, 1.0, 1.0], "car_type": car_type})
             room["dirty"] = True
             # Send host_name and track from room data
             host_name = room.get("host_name", "no_host")
-            player_count = len(room["clients"])
+            player_count = len(room["states"])
             print(f"[relay] {name!r} (id={pid}) joined room {code!r} | players in room: {player_count}")
             sendto_json(sock, addr, {"t":"join_ok", "code": code, "host_name": host_name, "track": room.get("track", "track1")})
             broadcast_world(sock, code, room)
@@ -302,7 +305,7 @@ def loop():
                 room["results"] = {}
 
             room["dirty"] = True
-            player_count = len(room["clients"])
+            player_count = len(room["states"])
             print(f"[relay] Race started in room {code!r} | mode={requested_mode} track={room.get('track','track1')} players={player_count}")
             start_msg = {"t": "start_race", "code": code, "mode": requested_mode, "track": room.get("track", "track1")}
             for caddr in list(room["clients"].keys()):
