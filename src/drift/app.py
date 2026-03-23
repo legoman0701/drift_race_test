@@ -552,8 +552,7 @@ def main():
     # Fullscreen state tracking
     is_fullscreen = False
 
-    default_car = const.AVAILABLE_CARS[0] if const.AVAILABLE_CARS else "AE86"
-    default_engine_sound_id = get_car_engine_sound_id(default_car)
+    default_engine_sound_id = get_car_engine_sound_id(const.DEFAULT_CAR_ID)
     
     # Show loading screen and load assets
     loaded_assets = load_assets_with_progress(screen, clock, default_engine_sound_id, gpu_display)
@@ -596,7 +595,7 @@ def main():
 
     spawnx = random.uniform(const.WINDOW_WIDTH*0.3, const.WINDOW_WIDTH*0.7)
     spawny = random.uniform(const.WINDOW_HEIGHT*0.3, const.WINDOW_HEIGHT*0.7)
-    my_car = car.Car(spawnx, spawny, my_name, is_ai=False, car_type=default_car)
+    my_car = car.Car(spawnx, spawny, my_name, is_ai=False, car_type=const.DEFAULT_CAR_ID, car_name=const.DEFAULT_CAR_NAME)
     current_engine_sound_id = my_car.engine_sound_id
     # Set palette colors from car specs
     set_palette_colors_from_car(my_car.palette_colors)

@@ -4,6 +4,7 @@
         "year": 1999,
         "manufacturer": "Nissan",
         "model": "Skyline GTR R34",
+        "short": "GTR R34",
         "country": "Japan"
     },
     "specs": {

@@ -82,12 +82,12 @@ def _load_car_specs(car_type):
         with open(spec_path, "r", encoding="utf-8") as fh:
             specs = json.load(fh)
         metadata = specs.get("metadata", {}) or {}
-        manufacturer = metadata.get("manufacturer", specs.get("manufacturer", "Unknown"))
-        model = metadata.get("model", specs.get("model", "Unknown"))
-        return manufacturer, model
+        # manufacturer = metadata.get("manufacturer", specs.get("manufacturer", "Unknown"))
+        model = metadata.get("short", specs.get("short", "Unknown"))
+        return model
     except Exception as e:
         print(f"Warning: Could not load specs for {car_type}: {e}")
-        return "Unknown", "Unknown"
+        return "Unknown"
 
 
 def _init_palette_for_selected_car(car_type, force=False):
@@ -385,8 +385,8 @@ def _draw_rotating_car(ui_surf, car_id, rect, font_medium, car_sprites_cache, ro
                          palette_colors=get_palette_colors())
     
     # draw car's name
-    manufacturer, model = _load_car_specs(car_id)
-    text_surf = font_medium.render(f"{manufacturer} {model}", True, const.WHITE_240)
+    model = _load_car_specs(car_id)
+    text_surf = font_medium.render(f"{model}", True, const.WHITE_240)
     text_x = rect.centerx - text_surf.get_width() // 2
     text_y = rect.top + text_surf.get_height() - 5
     ui_surf.blit(text_surf, (text_x, text_y))
