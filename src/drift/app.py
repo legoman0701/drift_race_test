@@ -1109,7 +1109,7 @@ def main():
             if I_AM_HOST:
                 for i, ai in enumerate(ai_cars, start=1):
                     key = f"AI-{i}"
-                    remotes_with_ai_for_player[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "drift_ratio": ai.drift_ratio, "name": ai.name}
+                    remotes_with_ai_for_player[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "vx": ai.vx, "vy": ai.vy, "drift_ratio": ai.drift_ratio, "name": ai.name}
                     
             # Update player car using remotes that include AIs
             # If AI path mode is enabled and a path is available, let the AI drive the player
@@ -1165,10 +1165,10 @@ def main():
             
             if I_AM_HOST:
                 # add local player under a distinct key so AIs see it
-                remotes_with_ai_for_ais[f"PLAYER-{my_id}"] = {"x": my_car.x, "y": my_car.y, "a": my_car.angle, "drift_ratio": my_car.drift_ratio, "name": my_car.name}
+                remotes_with_ai_for_ais[f"PLAYER-{my_id}"] = {"x": my_car.x, "y": my_car.y, "a": my_car.angle, "vx": my_car.vx, "vy": my_car.vy, "drift_ratio": my_car.drift_ratio, "name": my_car.name}
                 for i, ai in enumerate(ai_cars, start=1):
                     key = f"AI-{i}"
-                    remotes_with_ai_for_ais[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "drift_ratio": ai.drift_ratio, "name": ai.name}
+                    remotes_with_ai_for_ais[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "vx": ai.vx, "vy": ai.vy, "drift_ratio": ai.drift_ratio, "name": ai.name}
                 
             # Step AIs (each AI sees other AIs + network remotes + the player)
             if I_AM_HOST:

@@ -540,6 +540,57 @@ class Car:
                 spring_debug.append((wx, wy, displaced_x, displaced_y))
         self.spring_debug = spring_debug
 
+        # Player-to-player collision (spring-based, half-force for desync fairness)
+        if players:
+            P2P_K = 150.0
+            P2P_DAMP = 5.0
+            # Default half-extents for other players (no specs available for remotes)
+            other_halfL = CAR_LEN * 0.5
+            other_halfW = CAR_WID * 0.5
+            other_corners_local = [
+                (+other_halfL, +other_halfW),
+                (+other_halfL, -other_halfW),
+                (-other_halfL, -other_halfW),
+                (-other_halfL, +other_halfW),
+            ]
+            for pid, pdata in players.items():
+                ox = pdata.get("x", 0.0)
+                oy = pdata.get("y", 0.0)
+                oa = pdata.get("a", 0.0)
+                # Skip if too far (broad phase)
+                dx_broad = self.x - ox
+                dy_broad = self.y - oy
+                if dx_broad * dx_broad + dy_broad * dy_broad > (CAR_LEN + other_halfL * 2) ** 2:
+                    continue
+                # Build other player's world-space polygon
+                oca, osa = math.cos(oa), math.sin(oa)
+                other_poly = []
+                for clx, cly in other_corners_local:
+                    other_poly.append((ox + clx * oca - cly * osa,
+                                       oy + clx * osa + cly * oca))
+                # Test each of our spring points against their body
+                for lx, ly in self.spring_points_local:
+                    wx = self.x + lx * forward_x - ly * forward_y
+                    wy = self.y + lx * forward_y + ly * forward_x
+                    push_x, push_y, depth = _wall_pushout(wx, wy, other_poly)
+                    if depth > 0:
+                        nx = push_x / depth
+                        ny = push_y / depth
+                        # Half force: each player computes their own half
+                        fx = 0.5 * P2P_K * push_x
+                        fy = 0.5 * P2P_K * push_y
+                        # Relative velocity damping
+                        ovx = pdata.get("vx", 0.0)
+                        ovy = pdata.get("vy", 0.0)
+                        rel_vn = (self.vx - ovx) * nx + (self.vy - ovy) * ny
+                        fx -= 0.5 * P2P_DAMP * rel_vn * nx
+                        fy -= 0.5 * P2P_DAMP * rel_vn * ny
+                        total_force_world_x += fx
+                        total_force_world_y += fy
+                        rx = lx * forward_x - ly * forward_y
+                        ry = lx * forward_y + ly * forward_x
+                        total_torque_z += rx * fy - ry * fx
+
         # World-edge spring forces
         if bounds and len(bounds) >= 2:
             world_w, world_h = bounds
@@ -675,6 +726,53 @@ class Car:
                         crx = lx * ca2 - ly * sa2
                         cry = lx * sa2 + ly * ca2
                         self.v_angle += (crx * imp_y - cry * imp_x) / max(1e-4, inertia_z_edge)
+
+        # Hard position correction for player-to-player overlap (half push for desync fairness)
+        if players:
+            ca2, sa2 = math.cos(self.angle), math.sin(self.angle)
+            inertia_z_p2p = MASS * (CAR_LEN**2 + CAR_WID**2) / 12.0
+            P2P_REST = 0.3
+            other_halfL = CAR_LEN * 0.5
+            other_halfW = CAR_WID * 0.5
+            other_corners_local = [
+                (+other_halfL, +other_halfW),
+                (+other_halfL, -other_halfW),
+                (-other_halfL, -other_halfW),
+                (-other_halfL, +other_halfW),
+            ]
+            for pid, pdata in players.items():
+                ox = pdata.get("x", 0.0)
+                oy = pdata.get("y", 0.0)
+                oa = pdata.get("a", 0.0)
+                dx_broad = self.x - ox
+                dy_broad = self.y - oy
+                if dx_broad * dx_broad + dy_broad * dy_broad > (CAR_LEN + other_halfL * 2) ** 2:
+                    continue
+                oca, osa = math.cos(oa), math.sin(oa)
+                other_poly = [(ox + clx * oca - cly * osa, oy + clx * osa + cly * oca)
+                              for clx, cly in other_corners_local]
+                for lx, ly in self.spring_points_local:
+                    wx = self.x + lx * ca2 - ly * sa2
+                    wy = self.y + lx * sa2 + ly * ca2
+                    push_x, push_y, depth = _wall_pushout(wx, wy, other_poly)
+                    if depth > 0:
+                        plen = math.sqrt(push_x * push_x + push_y * push_y)
+                        if plen < 1e-6:
+                            continue
+                        nx = push_x / plen
+                        ny = push_y / plen
+                        # Push out only half — other player pushes their half
+                        self.x += nx * depth * 0.5
+                        self.y += ny * depth * 0.5
+                        v_into = self.vx * nx + self.vy * ny
+                        if v_into < 0:
+                            imp_x = -(1.0 + P2P_REST) * v_into * nx * 0.5
+                            imp_y = -(1.0 + P2P_REST) * v_into * ny * 0.5
+                            self.vx += imp_x
+                            self.vy += imp_y
+                            crx = lx * ca2 - ly * sa2
+                            cry = lx * sa2 + ly * ca2
+                            self.v_angle += (crx * imp_y - cry * imp_x) / max(1e-4, inertia_z_p2p)
 
         # Save wheel debug for renderer (including body-level forces) - only if computed
         if compute_debug:
