@@ -14,7 +14,7 @@ from drift.ui.draw_stage import (
     handle_controls_click, handle_controls_keypress, draw_game,
     get_game_setup, reset_game_setup, set_error_message, clear_error_message,
     handle_palette_picker_click, handle_palette_picker_keypress,
-    draw_color_palette_picker
+    draw_color_palette_picker, poll_connection
 )
 from drift.config.settings import settings_manager
 
@@ -27,10 +27,86 @@ _palette_picker_rects_cache = None # palette picker rects cache
 _game_rects_cache = None # game rects cache
 _controls_rects_cache = None # controls rects cache
 
+# Pending network connection (non-blocking state machine)
+_pending_conn = None  # dict from host_new_game/join_new_game, or None
+_pending_conn_context = None  # ("host"|"join", setup, is_host_flag_ref, my_car ref)
+
 def invalidate_palette_cache():
     """Clear the palette color sprite cache so changes are visible immediately."""
     global _palette_cache
     _palette_cache.clear()
+
+
+def _start_host_connection(my_id, setup, my_car, is_host_flag_ref):
+    """Initiate a non-blocking host connection."""
+    global _pending_conn, _pending_conn_context
+    _pending_conn = host_new_game(my_id)
+    _pending_conn_context = ("host", setup, is_host_flag_ref, my_car)
+    # If already done (immediate offline fallback), don't set connecting message
+    if _pending_conn.get("status") == "done":
+        return  # will be applied in poll_pending_connection
+    set_error_message("Connecting...")
+
+
+def _start_join_connection(my_id, setup, my_car, is_host_flag_ref):
+    """Initiate a non-blocking join connection."""
+    global _pending_conn, _pending_conn_context
+    _pending_conn = join_new_game(my_id)
+    _pending_conn_context = ("join", setup, is_host_flag_ref, my_car)
+    if _pending_conn.get("status") == "done":
+        return
+    set_error_message("Connecting...")
+
+
+def poll_pending_connection():
+    """Poll the pending connection each frame. Returns updated (stage1, stage2, sock, code, my_name, is_host, host_name, error, track_image, chunked_map, checkpoints) or None if nothing pending/resolved."""
+    global _pending_conn, _pending_conn_context
+    if _pending_conn is None:
+        return None
+
+    if _pending_conn.get("status") == "pending":
+        poll_connection(_pending_conn)
+
+    if _pending_conn.get("status") != "done":
+        return None
+
+    conn = _pending_conn
+    ctx = _pending_conn_context
+    _pending_conn = None
+    _pending_conn_context = None
+
+    mode, setup, is_host_flag_ref, my_car = ctx
+    result = conn["result"]
+    clear_error_message()
+
+    if mode == "host":
+        # result: ("game", my_name, code, sock, is_host, host_name, track_image, chunked_map, _cp_rects)
+        stage1, my_name, code, sock, is_host, host_name, track_image, chunked_map, checkpoints = result
+        is_host_flag_ref[0] = is_host
+        my_car.name = my_name
+        my_car.set_car_type(setup["selected_car"])
+        invalidate_palette_cache()
+        my_car.x = const.WINDOW_WIDTH // 2
+        my_car.y = const.WINDOW_HEIGHT // 2
+        return (stage1, "", sock, code, my_name, is_host, host_name, None, track_image, chunked_map, checkpoints)
+    else:
+        # result: ("game"|"lobby", my_name, code, sock, is_host, host_name, error, track_image, chunked_map, _cp_rects)
+        stage1, my_name, code, sock, is_host, host_name, error, track_image, chunked_map, checkpoints = result
+        is_host_flag_ref[0] = is_host
+        if error:
+            set_error_message(error)
+            return None  # stay in lobby, error shown
+        my_car.name = my_name
+        my_car.set_car_type(setup["selected_car"])
+        invalidate_palette_cache()
+        my_car.x = const.WINDOW_WIDTH // 2
+        my_car.y = const.WINDOW_HEIGHT // 2
+        return (stage1, "", sock, code, my_name, is_host, host_name, error, track_image, chunked_map, checkpoints)
+
+
+def has_pending_connection():
+    """Check if a connection attempt is in progress."""
+    return _pending_conn is not None
 
 def draw_car(surface, x, y, angle, name,
              color_body=const.COLOR_BODY_DEFAULT,
@@ -476,6 +552,12 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
     """Handle game events including new game UI interactions."""
     global _new_game_rects_cache, _palette_picker_rects_cache
     
+    # Poll pending non-blocking connection each frame
+    conn_result = poll_pending_connection()
+    if conn_result is not None:
+        stage1, stage2, sock, code, my_name, is_host, host_name, _err, track_image, chunked_map, checkpoints = conn_result
+        is_host_flag_ref[0] = is_host
+    
     if ev.type == pygame.KEYDOWN: # press a key
         if stage1 == "lobby": # in lobby
             if stage2 == "": # main lobby
@@ -501,35 +583,21 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                 if ev.key == const.ESCAPE_KEY: # esc
                     stage2 = "" # go back to lobby
                     reset_game_setup()
-                if ev.key in const.RETURN_KEYS:
+                if ev.key in const.RETURN_KEYS and not has_pending_connection():
                     setup = get_game_setup()
-                    stage1, my_name, code, sock, is_host, host_name, track_image, chunked_map, checkpoints = host_new_game(my_id) # keyboard press
-                    stage2 = "" # Close new_game UI
-                    is_host_flag_ref[0] = is_host
-                    my_car.name = my_name # update car with new name
-                    my_car.set_car_type(setup["selected_car"]) # update car selected car type
-                    invalidate_palette_cache()  # Reset sprite cache for newly selected car
-                    my_car.x = const.WINDOW_WIDTH // 2
-                    my_car.y = const.WINDOW_HEIGHT // 2
+                    _start_host_connection(my_id, setup, my_car, is_host_flag_ref)
             elif stage2 == "join_game": # joining game
                 handle_join_game_keypress(ev)
                 if ev.key == const.ESCAPE_KEY: # esc to go back to lobby
                     stage2 = ""
                     reset_game_setup()
-                if ev.key in const.RETURN_KEYS:
+                if ev.key in const.RETURN_KEYS and not has_pending_connection():
                     setup = get_game_setup()
                     if not setup["room_code"]: set_error_message("room code missing")
                     elif len(setup["room_code"]) < 4: set_error_message("room code too short")
-                    else: # Only proceed if username is entered
+                    else:
                         clear_error_message()
-                        stage1, my_name, code, sock, is_host, host_name, error, track_image, chunked_map, checkpoints = join_new_game(my_id) # keyboard press
-                        is_host_flag_ref[0] = is_host
-                        if error: set_error_message(error)
-                        else:
-                            stage2 = "" # Close new_game UI
-                            my_car.name = my_name # update car with new name
-                            my_car.set_car_type(setup["selected_car"]) # update car selected car type                            invalidate_palette_cache()  # Reset sprite cache for newly selected car                            my_car.x = const.WINDOW_WIDTH // 2
-                            my_car.y = const.WINDOW_HEIGHT // 2
+                        _start_join_connection(my_id, setup, my_car, is_host_flag_ref)
         elif stage1 in ["game", "mode1", "mode2", "leaderboard"]: # in game
             if stage2 == "" and ev.key == const.ESCAPE_KEY: 
                 stage2 = "settings" # open settings
@@ -570,31 +638,15 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
         if stage1 == "lobby" and stage2 == "new_game" and _new_game_rects_cache:
             action = handle_new_game_click(ev.pos, _new_game_rects_cache)
             
-            if action == "host_game":
-                # Get game setup and start hosting
+            if action == "host_game" and not has_pending_connection():
                 setup = get_game_setup()
-                stage1, my_name, code, sock, is_host, host_name, track_image, chunked_map, checkpoints = host_new_game(my_id) # mouse click
-                is_host_flag_ref[0] = is_host
-                stage2 = ""  # Close new_game UI
-                
-                # Update car with new name and selected car type
-                my_car.name = my_name
-                my_car.set_car_type(setup["selected_car"])
-                invalidate_palette_cache() # Reset sprite cache for newly selected car
+                _start_host_connection(my_id, setup, my_car, is_host_flag_ref)
         elif stage1 == "lobby" and stage2 == "join_game" and _join_game_rects_cache:
             action = handle_join_game_click(ev.pos, _join_game_rects_cache)
 
-            if action == "join_game":
-                # Get game setup and start joining
+            if action == "join_game" and not has_pending_connection():
                 setup = get_game_setup()
-                stage1, my_name, code, sock, is_host, host_name, error, track_image, chunked_map, checkpoints = join_new_game(my_id) # mouse click
-                is_host_flag_ref[0] = is_host
-                stage2 = ""  # Close new_game UI
-                
-                # Update car with new name and selected car type
-                my_car.name = my_name
-                my_car.set_car_type(setup["selected_car"])
-                invalidate_palette_cache() # Reset sprite cache for newly selected car
+                _start_join_connection(my_id, setup, my_car, is_host_flag_ref)
         elif stage1 == "game" and stage2 == "" and _game_rects_cache:
             start_btn = _game_rects_cache.get("start_btn") # Start button
             if start_btn and start_btn.collidepoint(ev.pos):
@@ -634,34 +686,20 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                 if js.get_button(8): # left stick press -> cancel (esc)
                     stage2 = "" # go back to lobby
                     reset_game_setup()
-                elif js.get_button(9): # right stick press -> confirm (enter)
+                elif js.get_button(9) and not has_pending_connection(): # right stick press -> confirm (enter)
                     setup = get_game_setup()
-                    stage1, my_name, code, sock, is_host, host_name, track_image, chunked_map, checkpoints = host_new_game(my_id) # keyboard press
-                    stage2 = "" # Close new_game UI
-                    is_host_flag_ref[0] = is_host
-                    my_car.name = my_name # update car with new name
-                    my_car.set_car_type(setup["selected_car"]) # update car selected car type
-                    my_car.x = const.WINDOW_WIDTH // 2
-                    my_car.y = const.WINDOW_HEIGHT // 2
+                    _start_host_connection(my_id, setup, my_car, is_host_flag_ref)
             elif stage2 == "join_game": # joining game
                 if js.get_button(8): # left stick press -> cancel (esc)
                     stage2 = "" # go back to lobby
                     reset_game_setup()
-                elif js.get_button(9): # right stick press -> confirm (enter)
+                elif js.get_button(9) and not has_pending_connection(): # right stick press -> confirm (enter)
                     setup = get_game_setup()
                     if not setup["room_code"]: set_error_message("room code missing")
                     elif len(setup["room_code"]) < 4: set_error_message("room code too short")
-                    else: # Only proceed if username is entered
+                    else:
                         clear_error_message()
-                        stage1, my_name, code, sock, is_host, host_name, error, track_image, chunked_map, checkpoints = join_new_game(my_id) # keyboard press
-                        is_host_flag_ref[0] = is_host
-                        if error: set_error_message(error)
-                        else:
-                            stage2 = "" # Close join_game UI
-                            my_car.name = my_name # update car with new name
-                            my_car.set_car_type(setup["selected_car"]) # update car selected car type
-                            my_car.x = const.WINDOW_WIDTH // 2
-                            my_car.y = const.WINDOW_HEIGHT // 2
+                        _start_join_connection(my_id, setup, my_car, is_host_flag_ref)
         elif stage1 in ["game", "mode1", "mode2", "leaderboard"]: # in game
             if stage2 == "": # main game screen
                 if js.get_button(8): # left stick press -> open settings (esc)

@@ -19,7 +19,7 @@ from drift.core.gamemode import SimpleRace
 from drift.ai.ai import ai_algorithme
 from drift.core.inputs import read_inputs
 from drift.net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, recv_jsons
-from drift.ui.ui import handle_game_events, draw_stage_ui, invalidate_ui_text_cache, invalidate_palette_cache, draw_car
+from drift.ui.ui import handle_game_events, draw_stage_ui, invalidate_ui_text_cache, invalidate_palette_cache, draw_car, poll_pending_connection
 from drift.ui.draw_stage import set_palette_colors_from_car, get_palette_colors
 from drift.core.rpm import calc_engine_rpm
 from drift.audio.engine_audio import V8EngineAudio
@@ -619,73 +619,41 @@ def main():
     ctlr_btn2_time = 0.0 # i'll store last time.time() the X button was pressed (change car)
     ctlr_btn3_time = 0.0 # same for the Y button (spawn ai car)
 
+    # CLI connection state (non-blocking; polled each frame before main loop)
+    _cli_conn = None
+
     if args.mode == "host" and args.code and args.name:
         my_name = args.name
         my_car.name = my_name
         code = args.code
         try:
-            sock = connect_to_relay()
+            _cli_sock = connect_to_relay()
             join_pkt = {"t": "create", "code": code, "name": my_name, "id": my_id}
-            sock.send(json.dumps(join_pkt).encode("utf-8"))
-            # Wait briefly for confirmation; otherwise offline fallback
-            join_ok_received = False
-            timeout = time.time() + 1.0
-            while time.time() < timeout:
-                for msg in recv_jsons(sock):
-                    if msg.get("t") == "join_ok":
-                        join_ok_received = True
-                        break
-                    if msg.get("t") == "error":
-                        raise Exception(msg.get("msg", "relay error"))
-                if join_ok_received:
-                    break
-                time.sleep(0.02)
-            if join_ok_received:
-                stage1 = "game"
-                I_AM_HOST = True  # set host flag for CLI host mode
-            else:
-                raise Exception("no join_ok")
+            _cli_sock.send(json.dumps(join_pkt).encode("utf-8"))
+            _cli_conn = {
+                "status": "pending", "sock": _cli_sock, "code": code,
+                "my_name": my_name, "my_id": my_id, "is_host": True,
+                "host_name": my_name, "deadline": time.time() + 1.0, "mode": "host",
+            }
         except Exception as e:
             print(f"Failed to connect to relay - starting in offline mode: {e!r}")
-            # Offline fallback
-            sock = None
-            code = "Offline"
-            stage1 = "game"
-            I_AM_HOST = True
+            sock = None; code = "Offline"; stage1 = "game"; I_AM_HOST = True
     elif args.mode == "join" and args.code and args.name:
         my_name = args.name
         my_car.name = my_name
-        code = args.code
+        code = args.code.upper()
         try:
-            sock = connect_to_relay()
-            code = code.upper()
+            _cli_sock = connect_to_relay()
             join_pkt = {"t": "join", "code": code, "name": my_name, "id": my_id}
-            sock.send(json.dumps(join_pkt).encode("utf-8"))
-            # Wait briefly for confirmation; otherwise offline fallback
-            join_ok_received = False
-            timeout = time.time() + 1.0
-            while time.time() < timeout:
-                for msg in recv_jsons(sock):
-                    if msg.get("t") == "join_ok":
-                        join_ok_received = True
-                        break
-                    if msg.get("t") == "error":
-                        raise Exception(msg.get("msg", "relay error"))
-                if join_ok_received:
-                    break
-                time.sleep(0.02)
-            if join_ok_received:
-                stage1 = "game"
-                I_AM_HOST = False  # set host flag for CLI join mode
-            else:
-                raise Exception("no join_ok")
+            _cli_sock.send(json.dumps(join_pkt).encode("utf-8"))
+            _cli_conn = {
+                "status": "pending", "sock": _cli_sock, "code": code,
+                "my_name": my_name, "my_id": my_id, "is_host": False,
+                "host_name": "Host", "deadline": time.time() + 1.0, "mode": "join",
+            }
         except Exception as e:
             print(f"Failed to connect to relay - starting in offline mode: {e!r}")
-            # Offline fallback
-            sock = None
-            code = "Offline"
-            stage1 = "game"
-            I_AM_HOST = False
+            sock = None; code = "Offline"; stage1 = "game"; I_AM_HOST = False
     
     # Renderer handles track, cars, and drift marks
     renderer = WorldRenderer(track_image, flags, chunked_map=chunked_map)
@@ -797,6 +765,31 @@ def main():
 
     while True:
         dt = clock.tick(const.FPS) / 1000.0
+
+        # ── Poll pending CLI connection (non-blocking) ──
+        if _cli_conn is not None and _cli_conn["status"] == "pending":
+            from drift.ui.draw_stage import poll_connection
+            poll_connection(_cli_conn)
+            if _cli_conn["status"] == "done":
+                _cli_sock = _cli_conn.get("sock")
+                _cli_mode = _cli_conn["mode"]
+                # For CLI, we only care about getting the socket; track assets already loaded
+                if _cli_mode == "host":
+                    # Check if we got a live socket or fell back offline
+                    if _cli_sock and _cli_conn.get("result") and _cli_conn["result"][3] is not None:
+                        sock = _cli_conn["result"][3]
+                    else:
+                        sock = None; code = "Offline"
+                    stage1 = "game"; I_AM_HOST = True
+                else:  # join
+                    result = _cli_conn.get("result")
+                    if result and result[0] == "game" and result[3] is not None:
+                        sock = result[3]; code = result[2]
+                        stage1 = "game"; I_AM_HOST = False
+                    else:
+                        sock = None; code = "Offline"
+                        stage1 = "game"; I_AM_HOST = False
+                _cli_conn = None
 
         # ────────────────────────────────────────────────────
         # PHASE 1 · INPUT  —  collect all events & controls
@@ -979,7 +972,7 @@ def main():
             now = time.time()
             if now - last_state_send >= 1.0 / const.SEND_HZ:
                 last_state_send = now
-                send_network_state(sock, code, my_id, my_car)
+                send_network_state(sock, code, my_id, my_car, palette=get_palette_colors())
                 if I_AM_HOST and ai_cars:
                     send_ai_states(sock, code, ai_cars)
             if now - last_ping >= 1.0 / const.PING_HZ:

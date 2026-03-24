@@ -129,9 +129,7 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
     return result
 
 
-def send_network_state(sock, code: str, my_id: str, my_car):
-    from drift.ui.draw_stage import get_palette_colors
-    palette = get_palette_colors()
+def send_network_state(sock, code: str, my_id: str, my_car, palette=None):
     pkt = {
         "t": "state",
         "code": code,
@@ -144,8 +142,9 @@ def send_network_state(sock, code: str, my_id: str, my_car):
         "has_grip": [round(v, 3) for v in my_car.has_grip],
         "name": my_car.name,
         "car_type": getattr(my_car, "car_type", "ae86"),
-        "palette": [list(c) for c in palette],
     }
+    if palette:
+        pkt["palette"] = [list(c) for c in palette]
     try:
         sock.send(json.dumps(pkt).encode("utf-8"))
     except Exception:

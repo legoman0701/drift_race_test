@@ -830,17 +830,17 @@ def clear_error_message():
 
 def host_new_game(my_id):
     """
-    Host a new game with the configured settings.
-    Returns: (stage1, my_name, code, sock, is_host, host_name) tuple
+    Initiate hosting a new game (non-blocking).
+    Sends the create packet and returns a pending connection state.
+    Call poll_connection() each frame to check for completion.
+    Returns: connection state dict
     """
-    
     my_name = _game_setup["username"] or "Player_" + str(my_id)[:4]
     code = rand_code()
     sock = None
     is_host = True
-    host_name = my_name  # When hosting, you are the host
-    track_image, chunked_map = None, None
-    
+    host_name = my_name
+
     try:
         sock = connect_to_relay()
         join_pkt = {
@@ -853,77 +853,35 @@ def host_new_game(my_id):
             "mode": _game_setup["selected_mode"]
         }
         sock.send(json.dumps(join_pkt).encode("utf-8"))
-        
-        # Wait briefly for server confirmation
-        join_ok_received = False
-        timeout = time.time() + 1.0
-        while time.time() < timeout:
-            for msg in recv_jsons(sock):
-                if msg.get("t") == "join_ok":
-                    join_ok_received = True
-                    # Extract host_name from relay response (should be our name)
-                    host_name = msg.get("host_name", my_name)
-                    break
-                if msg.get("t") == "error":
-                    raise Exception(msg.get("msg", "relay error"))
-            if join_ok_received:
-                break
-            time.sleep(0.02)
-        
-        if not join_ok_received:
-            # Relay didn't confirm; fall back to offline mode
-            try:
-                sock.close()
-            except Exception:
-                pass
-            sock = None
-            code = "Offline"
-            is_host = True  # Offline single-player acts as host
-        
     except Exception as e:
-        # Relay unreachable; fall back to offline mode
         print(f"Failed to connect to relay: {e}")
-        try:
-            if sock:
-                sock.close()
-        except Exception:
-            pass
-        sock = None
-        code = "Offline"
-        is_host = True
+        # Immediate offline fallback
+        return _finalize_connection(my_name, "Offline", None, True, my_name, None, is_host_mode=True)
 
-    try: const.MAP_NUM = int(_game_setup["selected_track"][5:]) 
-    except Exception: pass
-    track_image = pygame.image.load(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
-    chunked_map = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=const.TILE_SIZE)
-    
-    _cp_rects = []
-    meta_path = asset_path("track", f"map{const.MAP_NUM}", "map_meta.json")
-    try:
-        with open(meta_path, "r", encoding="utf-8") as fh: meta = json.load(fh)
-        checkpoints = meta.get("checkpoints", {})
-        for cp in checkpoints:
-            rect = pygame.Rect(cp.get("x", 0), cp.get("y", 0), cp.get("width", 0), cp.get("height", 0))
-            _cp_rects.append(rect)
-    except Exception as e: print(f"Error reading map metadata: {e}")
+    return {
+        "status": "pending",
+        "sock": sock,
+        "code": code,
+        "my_name": my_name,
+        "my_id": my_id,
+        "is_host": True,
+        "host_name": host_name,
+        "deadline": time.time() + 1.0,
+        "mode": "host",
+    }
 
-    # Invalidate UI text cache when room code changes
-    invalidate_ui_text_cache('room')
-    return ("game", my_name, code, sock, is_host, host_name, track_image, chunked_map, _cp_rects)
 
 def join_new_game(my_id):
     """
-    Join an existing game with the configured settings.
-    Returns: (stage1, my_name, code, sock, is_host, host_name) tuple
-    """    
+    Initiate joining an existing game (non-blocking).
+    Sends the join packet and returns a pending connection state.
+    Call poll_connection() each frame to check for completion.
+    Returns: connection state dict
+    """
     my_name = _game_setup["username"] or "Player_" + str(my_id)[:4]
     code = _game_setup["room_code"].upper() if _game_setup["room_code"] else ""
     sock = None
-    is_host = False
-    host_name = "Host"  # Default if not received
-    error = None
-    track_image, chunked_map = None, None
-    
+
     try:
         sock = connect_to_relay()
         join_pkt = {
@@ -934,67 +892,110 @@ def join_new_game(my_id):
             "car_type": _game_setup["selected_car"]
         }
         sock.send(json.dumps(join_pkt).encode("utf-8"))
-        
-        # Wait briefly for server confirmation
-        join_ok_received = False
-        timeout = time.time() + 1.0
-        while time.time() < timeout:
-            for msg in recv_jsons(sock):
-                if msg.get("t") == "join_ok":
-                    join_ok_received = True
-                    # Extract host_name and track from relay response
-                    host_name = msg.get("host_name", "Host")
+    except Exception as e:
+        error = str(e)
+        print(f"Failed to join game: {error}")
+        return {
+            "status": "done",
+            "result": ("lobby", my_name, "", None, False, "Host", error, None, None, []),
+        }
+
+    return {
+        "status": "pending",
+        "sock": sock,
+        "code": code,
+        "my_name": my_name,
+        "my_id": my_id,
+        "is_host": False,
+        "host_name": "Host",
+        "deadline": time.time() + 1.0,
+        "mode": "join",
+    }
+
+
+def poll_connection(conn):
+    """Poll a pending connection state (non-blocking, call each frame).
+    Returns the same dict. Check conn["status"] == "done" and use conn["result"].
+    """
+    if conn["status"] != "pending":
+        return conn
+
+    sock = conn["sock"]
+    my_name = conn["my_name"]
+    host_name = conn["host_name"]
+    code = conn["code"]
+
+    try:
+        for msg in recv_jsons(sock):
+            if msg.get("t") == "join_ok":
+                host_name = msg.get("host_name", host_name)
+                if conn["mode"] == "join":
                     server_track = msg.get("track")
                     if server_track:
                         _game_setup["selected_track"] = server_track
-                    break
-                if msg.get("t") == "error":
-                    error = msg.get("msg", "relay error")
-                    raise Exception(error)
-            if join_ok_received:
-                break
-            time.sleep(0.02)
-        
-        if not join_ok_received:
-            # Relay didn't confirm; keep user in lobby with explicit error
-            try:
-                sock.close()
-            except Exception:
-                pass
-            return ("lobby", my_name, "", None, False, "Host", "join_timeout", None, None, [])
-        
-    except Exception as e:
-        # Handle specific error cases
-        error = str(e)
-        print(f"Failed to join game: {error}")
-        try:
-            if sock:
-                sock.close()
-        except Exception:
-            pass
-        sock = None
+                conn["status"] = "done"
+                conn["result"] = _finalize_connection(
+                    my_name, code, sock,
+                    conn["is_host"], host_name,
+                    None,
+                    is_host_mode=conn["is_host"],
+                )
+                return conn
+            if msg.get("t") == "error":
+                error_msg = msg.get("msg", "relay error")
+                try: sock.close()
+                except Exception: pass
+                if conn["mode"] == "host":
+                    conn["status"] = "done"
+                    conn["result"] = _finalize_connection(
+                        my_name, "Offline", None, True, my_name, None, is_host_mode=True
+                    )
+                else:
+                    conn["status"] = "done"
+                    conn["result"] = ("lobby", my_name, "", None, False, "Host", error_msg, None, None, [])
+                return conn
+    except Exception:
+        pass
 
-        # Join failures should not silently create an offline room/session.
-        return ("lobby", my_name, "", None, False, "Host", error, None, None, [])
+    # Check timeout
+    if time.time() >= conn["deadline"]:
+        try: sock.close()
+        except Exception: pass
+        if conn["mode"] == "host":
+            conn["status"] = "done"
+            conn["result"] = _finalize_connection(
+                my_name, "Offline", None, True, my_name, None, is_host_mode=True
+            )
+        else:
+            conn["status"] = "done"
+            conn["result"] = ("lobby", my_name, "", None, False, "Host", "join_timeout", None, None, [])
+        return conn
 
-    try: const.MAP_NUM = int(_game_setup["selected_track"][5:]) 
+    return conn
+
+
+def _finalize_connection(my_name, code, sock, is_host, host_name, error, is_host_mode=True):
+    """Load track assets and return the final result tuple."""
+    try: const.MAP_NUM = int(_game_setup["selected_track"][5:])
     except Exception: pass
     track_image = pygame.image.load(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
     chunked_map = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=const.TILE_SIZE)
-    
+
     _cp_rects = []
     meta_path = asset_path("track", f"map{const.MAP_NUM}", "map_meta.json")
     try:
         with open(meta_path, "r", encoding="utf-8") as fh: meta = json.load(fh)
-        checkpoints = meta.get("checkpoints", [])
+        checkpoints = meta.get("checkpoints", {}) if is_host_mode else meta.get("checkpoints", [])
         for cp in checkpoints:
             rect = pygame.Rect(cp.get("x", 0), cp.get("y", 0), cp.get("width", 0), cp.get("height", 0))
             _cp_rects.append(rect)
     except Exception as e: print(f"Error reading map metadata: {e}")
 
-    # Invalidate UI text cache when room code changes
     invalidate_ui_text_cache('room')
-    return ("game", my_name, code, sock, is_host, host_name, error, track_image, chunked_map, _cp_rects)
+    if is_host_mode:
+        return ("game", my_name, code, sock, is_host, host_name, track_image, chunked_map, _cp_rects)
+    else:
+        return ("game", my_name, code, sock, is_host, host_name, error, track_image, chunked_map, _cp_rects)
 
 def draw_settings(ui_surf, world_surf, world_size, buttons, stage_path, font_small=None):    
     # Draw buttons and handle their state
