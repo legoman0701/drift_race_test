@@ -31,5 +31,5 @@ def switch_ai_path_mode():
     if const.AI_PATH_FOLLOW: const.CURSOR_FOLLOW = False
     return "" # stage2
 
-def handle_key_binds():
-    return "key_binds" # stage3
+def handle_controls():
+    return "controls" # stage3

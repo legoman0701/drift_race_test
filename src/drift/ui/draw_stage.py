@@ -23,8 +23,8 @@ _game_setup = {
     "error_message": None,  # For displaying errors
 }
 
-# Key binds state
-_key_binds_state = {
+# Controls state
+_controls_state = {
     "waiting_for_key": None,  # Which bind is waiting for input (e.g., "UP_KEY")
     "selected_bind": None,  # Currently selected/hovered bind
     "selected_gamepad": None,  # Index of the active/connected gamepad
@@ -1043,7 +1043,7 @@ def draw_settings(ui_surf, world_surf, world_size, buttons, stage_path, font_sma
 
     return world_surf, button_results
 
-def draw_key_binds(ui_surf, font_small):
+def draw_controls(ui_surf, font_small):
     """Draw key binds configuration page with dynamic layout.
     
     Returns:
@@ -1060,13 +1060,13 @@ def draw_key_binds(ui_surf, font_small):
     gp_rects = {}  # {"gp_0": rect, "gp_1": rect, ...}
 
     gp_title = get_cached_text(font_small, f"Connected Gamepads ({count})", const.WHITE_240,
-                               cache_key=("key_binds", "gp_title", count))
+                               cache_key=("controls", "gp_title", count))
     ui_surf.blit(gp_title, (center_x - gp_title.get_width() // 2, gp_y))
 
     row_y = gp_y + gp_title.get_height() + 6
     if count == 0:
         no_gp = get_cached_text(font_small, "No gamepads detected", const.GREY_180,
-                                cache_key=("key_binds", "no_gp"))
+                                cache_key=("controls", "no_gp"))
         no_gp_rect = pygame.Rect(center_x - no_gp.get_width() // 2 - 8, row_y,
                                  no_gp.get_width() + 16, gp_row_height)
         pygame.draw.rect(ui_surf, (50, 50, 60), no_gp_rect)
@@ -1076,12 +1076,12 @@ def draw_key_binds(ui_surf, font_small):
         gp_rects["gp_none"] = no_gp_rect
     else:
         for i, js in enumerate(joysticks):
-            is_selected = _key_binds_state["selected_gamepad"] == i
+            is_selected = _controls_state["selected_gamepad"] == i
             js_label = f"[{i}]  {js.get_name()}"
             if is_selected:
                 js_label += "  [connected]"
             js_text = get_cached_text(font_small, js_label, const.WHITE_240 if is_selected else const.GREY_180,
-                                      cache_key=("key_binds", "gp", i, js.get_name(), is_selected))
+                                      cache_key=("controls", "gp", i, js.get_name(), is_selected))
             js_rect = pygame.Rect(center_x - js_text.get_width() // 2 - 8,
                                   row_y + i * gp_row_height + 5 * i,
                                   js_text.get_width() + 16, gp_row_height)
@@ -1094,7 +1094,7 @@ def draw_key_binds(ui_surf, font_small):
             gp_rects[f"gp_{i}"] = js_rect
 
     # Define key bindings to display (order matters for UI)
-    key_binds = [
+    controls = [
         ("UP_KEY", "Accelerate"),
         ("DOWN_KEY", "Reverse"),
         ("LEFT_KEY", "Steer Left"),
@@ -1104,7 +1104,7 @@ def draw_key_binds(ui_surf, font_small):
         ("CHANGE_CAR_KEY", "Change Car"),
     ]
     
-    total_btn = len(key_binds)
+    total_btn = len(controls)
     
     # Layout calculations
     label_width = 150
@@ -1134,7 +1134,7 @@ def draw_key_binds(ui_surf, font_small):
     # Store rects for click detection
     bind_rects = {}
     
-    for idx, (bind_name, bind_label) in enumerate(key_binds):
+    for idx, (bind_name, bind_label) in enumerate(controls):
         row = idx // 2  # Which row (0, 1, 2, ...)
         col = idx % 2   # Which column (0 = left, 1 = right)
         
@@ -1159,7 +1159,7 @@ def draw_key_binds(ui_surf, font_small):
             current_key = current_value
         
         # Get key name
-        if _key_binds_state["waiting_for_key"] == bind_name:
+        if _controls_state["waiting_for_key"] == bind_name:
             key_text = "Press a key..."
             key_color = (255, 200, 100)  # Orange when waiting
         else:
@@ -1168,7 +1168,7 @@ def draw_key_binds(ui_surf, font_small):
         
         # Draw label (action description)
         label_surf = get_cached_text(font_small, bind_label, const.WHITE_240,
-                                     cache_key=("key_binds", "label", bind_label))
+                                     cache_key=("controls", "label", bind_label))
         ui_surf.blit(label_surf, (label_x, y + (key_box_height - label_surf.get_height()) // 2))
         
         # Draw key box (clickable rect)
@@ -1176,7 +1176,7 @@ def draw_key_binds(ui_surf, font_small):
         key_box_rect = pygame.Rect(key_box_x, y, key_box_width, key_box_height)
         
         # Highlight if selected/hovered
-        if _key_binds_state["selected_bind"] == bind_name or _key_binds_state["waiting_for_key"] == bind_name:
+        if _controls_state["selected_bind"] == bind_name or _controls_state["waiting_for_key"] == bind_name:
             pygame.draw.rect(ui_surf, (100, 200, 100), key_box_rect, 3)  # Green border
         else:
             pygame.draw.rect(ui_surf, key_color, key_box_rect)
@@ -1184,7 +1184,7 @@ def draw_key_binds(ui_surf, font_small):
         
         # Draw key text (always white)
         key_surf = get_cached_text(font_small, key_text, const.WHITE_240,
-                                   cache_key=("key_binds", "key", bind_name, key_text))
+                                   cache_key=("controls", "key", bind_name, key_text))
         ui_surf.blit(key_surf, (key_box_rect.centerx - key_surf.get_width() // 2,
                                 key_box_rect.centery - key_surf.get_height() // 2))
         
@@ -1193,12 +1193,12 @@ def draw_key_binds(ui_surf, font_small):
     
     return {**bind_rects, **gp_rects}
 
-def handle_key_binds_click(click_pos, all_rects, gamepad):
+def handle_controls_click(click_pos, all_rects, gamepad):
     """Handle mouse clicks on key bind rectangles and gamepad rows.
     
     Args:
         click_pos: (x, y) tuple of click position
-        all_rects: merged dict returned by draw_key_binds
+        all_rects: merged dict returned by draw_controls
         gamepad: Gamepad object
     
     Returns:
@@ -1209,17 +1209,17 @@ def handle_key_binds_click(click_pos, all_rects, gamepad):
         if name.startswith("gp_") and name != "gp_none":
             idx = int(name[3:])
             gamepad.connect_gamepad(idx)
-            _key_binds_state["selected_gamepad"] = idx
+            _controls_state["selected_gamepad"] = idx
             invalidate_ui_text_cache('all')
             return f"gp_connected_{idx}"
         elif not name.startswith("gp_"):
-            _key_binds_state["waiting_for_key"] = name
-            _key_binds_state["selected_bind"] = name
+            _controls_state["waiting_for_key"] = name
+            _controls_state["selected_bind"] = name
             invalidate_ui_text_cache('all')
             return name
     return None
 
-def handle_key_binds_keypress(event):
+def handle_controls_keypress(event):
     """Handle keyboard input for key binds configuration.
     
     Args:
@@ -1229,13 +1229,13 @@ def handle_key_binds_keypress(event):
         str: "saved" if changes were saved, "back" if escape pressed, None otherwise
     """
     # Check if we're waiting for a key to rebind
-    if _key_binds_state["waiting_for_key"]:
-        bind_name = _key_binds_state["waiting_for_key"]
+    if _controls_state["waiting_for_key"]:
+        bind_name = _controls_state["waiting_for_key"]
         
         # Escape cancels the rebind
         if event.key == pygame.K_ESCAPE:
-            _key_binds_state["waiting_for_key"] = None
-            _key_binds_state["selected_bind"] = None
+            _controls_state["waiting_for_key"] = None
+            _controls_state["selected_bind"] = None
             invalidate_ui_text_cache('all')
             return "back"
         
@@ -1256,8 +1256,8 @@ def handle_key_binds_keypress(event):
             setattr(const, bind_name, event.key)
         
         # Clear waiting state and auto-save
-        _key_binds_state["waiting_for_key"] = None
-        _key_binds_state["selected_bind"] = None
+        _controls_state["waiting_for_key"] = None
+        _controls_state["selected_bind"] = None
         invalidate_ui_text_cache('all')  # Clear cache to show new key
         return "saved"
     

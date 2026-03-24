@@ -572,7 +572,7 @@ def main():
 
     stage1 = "lobby" # lobby | game | error | mode1 | mode2
     stage2 = "" # new_game | join_game | settings
-    stage3 = "" # key_binds
+    stage3 = "" # controls
     error_msg = ""
     remotes = {}
     ai_cars = []
@@ -688,6 +688,10 @@ def main():
     dragging = False
     host_ref = [I_AM_HOST]
 
+    def quit_game():
+        pygame.quit()
+        sys.exit(0)
+
     def leave_room(sock, code, my_id, remotes):
         nonlocal host_name, game_mode, _prev_stage1, _return_btn_rect, _local_result_sent
         if sock and code:
@@ -714,9 +718,9 @@ def main():
         renderer.clear_chunk_cache()
         return "lobby", "", None, None, remotes # stage, substage sock, code, remotes
     
-    def handle_key_binds():
+    def handle_controls():
         nonlocal stage3
-        stage3 = "key_binds"
+        stage3 = "controls"
         
     def switch_cursor_follow_mode(stage1):
         const.CURSOR_FOLLOW = not const.CURSOR_FOLLOW
@@ -733,8 +737,9 @@ def main():
         except Exception: return stage1, "", None, None, {}
 
     settings_buttons = [ # todo : be able to use '*' like '*/settings' for key binds
+    btn.Button("Quit Game", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["lobby", "settings"]] ,lambda: quit_game()),
     btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["leaderboard", "settings"]] ,lambda: leave_room(sock, code, my_id, remotes)),
-    btn.Button("Key Binds", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, [["lobby", "settings"], ["game", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["leaderboard", "settings"]], handle_key_binds),
+    btn.Button("Controls", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, [["lobby", "settings"], ["game", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["leaderboard", "settings"]], handle_controls),
     btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["mode1", "settings"], ["mode2", "settings"]], lambda: switch_cursor_follow_mode(stage1)),
     btn.Button("AI Path Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.65, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["mode1", "settings"], ["mode2", "settings"]], lambda: switch_ai_path_mode(stage1)),
     ]
@@ -1102,9 +1107,9 @@ def main():
         
         world_size = renderer.get_world_size(stage1 if stage1 != "leaderboard" else "mode1")
 
-        # Skip physics computations when in menus (new_game, join_game, key_binds)
+        # Skip physics computations when in menus (new_game, join_game, controls)
         # This saves CPU on low-end devices and improves battery life
-        skip_physics = stage2 in ["new_game", "join_game"] or stage3 == "key_binds"
+        skip_physics = stage2 in ["new_game", "join_game"] or stage3 == "controls"
 
         profiler.begin("physics")
         if not skip_physics:

@@ -11,9 +11,9 @@ from drift.core.rpm import calc_engine_rpm
 from drift.ui.ui_helpers import get_cached_text, invalidate_ui_text_cache
 from drift.ui.draw_stage import (
     draw_mode1, draw_mode2, draw_new_game, draw_join_game, draw_settings, draw_error,
-    handle_new_game_click, handle_new_game_keypress, host_new_game, draw_key_binds,
+    handle_new_game_click, handle_new_game_keypress, host_new_game, draw_controls,
     handle_join_game_click, handle_join_game_keypress, join_new_game,
-    handle_key_binds_click, handle_key_binds_keypress, draw_game,
+    handle_controls_click, handle_controls_keypress, draw_game,
     get_game_setup, reset_game_setup, set_error_message, clear_error_message,
     handle_palette_picker_click, handle_palette_picker_keypress,
     draw_color_palette_picker
@@ -24,7 +24,7 @@ _car_name_font_cache = {} # car name cache
 _palette_cache = {} # palette color sprite cache
 _new_game_rects_cache = None # new game rects cache
 _join_game_rects_cache = None # join game rects cache
-_key_binds_rects_cache = None # key binds rects cache
+_controls_rects_cache = None # key binds rects cache
 _palette_picker_rects_cache = None # palette picker rects cache
 _game_rects_cache = None # game rects cache
 _controls_rects_cache = None # controls rects cache
@@ -332,23 +332,26 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
     Stage levels:
     - stage1: lobby | game | error
     - stage2: settings | new_game | join_game
-    - stage3: key_binds
+    - stage3: controls
     """
-    global _new_game_rects_cache, _join_game_rects_cache, _key_binds_rects_cache, _palette_picker_rects_cache, _game_rects_cache, _controls_rects_cache
+    global _new_game_rects_cache, _join_game_rects_cache, _controls_rects_cache, _palette_picker_rects_cache, _game_rects_cache, _controls_rects_cache
 
     button_results = []
     # click detection
     new_game_rects = None
     join_game_rects = None
-    key_binds_rects = None
+    controls_rects = None
     palette_picker_rects = None
     
     # Stage 1: Main stages
     if stage1 == "lobby":
         if stage2 == "settings":
-            if stage3 == "key_binds":
+            if stage3 == "controls":
+                controls_rects = draw_controls(ui_surf, font_small)
+                _controls_rects_cache = controls_rects
                 draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name)
             else:
+                _controls_rects_cache = None
                 world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
                 draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
         elif stage2 == "new_game": 
@@ -373,12 +376,12 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
         _new_game_rects_cache = None  # Clear cache when in game
         _join_game_rects_cache = None  # Clear cache when in game
         if stage2 == "settings": 
-            if stage3 == "key_binds":
-                controls_rects = draw_key_binds(ui_surf, font_small)
+            if stage3 == "controls":
+                controls_rects = draw_controls(ui_surf, font_small)
                 _controls_rects_cache = controls_rects  # Cache for event handling
                 draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name)
             else:
-                _controls_rects_cache = None  # Clear cache when not in key_binds
+                _controls_rects_cache = None  # Clear cache when not in controls
                 world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
                 draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
         else:
@@ -393,12 +396,12 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
         _new_game_rects_cache = None  # Clear cache when in game
         _join_game_rects_cache = None  # Clear cache when in game
         if stage2 == "settings":
-            if stage3 == "key_binds":
-                controls_rects = draw_key_binds(ui_surf, font_small)
+            if stage3 == "controls":
+                controls_rects = draw_controls(ui_surf, font_small)
                 _controls_rects_cache = controls_rects  # Cache for event handling
                 draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name)
             else:
-                _controls_rects_cache = None  # Clear cache when not in key_binds
+                _controls_rects_cache = None  # Clear cache when not in controls
                 world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
                 draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
         else:
@@ -414,12 +417,12 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
         _new_game_rects_cache = None  # Clear cache when in game
         _join_game_rects_cache = None  # Clear cache when in game
         if stage2 == "settings": 
-            if stage3 == "key_binds":
-                controls_rects = draw_key_binds(ui_surf, font_small)
+            if stage3 == "controls":
+                controls_rects = draw_controls(ui_surf, font_small)
                 _controls_rects_cache = controls_rects  # Cache for event handling
                 draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name)
             else:
-                _controls_rects_cache = None  # Clear cache when not in key_binds
+                _controls_rects_cache = None  # Clear cache when not in controls
                 world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
                 draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
         else:
@@ -447,12 +450,23 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
     if ev.type == pygame.KEYDOWN: # press a key
         if stage1 == "lobby": # in lobby
             if stage2 == "": # main lobby
+                if ev.key == const.ESCAPE_KEY:
+                    stage2 = "settings"
                 if ev.key == const.HOST_KEY: # h
                     stage2 = "new_game" # host a room - open new game UI
                     reset_game_setup()  # Reset to defaults when opening
                 if ev.key == const.JOIN_KEY: # j
                     stage2 = "join_game" # join a room - open join game UI
                     reset_game_setup()  # Reset to defaults when opening
+            elif stage2 == "settings":
+                if stage3 == "controls":
+                    result = handle_controls_keypress(ev)
+                    if result == "saved":
+                        invalidate_ui_text_cache('all')
+                    elif result == "back":
+                        stage3 = ""
+                elif stage3 == "" and ev.key == const.ESCAPE_KEY:
+                    stage2 = ""
             elif stage2 == "new_game": # hosting game
                 handle_new_game_keypress(ev)
                 if ev.key == const.ESCAPE_KEY: # esc
@@ -491,8 +505,8 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
             if stage2 == "" and ev.key == const.ESCAPE_KEY: 
                 stage2 = "settings" # open settings
             elif stage2 == "settings":
-                if stage3 == "key_binds":
-                    result = handle_key_binds_keypress(ev)
+                if stage3 == "controls":
+                    result = handle_controls_keypress(ev)
                     if result == "saved":
                         invalidate_ui_text_cache('all')  # Refresh cached text after save
                     elif result == "back":
@@ -572,8 +586,8 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
 
         elif stage1 in ["mode1", "mode2"] and stage2 == "" and _palette_picker_rects_cache:
             handle_palette_picker_click(ev.pos, _palette_picker_rects_cache)
-        elif stage1 in ["game", "mode1", "mode2", "leaderboard"] and stage2 == "settings" and stage3 == "key_binds" and _controls_rects_cache:
-            res = handle_key_binds_click(ev.pos, _controls_rects_cache, gamepad)
+        elif stage1 in ["game", "mode1", "mode2", "leaderboard"] and stage2 == "settings" and stage3 == "controls" and _controls_rects_cache:
+            res = handle_controls_click(ev.pos, _controls_rects_cache, gamepad)
             if res and res.startswith("gp_connected_"):
                 stage2 = "" ; stage3 = "" # close controls & settings to confirm connection
 
@@ -624,7 +638,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                 if js.get_button(8): # left stick press -> open settings (esc)
                     stage2 = "settings"
             elif stage2 == "settings": # in settings menu
-                if stage3 == "key_binds": # do not handle joystick buttons yet
+                if stage3 == "controls": # do not handle joystick buttons yet
                     if js.get_button(8): # left stick press -> back (esc)
                         stage3 = ""
                 elif stage3 == "":
