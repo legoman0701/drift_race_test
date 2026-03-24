@@ -1,9 +1,10 @@
 # global
 import pygame
+import math
 from typing import Dict, Tuple, List, Optional
 # local
 import drift.config.const as const
-from drift.ui.ui import draw_car, draw_wheel_debug
+from drift.ui.ui import draw_car, draw_wheel_debug, draw_collision_debug
 from drift.ui.draw_stage import get_palette_colors
 from drift.render.map_chunks import ChunkedMap, TireMarkGrid
 
@@ -20,6 +21,7 @@ class WorldRenderer:
         self.flags = flags
         self.chunked_map = chunked_map
         self.checkpoints = checkpoints
+        self.collision_mesh = []  # populated from app.py
 
         # classic tire mark acc (single surface sized to the whole map)
         self.tire_mark = pygame.Surface((track_image.get_width(), track_image.get_height()), pygame.SRCALPHA)
@@ -83,13 +85,44 @@ class WorldRenderer:
             for i, grip in enumerate(car_obj.has_grip):
                 if i >= len(car_obj.drift_points) or i >= len(car_obj.drift_points_old):
                     continue
+                # Validate points are proper tuples with 2 numeric values
+                pt1 = car_obj.drift_points[i]
+                pt2 = car_obj.drift_points_old[i]
+                if (not isinstance(pt1, (tuple, list)) or len(pt1) != 2 or
+                    not isinstance(pt2, (tuple, list)) or len(pt2) != 2):
+                    continue
+                # Skip if any element is None
+                if pt1[0] is None or pt1[1] is None or pt2[0] is None or pt2[1] is None:
+                    continue
+                # Ensure values are finite numbers and within reasonable bounds
+                try:
+                    x1, y1 = float(pt1[0]), float(pt1[1])
+                    x2, y2 = float(pt2[0]), float(pt2[1])
+                    if not (math.isfinite(x1) and math.isfinite(y1) and 
+                            math.isfinite(x2) and math.isfinite(y2)):
+                        continue
+                    # Clamp to reasonable bounds to avoid overflow
+                    x1 = max(-1000000, min(1000000, x1))
+                    y1 = max(-1000000, min(1000000, y1))
+                    x2 = max(-1000000, min(1000000, x2))
+                    y2 = max(-1000000, min(1000000, y2))
+                    # Convert to plain Python int (not numpy.int64 or other types)
+                    ix1, iy1 = int(round(x1)), int(round(y1))
+                    ix2, iy2 = int(round(x2)), int(round(y2))
+                except (ValueError, TypeError, OverflowError):
+                    continue
                 if float(grip) >= 0.3:
                     continue
                 # Lower grip means stronger tire mark for that specific wheel.
                 slip = max(0.0, min(1.0, 1.0 - float(grip)))
                 alpha = int(60 + 180 * slip)
                 smoke_color = (const.TIRE_MARK_SMOKE[0], const.TIRE_MARK_SMOKE[1], const.TIRE_MARK_SMOKE[2], alpha)
-                pygame.draw.line(self.tire_mark, smoke_color, car_obj.drift_points[i], car_obj.drift_points_old[i], 3)
+                try:
+                    pygame.draw.line(self.tire_mark, smoke_color, (ix1, iy1), (ix2, iy2), 3)
+                except (TypeError, ValueError, OverflowError) as e:
+                    # Debug: print what caused the error
+                    print(f"Draw error: pt1={pt1}, pt2={pt2}, converted=({ix1},{iy1}),({ix2},{iy2}), error={e}")
+                    pass
 
         draw_car_marks(my_car)
         for ai_car in ai_cars:
@@ -139,12 +172,43 @@ class WorldRenderer:
             for i, grip in enumerate(car_obj.has_grip):
                 if i >= len(car_obj.drift_points) or i >= len(car_obj.drift_points_old):
                     continue
+                # Validate points are proper tuples with 2 numeric values
+                pt1 = car_obj.drift_points[i]
+                pt2 = car_obj.drift_points_old[i]
+                if (not isinstance(pt1, (tuple, list)) or len(pt1) != 2 or
+                    not isinstance(pt2, (tuple, list)) or len(pt2) != 2):
+                    continue
+                # Skip if any element is None
+                if pt1[0] is None or pt1[1] is None or pt2[0] is None or pt2[1] is None:
+                    continue
+                # Ensure values are finite numbers and within reasonable bounds
+                try:
+                    x1, y1 = float(pt1[0]), float(pt1[1])
+                    x2, y2 = float(pt2[0]), float(pt2[1])
+                    if not (math.isfinite(x1) and math.isfinite(y1) and 
+                            math.isfinite(x2) and math.isfinite(y2)):
+                        continue
+                    # Clamp to reasonable bounds to avoid overflow
+                    x1 = max(-1000000, min(1000000, x1))
+                    y1 = max(-1000000, min(1000000, y1))
+                    x2 = max(-1000000, min(1000000, x2))
+                    y2 = max(-1000000, min(1000000, y2))
+                    # Convert to plain Python int (not numpy.int64 or other types)
+                    ix1, iy1 = int(round(x1)), int(round(y1))
+                    ix2, iy2 = int(round(x2)), int(round(y2))
+                except (ValueError, TypeError, OverflowError):
+                    continue
                 if float(grip) >= 0.3:
                     continue
                 slip = max(0.0, min(1.0, 1.0 - float(grip)))
                 alpha = int(60 + 180 * slip)
                 smoke_color = (const.TIRE_MARK_SMOKE[0], const.TIRE_MARK_SMOKE[1], const.TIRE_MARK_SMOKE[2], alpha)
-                self.tire_mark_grid.draw_line_world(car_obj.drift_points[i], car_obj.drift_points_old[i], smoke_color, 3, self.chunked_map.tile_size)
+                try:
+                    self.tire_mark_grid.draw_line_world((ix1, iy1), (ix2, iy2), smoke_color, 3, self.chunked_map.tile_size)
+                except (TypeError, ValueError, OverflowError) as e:
+                    # Debug: print what caused the error
+                    print(f"Draw chunked error: pt1={pt1}, pt2={pt2}, converted=({ix1},{iy1}),({ix2},{iy2}), error={e}")
+                    pass
 
         add_per_wheel_lines(my_car)
         for ai_car in ai_cars:
@@ -214,7 +278,9 @@ class WorldRenderer:
                      lights_on=lights_on,
                      palette_colors=palette_colors)
             # Per-wheel debug overlay for local car
-            if const.DEBUG: draw_wheel_debug(world_surf, my_car, offx, offy)
+            if const.DEBUG:
+                draw_wheel_debug(world_surf, my_car, offx, offy)
+                draw_collision_debug(world_surf, my_car, self.collision_mesh, offx, offy)
 
             # Remotes (draw + their tire marks)
             if draw_remotes:
@@ -282,7 +348,9 @@ class WorldRenderer:
                  lights_on=lights_on,
                  palette_colors=palette_colors)
         # Per-wheel debug overlay for local car
-        if const.DEBUG: draw_wheel_debug(world_surf, my_car, 0, 0)
+        if const.DEBUG:
+            draw_wheel_debug(world_surf, my_car, 0, 0)
+            draw_collision_debug(world_surf, my_car, self.collision_mesh, 0, 0)
 
         # 5) Draw network/online players' cars
         if stage in ["game", "mode1", "mode2"] and draw_remotes:

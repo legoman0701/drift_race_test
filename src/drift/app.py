@@ -579,6 +579,7 @@ def main():
     path_poly = []
     checkpoints = []
     game_mode = None           # active BaseGameMode instance (SimpleRace, etc.)
+    _collision_mesh = []       # collision polygons from map_meta.json
     _prev_stage1 = "lobby"     # detect stage1 transitions
     _return_btn_rect = None    # leaderboard button rect from previous frame
     _local_result_sent = False
@@ -1042,9 +1043,13 @@ def main():
                         _meta = json.load(fh)
                     _start_grid = _meta.get("start", []) or []
                     _lines = _meta.get("lines", []) or []
+                    _collision_mesh = _meta.get("collision_mesh", []) or []
                 except Exception:
                     _start_grid = []
                     _lines = []
+                    _collision_mesh = []
+
+                renderer.collision_mesh = _collision_mesh
 
                 game_mode = SimpleRace(renderer.checkpoints or [], total_laps=1, start_grid=_start_grid, lines=_lines, local_player_id=my_id) # here to change the number of laps
                 _local_result_sent = False
@@ -1119,7 +1124,7 @@ def main():
             if I_AM_HOST:
                 for i, ai in enumerate(ai_cars, start=1):
                     key = f"AI-{i}"
-                    remotes_with_ai_for_player[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "drift_ratio": ai.drift_ratio, "name": ai.name}
+                    remotes_with_ai_for_player[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "vx": ai.vx, "vy": ai.vy, "drift_ratio": ai.drift_ratio, "name": ai.name}
                     
             # Update player car using remotes that include AIs
             # If AI path mode is enabled and a path is available, let the AI drive the player
@@ -1137,7 +1142,7 @@ def main():
                 my_car.vx, my_car.vy = 0.0, 0.0
                 my_car.v_angle = 0.0
             else:
-                my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG, cursor_follow=const.CURSOR_FOLLOW, cam=cam)
+                my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG, cursor_follow=const.CURSOR_FOLLOW, cam=cam, collision_mesh=_collision_mesh)
 #                 my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG, cursor_follow=const.CURSOR_FOLLOW, cam=cam)
             # Update engine audio based on RPM and throttle with enhanced drift characteristics
             try:
@@ -1175,10 +1180,10 @@ def main():
             
             if I_AM_HOST:
                 # add local player under a distinct key so AIs see it
-                remotes_with_ai_for_ais[f"PLAYER-{my_id}"] = {"x": my_car.x, "y": my_car.y, "a": my_car.angle, "drift_ratio": my_car.drift_ratio, "name": my_car.name}
+                remotes_with_ai_for_ais[f"PLAYER-{my_id}"] = {"x": my_car.x, "y": my_car.y, "a": my_car.angle, "vx": my_car.vx, "vy": my_car.vy, "drift_ratio": my_car.drift_ratio, "name": my_car.name}
                 for i, ai in enumerate(ai_cars, start=1):
                     key = f"AI-{i}"
-                    remotes_with_ai_for_ais[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "drift_ratio": ai.drift_ratio, "name": ai.name}
+                    remotes_with_ai_for_ais[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "vx": ai.vx, "vy": ai.vy, "drift_ratio": ai.drift_ratio, "name": ai.name}
                 
             # Step AIs (each AI sees other AIs + network remotes + the player)
             if I_AM_HOST:
@@ -1187,7 +1192,7 @@ def main():
                         ai.vx, ai.vy = 0.0, 0.0
                         ai.v_angle = 0.0
                     else:
-                        ai.step(ai_algorithme(path_poly, ai), dt, remotes_with_ai_for_ais, world_size, compute_debug=const.DEBUG)
+                        ai.step(ai_algorithme(path_poly, ai), dt, remotes_with_ai_for_ais, world_size, compute_debug=const.DEBUG, collision_mesh=_collision_mesh)
             cam.update(my_car, world_size)
             profiler.end("physics")
         else:

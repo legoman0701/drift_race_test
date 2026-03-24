@@ -270,6 +270,37 @@ def draw_wheel_debug(surface: pygame.Surface, car, offx: int = 0, offy: int = 0)
         ts = font.render(f"g{idx}:{grip:.2f}", True, (230, 230, 245))
         surface.blit(ts, (sx + 6, sy - 8))
 
+def draw_collision_debug(surface: pygame.Surface, car, collision_mesh, offx: int = 0, offy: int = 0) -> None:
+    """Draw collision mesh polygons and car spring points in debug mode."""
+    import math
+
+    # Draw collision mesh polygons (yellow outline)
+    for polygon in collision_mesh:
+        if len(polygon) < 2:
+            continue
+        screen_pts = [(int(x - offx), int(y - offy)) for x, y in polygon]
+        pygame.draw.polygon(surface, (255, 255, 0), screen_pts, 2)
+        for sx, sy in screen_pts:
+            pygame.draw.circle(surface, (255, 255, 0), (sx, sy), 3)
+
+    # Draw car spring points: rest position (cyan) and displaced position (red) with connecting line
+    if hasattr(car, "spring_debug") and car.spring_debug:
+        for wx, wy, dx, dy in car.spring_debug:
+            sx, sy = int(wx - offx), int(wy - offy)
+            dsx, dsy = int(dx - offx), int(dy - offy)
+            # Line from rest to displaced (orange)
+            if abs(wx - dx) > 0.1 or abs(wy - dy) > 0.1:
+                pygame.draw.line(surface, (255, 160, 30), (sx, sy), (dsx, dsy), 1)
+                pygame.draw.circle(surface, (255, 50, 50), (dsx, dsy), 3)  # displaced = red
+            pygame.draw.circle(surface, (0, 255, 255), (sx, sy), 3)  # rest = cyan
+    elif hasattr(car, "spring_points_local"):
+        ca, sa = math.cos(car.angle), math.sin(car.angle)
+        for lx, ly in car.spring_points_local:
+            wx = car.x + lx * ca - ly * sa
+            wy = car.y + lx * sa + ly * ca
+            sx, sy = int(wx - offx), int(wy - offy)
+            pygame.draw.circle(surface, (0, 255, 255), (sx, sy), 3)
+
 def draw_header(surface, font_big, font_small, title_str: str, fps: float, host_username: str = None):
     # header background
     pygame.draw.rect(surface, const.TRACK_BORDER_COLOR, (0, 0, const.WINDOW_WIDTH, const.TOP_LINE_Y))
