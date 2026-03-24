@@ -248,15 +248,25 @@ class Car:
             specs_vals = extract_specs_values(self.specs)
         halfL = specs_vals["CAR_LEN"] * 0.5
         halfW = specs_vals["CAR_WID"] * 0.5
+        quatL = specs_vals["CAR_LEN"] * 0.25
+        quatW = specs_vals["CAR_WID"] * 0.25
         self.spring_points_local = [
-            (+halfL, +halfW),
-            (+halfL, 0.0),
-            (+halfL, -halfW),
-            (0.0,    -halfW),
-            (-halfL, -halfW),
-            (-halfL, 0.0),
-            (-halfL, +halfW),
-            (0.0,    +halfW),
+            (+halfL,  +halfW),
+            (+halfL,  +quatW),
+            (+halfL,  0.0),
+            (+halfL,  -quatW),
+            (+halfL,  -halfW),
+            (+quatL,  -halfW),
+            (0.0,     -halfW),
+            (-quatL,  -halfW),
+            (-halfL,  -halfW),
+            (-halfL,  -quatW),
+            (-halfL,  0.0),
+            (-halfL,  +quatW),
+            (-halfL,  +halfW),
+            (-quatL,  +halfW),
+            (0.0,     +halfW),
+            (+quatL,  +halfW),
         ]
 
     def set_car_type(self, car_type):

@@ -66,6 +66,8 @@ class CollisionMeshEditor:
         self.panning = False
         self.pan_start_x = 0
         self.pan_start_y = 0
+        # Arrow-key panning speed (world units per second)
+        self.pan_key_speed = 500
         
         # Collision mesh - multiple shapes (world coordinates)
         self.shapes = [[]]  # List of shapes, each shape is a list of (x, y) tuples
@@ -412,19 +414,44 @@ class CollisionMeshEditor:
     
     def draw_map(self):
         """Draw the track map"""
-        # Calculate where to draw the map on screen
-        map_screen_pos = self._world_to_screen(0, 0)
-        
-        # Scale the map according to zoom
-        scaled_width = int(self.map_image.get_width() * self.zoom)
-        scaled_height = int(self.map_image.get_height() * self.zoom)
-        
-        # Only draw if visible
-        if (map_screen_pos[0] + scaled_width > 0 and map_screen_pos[0] < self.screen_width and
-            map_screen_pos[1] + scaled_height > 0 and map_screen_pos[1] < self.screen_height):
-            
-            scaled_map = pygame.transform.scale(self.map_image, (scaled_width, scaled_height))
-            self.screen.blit(scaled_map, map_screen_pos)
+        # Only draw the visible portion of the map to avoid costly full-image scaling
+        map_w = self.map_image.get_width()
+        map_h = self.map_image.get_height()
+
+        # Visible world bounds (top-left and bottom-right)
+        top_left_world = self._screen_to_world(0, 0)
+        bottom_right_world = self._screen_to_world(self.screen_width, self.screen_height)
+
+        # Compute intersection of visible area with the map bounds (in world/pixel coords)
+        src_left = max(0, int(math.floor(top_left_world[0])))
+        src_top = max(0, int(math.floor(top_left_world[1])))
+        src_right = min(map_w, int(math.ceil(bottom_right_world[0])))
+        src_bottom = min(map_h, int(math.ceil(bottom_right_world[1])))
+
+        # If nothing of the map is visible, skip drawing
+        if src_right <= src_left or src_bottom <= src_top:
+            return
+
+        src_w = src_right - src_left
+        src_h = src_bottom - src_top
+
+        # Extract the visible subimage and scale only that portion to the destination size
+        try:
+            sub = self.map_image.subsurface((src_left, src_top, src_w, src_h)).copy()
+        except Exception:
+            # Fallback to full image if subsurface isn't available for some surface types
+            sub = self.map_image
+            src_left, src_top, src_w, src_h = 0, 0, map_w, map_h
+
+        dest_x, dest_y = self._world_to_screen(src_left, src_top)
+        dest_w = int(src_w * self.zoom)
+        dest_h = int(src_h * self.zoom)
+
+        if dest_w <= 0 or dest_h <= 0:
+            return
+
+        scaled = pygame.transform.scale(sub, (dest_w, dest_h))
+        self.screen.blit(scaled, (int(dest_x), int(dest_y)))
     
     def draw_collision_mesh(self):
         """Draw the collision mesh vertices and lines"""
@@ -508,6 +535,7 @@ class CollisionMeshEditor:
             "Left Click: Place/Move vertex",
             "Right Click: Delete vertex",
             "Middle Click + Drag: Pan map",
+            "Arrow Keys: Pan map",
             "Mouse Wheel: Zoom",
             "",
             "KEYBOARD:",
@@ -556,20 +584,33 @@ class CollisionMeshEditor:
         print("="*60 + "\n")
         
         while self.running:
+            # Cap frame rate and get delta time
+            dt = self.clock.tick(60) / 1000.0
+
             self.handle_events()
-            
+
+            # Arrow-key panning (continuous while held)
+            keys = pygame.key.get_pressed()
+            if keys[pygame.K_LEFT]:
+                self.camera_x -= (self.pan_key_speed * dt) / max(self.zoom, 0.0001)
+            if keys[pygame.K_RIGHT]:
+                self.camera_x += (self.pan_key_speed * dt) / max(self.zoom, 0.0001)
+            if keys[pygame.K_UP]:
+                self.camera_y -= (self.pan_key_speed * dt) / max(self.zoom, 0.0001)
+            if keys[pygame.K_DOWN]:
+                self.camera_y += (self.pan_key_speed * dt) / max(self.zoom, 0.0001)
+
             # Clear screen
             self.screen.fill(self.bg_color)
-            
+
             # Draw everything
             self.draw_grid()
             self.draw_map()
             self.draw_collision_mesh()
             self.draw_ui()
-            
+
             # Update display
             pygame.display.flip()
-            self.clock.tick(60)
         
         # Cleanup
         pygame.quit()
