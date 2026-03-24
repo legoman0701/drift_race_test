@@ -355,9 +355,15 @@ class Car:
 
         # Understeer tuning from previous-frame front grip state.
         front_understeer = (self.has_grip[0] < 0.5) or (self.has_grip[1] < 0.5)
-        self.steering_multiplier = self.steering_multiplier * 0.95 if front_understeer else self.steering_multiplier * 1.05
-        self.steering_multiplier = min(1.0, max(0.2, self.steering_multiplier))
-        #steering_input *= steering_multiplier
+        # Smoothly adjust steering multiplier based on understeer using rates per second
+        grow_rate = 3.0   # per second increase when no understeer
+        decay_rate = 6.0  # per second decrease when understeer
+        if front_understeer:
+            self.steering_multiplier -= decay_rate * dt
+        else:
+            self.steering_multiplier += grow_rate * dt
+        
+        self.steering_multiplier = clamp(self.steering_multiplier, 0.2, 1.0)
 
         # Drift angle/ratio (difference between velocity vector and heading)
         speed_norm = math.sqrt(body_forward_speed**2 + body_lateral_speed**2 + 1e-4)
@@ -520,6 +526,12 @@ class Car:
         if collision_mesh:
             SPRING_K = 100.0
             SPRING_DAMP = 0.0
+            # Reduce collision spring strength for AI cars to avoid them getting stuck
+            # inside tight point-based collision meshes. This makes spawned AIs 'softer'
+            # against walls so they can recover instead of slowly spinning in place.
+            ai_collision_scale = 0.25 if getattr(self, 'is_ai', False) else 1.0
+            SPRING_K *= ai_collision_scale
+            SPRING_DAMP *= ai_collision_scale
             for lx, ly in self.spring_points_local:
                 # Transform local rest position to world
                 wx = self.x + lx * forward_x - ly * forward_y
@@ -567,6 +579,9 @@ class Car:
             for pid, pdata in players.items():
                 ox = pdata.get("x", 0.0)
                 oy = pdata.get("y", 0.0)
+                # Skip self entry to avoid colliding with own remote snapshot
+                if pid == self.name:
+                    continue
                 oa = pdata.get("a", 0.0)
                 # Skip if too far (broad phase)
                 dx_broad = self.x - ox
@@ -754,6 +769,9 @@ class Car:
             for pid, pdata in players.items():
                 ox = pdata.get("x", 0.0)
                 oy = pdata.get("y", 0.0)
+                # Skip self entry (avoid self-collision when remotes includes this car)
+                if pid == self.name:
+                    continue
                 oa = pdata.get("a", 0.0)
                 dx_broad = self.x - ox
                 dy_broad = self.y - oy

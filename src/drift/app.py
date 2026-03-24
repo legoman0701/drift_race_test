@@ -19,8 +19,8 @@ from drift.core.gamemode import SimpleRace
 from drift.ai.ai import ai_algorithme
 from drift.core.inputs import read_inputs
 from drift.net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, recv_jsons
-from drift.ui.ui import handle_game_events, draw_stage_ui, invalidate_ui_text_cache, invalidate_palette_cache
-from drift.ui.draw_stage import set_palette_colors_from_car
+from drift.ui.ui import handle_game_events, draw_stage_ui, invalidate_ui_text_cache, invalidate_palette_cache, draw_car
+from drift.ui.draw_stage import set_palette_colors_from_car, get_palette_colors
 from drift.core.rpm import calc_engine_rpm
 from drift.audio.engine_audio import V8EngineAudio
 from drift.audio.gear_shift_sound import GearShiftSound
@@ -592,7 +592,7 @@ def main():
     last_ping = 0.0
     host_name = None  # Will be set when hosting or joining
 
-    lights_on = True
+    lights_on = False
 
     spawnx = random.uniform(const.WINDOW_WIDTH*0.3, const.WINDOW_WIDTH*0.7)
     spawny = random.uniform(const.WINDOW_HEIGHT*0.3, const.WINDOW_HEIGHT*0.7)
@@ -600,6 +600,17 @@ def main():
     current_engine_sound_id = my_car.engine_sound_id
     # Set palette colors from car specs
     set_palette_colors_from_car(my_car.palette_colors)
+    # Ensure palette cache is fresh and pre-warm colored sprites to avoid runtime stutter
+    invalidate_palette_cache()
+    try:
+        # Pre-render one frame for the player's car to populate the palette cache
+        temp_surf = pygame.Surface((128, 128), pygame.SRCALPHA)
+        car_sprites = loaded_assets.get("car_sprites_cache", {}).get(my_car.car_type, [])
+        draw_car(temp_surf, 64, 64, my_car.angle, my_car.name, car_sprites_list=car_sprites, palette_colors=get_palette_colors())
+        print('aaa')
+        del temp_surf
+    except Exception:
+        pass
     # Local player's engine state (avoid mutating Car which may use __slots__)
     engine_state = {"gear": 0, "last_rpm": None}
 
@@ -840,15 +851,16 @@ def main():
                 if I_AM_HOST and stage1 in ["game", "mode1", "mode2"] and stage2 == "" and _total_players < _max_p:
                     # Randomly assign car type for AI cars
                     ai_car_type = random.choice(const.AVAILABLE_CARS)
-                    ai_cars.append(
-                        car.Car(
-                            random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200),
-                            random.randint(const.TRACK_MARGIN + 120, const.WINDOW_HEIGHT - const.TRACK_MARGIN - 120),
-                            name=f"AI-{len(ai_cars)+1}",
-                            is_ai=True,
-                            car_type=ai_car_type,
-                        )
+                    ai_inst = car.Car(
+                        random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200),
+                        random.randint(const.TRACK_MARGIN + 120, const.WINDOW_HEIGHT - const.TRACK_MARGIN - 120),
+                        name=f"AI-{len(ai_cars)+1}",
+                        is_ai=True,
+                        car_type=ai_car_type,
                     )
+                    ai_cars.append(ai_inst)
+                    if const.DEBUG:
+                        print(f"Spawned AI car: {ai_inst.name} at ({ai_inst.x:.1f},{ai_inst.y:.1f}) type={ai_inst.car_type}")
                 
             if ev.type == pygame.MOUSEWHEEL:
                 # Adjust zoom (clamp between 0.5 and 3.0)
@@ -938,15 +950,16 @@ def main():
                 if I_AM_HOST and stage1 in ["game", "mode1", "mode2"] and stage2 == "" and _total_players < _max_p:
                     # Randomly assign car type for AI cars
                     ai_car_type = random.choice(const.AVAILABLE_CARS)
-                    ai_cars.append(
-                        car.Car(
-                            random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200),
-                            random.randint(const.TRACK_MARGIN + 120, const.WINDOW_HEIGHT - const.TRACK_MARGIN - 120),
-                            name=f"AI-{len(ai_cars)+1}",
-                            is_ai=True,
-                            car_type=ai_car_type,
-                        )
+                    ai_inst = car.Car(
+                        random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200),
+                        random.randint(const.TRACK_MARGIN + 120, const.WINDOW_HEIGHT - const.TRACK_MARGIN - 120),
+                        name=f"AI-{len(ai_cars)+1}",
+                        is_ai=True,
+                        car_type=ai_car_type,
                     )
+                    ai_cars.append(ai_inst)
+                    if const.DEBUG:
+                        print(f"Spawned AI car: {ai_inst.name} at ({ai_inst.x:.1f},{ai_inst.y:.1f}) type={ai_inst.car_type}")
 
         # ======== NETWORKING ========
 
@@ -1192,7 +1205,14 @@ def main():
                         ai.vx, ai.vy = 0.0, 0.0
                         ai.v_angle = 0.0
                     else:
-                        ai.step(ai_algorithme(path_poly, ai), dt, remotes_with_ai_for_ais, world_size, compute_debug=const.DEBUG, collision_mesh=_collision_mesh)
+                        # Compute controls via AI algorithm and log when debugging
+                        try:
+                            controls = ai_algorithme(path_poly, ai)
+                        except Exception:
+                            controls = {"th": 0.0, "st": 0.0, "br": 0.0}
+                        if const.DEBUG:
+                            print(f"AI update {ai.name}: pos=({ai.x:.1f},{ai.y:.1f}) vx={ai.vx:.1f} vy={ai.vy:.1f} -> controls={controls}")
+                        ai.step(controls, dt, remotes_with_ai_for_ais, world_size, compute_debug=const.DEBUG, collision_mesh=_collision_mesh)
             cam.update(my_car, world_size)
             profiler.end("physics")
         else:

@@ -110,6 +110,7 @@ def ai_algorithme(
 
             speed = math.hypot(my_car.vx, my_car.vy)
             th = 1 - clamp(abs(angle_diff) * speed / 240, 0, 1) + 0.1
+            th = clamp(th, 0.0, 1.0)
             br = clamp(abs(angle_diff) * speed / 240-0.2, 0, 1)
             if ai_path_mode and surface is not None:
                 return {"th": th, "st": 0.0, "br": br}, surface

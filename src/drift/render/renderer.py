@@ -267,18 +267,22 @@ class WorldRenderer:
                 draw_car(world_surf, ai_car.x - offx, ai_car.y - offy, ai_car.angle, ai_car.name,
                          color_body=const.COLOR_BODY_DEFAULT,
                          car_sprites_list=car_sprites,
-                         lights_on=lights_on)
+                         lights_on=lights_on,
+                         palette_colors=getattr(ai_car, 'palette_colors', None))
 
             # Player
             my_car_sprites = car_sprites_cache.get(my_car.car_type, car_sprites_cache.get("ae86", []))
-            palette_colors = get_palette_colors()
             draw_car(world_surf, my_car.x - offx, my_car.y - offy, my_car.angle, my_car.name,
                      color_body=const.COLOR_MY_CAR,
                      car_sprites_list=my_car_sprites,
                      lights_on=lights_on,
-                     palette_colors=palette_colors)
+                     palette_colors=get_palette_colors())
             # Per-wheel debug overlay for local car
             if const.DEBUG:
+                # Draw debug overlays for AIs as well as the local player
+                for ai_car in ai_cars:
+                    draw_wheel_debug(world_surf, ai_car, offx, offy)
+                    draw_collision_debug(world_surf, ai_car, self.collision_mesh, offx, offy)
                 draw_wheel_debug(world_surf, my_car, offx, offy)
                 draw_collision_debug(world_surf, my_car, self.collision_mesh, offx, offy)
 
@@ -337,18 +341,22 @@ class WorldRenderer:
             draw_car(world_surf, ai_car.x, ai_car.y, ai_car.angle, ai_car.name,
                      color_body=const.COLOR_BODY_DEFAULT,
                      car_sprites_list=car_sprites,
-                     lights_on=lights_on)
+                     lights_on=lights_on,
+                     palette_colors=getattr(ai_car, 'palette_colors', None))
 
         # 4) Player Car
         my_car_sprites = car_sprites_cache.get(my_car.car_type, car_sprites_cache.get("ae86", []))
-        palette_colors = get_palette_colors()
         draw_car(world_surf, my_car.x, my_car.y, my_car.angle, my_car.name,
                  color_body=const.COLOR_MY_CAR,
                  car_sprites_list=my_car_sprites,
                  lights_on=lights_on,
-                 palette_colors=palette_colors)
+                 palette_colors=get_palette_colors())
         # Per-wheel debug overlay for local car
         if const.DEBUG:
+            # Draw debug overlays for AI cars
+            for ai_car in ai_cars:
+                draw_wheel_debug(world_surf, ai_car, 0, 0)
+                draw_collision_debug(world_surf, ai_car, self.collision_mesh, 0, 0)
             draw_wheel_debug(world_surf, my_car, 0, 0)
             draw_collision_debug(world_surf, my_car, self.collision_mesh, 0, 0)
 
