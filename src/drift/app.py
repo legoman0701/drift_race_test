@@ -24,7 +24,7 @@ from drift.ui.draw_stage import set_palette_colors_from_car, get_palette_colors
 from drift.core.rpm import calc_engine_rpm
 from drift.audio.engine_audio import V8EngineAudio
 from drift.audio.gear_shift_sound import GearShiftSound
-from drift.render.map_chunks import ChunkedMap
+from drift.render.map_chunks import ChunkedMap, ensure_all_maps_sliced
 from drift.core.gamepad import Gamepad
 
 # ======= CONFIGURATION =======
@@ -54,7 +54,7 @@ def draw_loading_screen(screen, progress, total_steps, current_task="Loading..."
     center_y = const.WINDOW_HEIGHT // 2
     
     # Draw title
-    title_text = title_font.render(f"Drift Race v{const.VERSION}", True, (255, 255, 255))
+    title_text = title_font.render(f"drift_race_v{const.VERSION}", True, (255, 255, 255))
     title_rect = title_text.get_rect(center=(center_x, center_y - 100))
     screen.blit(title_text, title_rect)
     
@@ -150,6 +150,7 @@ def load_assets_with_progress(screen, clock, engine_sound_id, gpu_display=None):
             time.sleep(0.2)
             
         elif step_key == "track":
+            ensure_all_maps_sliced()  # Slice all map chunks once at startup
             loaded_data["track_image"] = pygame.image.load(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
             loaded_data["chunk_map"] = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=const.TILE_SIZE)
             time.sleep(0.1)
@@ -533,7 +534,7 @@ def main():
     if use_gpu:
         try:
             from drift.render.gpu_display import GPUDisplay
-            gpu_display = GPUDisplay((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), f"Drift Race v{const.VERSION}")
+            gpu_display = GPUDisplay((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), f"drift_race_v{const.VERSION}")
             print("✓ GPU display initialized via pygame._sdl2")
             # With the SDL2 Renderer pipeline the window is owned by GPUDisplay.
             # We still need a scratch Surface for loading screens / fallback blits.
@@ -544,7 +545,7 @@ def main():
             gpu_display = None
     
     if gpu_display is None:
-        pygame.display.set_caption(f"Drift Race v{const.VERSION}")
+        pygame.display.set_caption(f"drift_race_v{const.VERSION}")
         screen = pygame.display.set_mode((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
     
     clock = pygame.time.Clock()

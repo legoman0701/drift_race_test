@@ -45,6 +45,10 @@ def parse_color(s: str):
     return tuple(parts)
 
 
+# Module-level set tracking directories that have already been checked/sliced
+_sliced_dirs: set = set()
+
+
 def slice_map(
     input_path: str = asset_path("track", f"map{const.MAP_NUM}", "main.png"),
     outdir: str = asset_path("track", f"map{const.MAP_NUM}", "chunks"),
@@ -54,6 +58,11 @@ def slice_map(
     pad_color=(28, 28, 28, 255),
     force: bool = False,
 ):
+    # Fast path: if we already processed this directory, skip entirely
+    outdir_key = str(outdir)
+    if not force and outdir_key in _sliced_dirs:
+        return
+
     if not os.path.exists(input_path):
         raise FileNotFoundError(f"Input image not found: {input_path}")
 
@@ -66,6 +75,7 @@ def slice_map(
             with os.scandir(outdir) as it:
                 for entry in it:
                     if entry.is_file() and entry.name.lower().endswith('.png'):
+                        _sliced_dirs.add(outdir_key)  # Mark as done
                         return
         except FileNotFoundError: print(f"Output directory not found, will be created: {outdir}")
 
@@ -138,6 +148,9 @@ def slice_map(
     manifest_path = os.path.join(str(outdir), "manifest.json")  # Convert outdir to string
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
+
+    # Mark this directory as sliced so subsequent calls skip filesystem checks
+    _sliced_dirs.add(outdir_key)
 
     print(f"[OK] Wrote {written} tiles to '{outdir}'. Indexing='{indexing}' (ix_start={ix_start}, iy_start={iy_start})")
     print(f"[OK] Manifest: {manifest_path}")

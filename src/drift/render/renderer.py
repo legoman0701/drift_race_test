@@ -159,12 +159,10 @@ class WorldRenderer:
     def _update_tire_marks_chunked(self, my_car, ai_cars: List, remotes: Dict[str, Dict], camera_rect: pygame.Rect) -> None:
         self._fade_frame_counter += 1
         if self._fade_frame_counter % 3 == 0:
-            # Fade visible chunks more aggressively each tick
+            # Fade only the chunks that are actually visible
             self.tire_mark_grid.fade_visible(camera_rect, (185, 185, 185, 255))
-            # Fade off-screen chunks too so they decay even when not visible
-            self.tire_mark_grid.fade_offscreen(camera_rect, (150, 150, 150, 255))
-        # Evict off-screen chunks every frame (O(n) dict walk, cheap)
-        self.tire_mark_grid.remove_offscreen_chunks(camera_rect, margin=1)
+        # Evict every chunk that is outside the visible tile range (no buffer margin)
+        self.tire_mark_grid.remove_offscreen_chunks(camera_rect, margin=0)
 
         def add_per_wheel_lines(car_obj) -> None:
             if not car_obj.drift_points_old or not getattr(car_obj, "has_grip", None):

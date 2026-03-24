@@ -2,7 +2,7 @@ import pygame, string, math
 from drift.tools.paths import get_available_cars
 
 # ======= APPLICATION INFO =======
-VERSION = "0.7_alpha"
+VERSION = "0.7.0"
 
 # ======= NETWORK =======
 RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"

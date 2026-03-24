@@ -3,7 +3,30 @@ from typing import Dict, Tuple, Optional, Iterable
 import os, drift.config.const as const
 import json
 from drift.tools.paths import asset_path
-from drift.tools.slice_map import slice_map
+
+# Module-level flag: True once ensure_all_maps_sliced() has run
+_maps_sliced = False
+
+
+def ensure_all_maps_sliced() -> None:
+    """Slice all maps once at startup. Safe to call multiple times."""
+    global _maps_sliced
+    if _maps_sliced:
+        return
+    # Import here to avoid circular import at module load
+    from drift.tools.slice_map import slice_map
+    for map_num in range(1, const.TOTAL_MAPS + 1):
+        slice_map(
+            input_path=asset_path("track", f"map{map_num}", "main.png"),
+            outdir=asset_path("track", f"map{map_num}", "chunks"),
+            tile=const.TILE_SIZE,
+            indexing="zero",
+            prefix="",
+            pad_color=(28, 28, 28, 255),
+            force=False,
+        )
+    _maps_sliced = True
+
 
 class ChunkedMap:
     """
@@ -25,14 +48,7 @@ class ChunkedMap:
         self._cache: Dict[Tuple[int, int], pygame.Surface] = {} # {(x, y): surface}
         self._cache_access_order: Dict[Tuple[int, int], int] = {}  # Track LRU
         self._access_counter = 0
-        for map_num in range(1, const.TOTAL_MAPS + 1):
-            slice_map(input_path = asset_path("track", f"map{map_num}", "main.png"),
-                outdir = asset_path("track", f"map{map_num}", "chunks"),
-                tile = const.TILE_SIZE,
-                indexing = "zero",
-                prefix = "",
-                pad_color = (28, 28, 28, 255),
-                force = False)
+        # Slicing is now done once via ensure_all_maps_sliced(), not here
         self._world_size = self._compute_world_size()
 
     def _compute_world_size(self) -> Tuple[int, int]:

@@ -1,4 +1,4 @@
-# Drift Race Test
+# Drift Race
 
 Drift racing game with online multiplayer, AI opponents, and arcade physics.
 
