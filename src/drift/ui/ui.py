@@ -6,8 +6,6 @@ import numpy as np
 import drift.config.const as const
 from drift.core.car import CAR_LEN, CAR_WID
 from drift.core.helpers import clamp
-from drift.core.inputs import read_inputs
-from drift.core.rpm import calc_engine_rpm
 from drift.ui.ui_helpers import get_cached_text, invalidate_ui_text_cache
 from drift.ui.draw_stage import (
     draw_mode1, draw_mode2, draw_new_game, draw_join_game, draw_settings, draw_error,
@@ -702,29 +700,15 @@ def draw_controls_hud(ui_surf: pygame.Surface, ai_path_mode_controls, gamepad, m
     """
 
     # HUD: steering wheel + throttle/brake % bars (bottom-right)
-    if const.AI_PATH_FOLLOW and ai_path_mode_controls is not None: 
-        inp = ai_path_mode_controls
-    else: 
-        inp = read_inputs(gamepad, my_car, cam, const.CURSOR_FOLLOW, const.AI_PATH_FOLLOW)
+    # Use the pre-computed controls dict passed from the main loop
+    inp = ai_path_mode_controls if ai_path_mode_controls is not None else {"th": 0.0, "st": 0.0, "br": 0.0}
 
     th = clamp(inp.get("th", 0.0), -1.0, 1.0)
     br = clamp(inp.get("br", 0.0), 0.0, 1.0)
     st = clamp(inp.get("st", 0.0), -1.0, 1.0)
-    
-    # Engine RPM estimation: uses speed, drift state, throttle and smoothing
-    speed_units = math.hypot(my_car.vx, my_car.vy)
-    # Persist transient engine state externally (gear, last rpm)
-    prev_rpm = engine_state.get("last_rpm")
-    rpm = calc_engine_rpm(
-        speed_units=speed_units,
-        drift_ratio=my_car.drift_ratio,
-        throttle=th,
-        prev_rpm=prev_rpm,
-        dt=dt,
-        params=None,
-        _state=engine_state,
-    )
-    engine_state["last_rpm"] = rpm
+
+    # RPM already computed in the main loop physics phase
+    rpm = engine_state.get("last_rpm") or 0.0
 
     # Apply UI scaling
     s = getattr(const, "UI_SCALE", 1.0)
