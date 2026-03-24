@@ -1,5 +1,6 @@
 import pygame
-from typing import Dict, Tuple, Optional, Iterable
+from collections import OrderedDict
+from typing import Tuple, Optional, Iterable
 import os, drift.config.const as const
 import json
 from drift.tools.paths import asset_path
@@ -45,9 +46,10 @@ class ChunkedMap:
         self.tile_size = tile_size
         self.default_color = default_color
         self.max_cached_chunks = max_cached_chunks
-        self._cache: Dict[Tuple[int, int], pygame.Surface] = {} # {(x, y): surface}
-        self._cache_access_order: Dict[Tuple[int, int], int] = {}  # Track LRU
-        self._access_counter = 0
+        # O(1) LRU via OrderedDict: most-recently-used at the end
+        self._cache: OrderedDict[Tuple[int, int], pygame.Surface] = OrderedDict()
+        # Pre-built default tile (converted once)
+        self._default_tile: Optional[pygame.Surface] = None
         # Slicing is now done once via ensure_all_maps_sliced(), not here
         self._world_size = self._compute_world_size()
 
@@ -110,45 +112,42 @@ class ChunkedMap:
         """Return world dimensions in pixels derived from chunk coverage."""
         return self._world_size
 
+    def _get_default_tile(self) -> pygame.Surface:
+        """Return a shared default tile, created and .convert()-ed once."""
+        if self._default_tile is None:
+            self._default_tile = pygame.Surface((self.tile_size, self.tile_size))
+            self._default_tile.fill(self.default_color)
+            try: self._default_tile = self._default_tile.convert()
+            except pygame.error: pass
+        return self._default_tile
+
     def _load_tile(self, ix: int, iy: int) -> pygame.Surface:
-        # root is already a Path object, so we can use / operator or joinpath
         link = self.root / f"{ix}_{iy}.png" if hasattr(self.root, '__truediv__') else os.path.join(str(self.root), f"{ix}_{iy}.png")
         surf: Optional[pygame.Surface] = None
         if os.path.exists(link):
             try: surf = pygame.image.load(link).convert()
             except Exception as e: print(f"Error loading tile {link}: {e}")
         if surf is None:
-            surf = pygame.Surface((self.tile_size, self.tile_size)) # surface : 512x512
-            surf.fill(self.default_color)
-        self._cache[(ix, iy)] = surf # add it to cache
+            surf = self._get_default_tile()
+        self._cache[(ix, iy)] = surf
         return surf
 
     def get_tile(self, ix: int, iy: int) -> pygame.Surface:
         key = (ix, iy)
-        # Update access tracking for LRU
-        self._access_counter += 1
-        self._cache_access_order[key] = self._access_counter
-        
-        # Get or load tile
         tile = self._cache.get(key)
-        if tile is None:
-            tile = self._load_tile(ix, iy)
-            self._evict_old_chunks()
-        
+        if tile is not None:
+            # O(1) move to end (mark as recently used)
+            self._cache.move_to_end(key)
+            return tile
+        # Cache miss: load and evict if over budget
+        tile = self._load_tile(ix, iy)
+        self._evict_old_chunks()
         return tile
-    
+
     def _evict_old_chunks(self) -> None:
-        """Remove least recently used chunks when cache exceeds max size."""
-        if len(self._cache) <= self.max_cached_chunks:
-            return
-        
-        # Sort by access order (oldest first)
-        sorted_chunks = sorted(self._cache_access_order.items(), key=lambda kv: kv[1])
-        to_remove = len(self._cache) - self.max_cached_chunks
-        
-        for key, _ in sorted_chunks[:to_remove]:
-            self._cache.pop(key, None)
-            self._cache_access_order.pop(key, None)
+        """O(1) per eviction: pop oldest entries from the OrderedDict front."""
+        while len(self._cache) > self.max_cached_chunks:
+            self._cache.popitem(last=False)  # remove least-recently-used
 
     def world_to_tile(self, x: float, y: float) -> Tuple[int, int]:
         return int(x // self.tile_size), int(y // self.tile_size) # get the tile according to car's real pos
@@ -177,29 +176,26 @@ class TireMarkGrid:
     def __init__(self, tile_size: int, max_kept: int = 256):
         self.tile_size = tile_size
         self.max_kept = max_kept
-        self._marks: Dict[Tuple[int, int], pygame.Surface] = {} # {(x, y): surface}
-        self._last_used: Dict[Tuple[int, int], int] = {} # {(x, y): t}
-        self._use_counter = 0
+        # O(1) LRU via OrderedDict: most-recently-used at the end
+        self._marks: OrderedDict[Tuple[int, int], pygame.Surface] = OrderedDict()
 
     def _get_chunk(self, ix: int, iy: int) -> pygame.Surface:
         key = (ix, iy)
-        surf = self._marks.get(key) # -> {key: surface}
-        if surf is None:
-            surf = pygame.Surface((self.tile_size, self.tile_size), pygame.SRCALPHA)
-            surf.fill((255, 255, 255, 0)) # transparent
-            self._marks[key] = surf
-        self._last_used[key] = self._use_counter
+        surf = self._marks.get(key)
+        if surf is not None:
+            self._marks.move_to_end(key)
+            return surf
+        surf = pygame.Surface((self.tile_size, self.tile_size), pygame.SRCALPHA)
+        surf.fill((255, 255, 255, 0))
+        try: surf = surf.convert_alpha()
+        except pygame.error: pass
+        self._marks[key] = surf
         return surf
 
     def _ensure_budget(self) -> None:
-        if len(self._marks) <= self.max_kept:
-            return
-        # evict the least recently used chunks
-        items = sorted(self._last_used.items(), key=lambda kv: kv[1])
-        to_remove = len(self._marks) - self.max_kept
-        for (key, _score) in items[:to_remove]:
-            self._marks.pop(key, None)
-            self._last_used.pop(key, None)
+        """O(1) per eviction: pop oldest entries from the OrderedDict front."""
+        while len(self._marks) > self.max_kept:
+            self._marks.popitem(last=False)
 
     def fade(self, color_mult=(240, 240, 240, 255)) -> None:
         """Slow fade towards 'ground' each frame by multiply-blend."""
@@ -208,7 +204,6 @@ class TireMarkGrid:
 
     def draw_line_world(self, p0, p1, color, width, tile_size) -> None:
         """Draw a line (world coords) across potentially multiple chunks."""
-        self._use_counter += 1
         ts = self.tile_size
         # naive but effective: render on both endpoint chunks; acceptable for short dt lines
         for px, py in (p0, p1):
@@ -228,8 +223,7 @@ class TireMarkGrid:
         for key in list(self._marks.keys()):
             ix, iy = key
             if ix < ix0 or ix > ix1 or iy < iy0 or iy > iy1:
-                self._marks.pop(key, None)
-                self._last_used.pop(key, None)
+                del self._marks[key]
 
     def fade_offscreen(self, camera_rect: pygame.Rect, color_mult=(150, 150, 150, 255)) -> None:
         """Apply fade to chunks that are outside the visible camera rect."""

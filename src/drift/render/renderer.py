@@ -36,6 +36,27 @@ class WorldRenderer:
         # Frame counter for fade optimization
         self._fade_frame_counter = 0
 
+        # Cached reusable surfaces to avoid per-frame allocation
+        self._viewport_surf: Optional[pygame.Surface] = None
+        self._viewport_size: Tuple[int, int] = (0, 0)
+        self._classic_surf: Optional[pygame.Surface] = None
+        self._classic_size: Tuple[int, int] = (0, 0)
+
+    def _get_viewport_surf(self, w: int, h: int) -> pygame.Surface:
+        """Return a cached viewport surface, reallocating only on size change."""
+        if self._viewport_surf is None or self._viewport_size != (w, h):
+            self._viewport_surf = pygame.Surface((w, h), self.flags)
+            self._viewport_size = (w, h)
+        self._viewport_surf.fill(const.GREY_20)
+        return self._viewport_surf
+
+    def _get_classic_surf(self, w: int, h: int) -> pygame.Surface:
+        """Return a cached classic world surface, reallocating only on size change."""
+        if self._classic_surf is None or self._classic_size != (w, h):
+            self._classic_surf = pygame.Surface((w, h), self.flags)
+            self._classic_size = (w, h)
+        return self._classic_surf
+
     def clear_tire_marks(self) -> None:
         """Clear all tire marks (both classic and chunked modes)."""
         # Clear classic tire mark surface
@@ -247,9 +268,9 @@ class WorldRenderer:
 
         # game stage (draw chunk map)
         if stage in ["mode1", "mode2"] and self.chunked_map is not None:
-            # Viewport-sized canvas
+            # Viewport-sized canvas (reuse cached surface)
             vw, vh = int(const.WINDOW_WIDTH / cam.zoom), int(const.WINDOW_HEIGHT / cam.zoom)
-            world_surf = pygame.Surface((vw, vh), self.flags)
+            world_surf = self._get_viewport_surf(vw, vh)
 
             # Track
             camera_rect = self._draw_track_chunked(world_surf, cam)
@@ -323,7 +344,7 @@ class WorldRenderer:
         else:
             world_size = (self.track_image.get_width(), self.track_image.get_height())
 
-        world_surf = pygame.Surface(world_size, self.flags)
+        world_surf = self._get_classic_surf(*world_size)
         resized = self._ensure_tire_mark_size(world_size)
 
         # 1) Draw the background track image
