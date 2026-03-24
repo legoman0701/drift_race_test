@@ -10,7 +10,7 @@ from drift.tools.paths import asset_path, chdir_to_exe_folder_if_frozen, get_ava
 import drift.config.const as const
 import drift.render.camera as camera
 import drift.core.car as car
-from drift.core.car import get_car_engine_sound_id
+from drift.core.car import get_car_engine_sound_id, CollisionMesh
 import drift.ui.button as btn
 import drift.ai.path_finder as path_finder
 from drift.render.renderer import WorldRenderer
@@ -580,7 +580,8 @@ def main():
     path_poly = []
     checkpoints = []
     game_mode = None           # active BaseGameMode instance (SimpleRace, etc.)
-    _collision_mesh = []       # collision polygons from map_meta.json
+    _collision_mesh = CollisionMesh([])  # collision polygons from map_meta.json (with spatial hash)
+    _path_future = None        # Future for async track discovery
     _prev_stage1 = "lobby"     # detect stage1 transitions
     _return_btn_rect = None    # leaderboard button rect from previous frame
     _local_result_sent = False
@@ -998,14 +999,15 @@ def main():
                     game_mode.on_exit(); game_mode = None
 
             if stage1 == "mode1" and game_mode is None:
-                _start_grid = []; _lines = []; _collision_mesh = []
+                _start_grid = []; _lines = []; _collision_mesh = CollisionMesh([])
                 try:
                     meta_path = asset_path("track", f"map{const.MAP_NUM}", "map_meta.json")
                     with open(meta_path, "r", encoding="utf-8") as fh:
                         _meta = json.load(fh)
                     _start_grid = _meta.get("start", []) or []
                     _lines = _meta.get("lines", []) or []
-                    _collision_mesh = _meta.get("collision_mesh", []) or []
+                    _raw_mesh = _meta.get("collision_mesh", []) or []
+                    _collision_mesh = CollisionMesh(_raw_mesh) if _raw_mesh else CollisionMesh([])
                 except Exception:
                     pass
 
@@ -1134,8 +1136,16 @@ def main():
         if not skip_physics:
             render_stage = stage1 if stage1 != "leaderboard" else "mode1"
             world_surf, resized, is_viewport = renderer.render_world(cam, render_stage, my_car, ai_cars, remotes, lights_on, car_sprites_cache)
-            if resized and not is_viewport:
-                path_poly = path_finder.discover_track(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png"))
+            if resized and not is_viewport and _path_future is None:
+                _path_future = path_finder.discover_track_async(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png"))
+
+            # Poll for async path discovery result
+            if _path_future is not None and _path_future.done():
+                try:
+                    path_poly = _path_future.result()
+                except Exception:
+                    path_poly = []
+                _path_future = None
 
             if gpu_display is not None:
                 final_surf = world_surf if is_viewport else cam.apply_no_scale(world_surf)

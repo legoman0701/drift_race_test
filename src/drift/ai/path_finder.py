@@ -1,8 +1,12 @@
 import pygame, math
+from concurrent.futures import ThreadPoolExecutor, Future
 from PIL import Image
 
 from drift.config import const
 from drift.tools.paths import normalize_asset_path
+
+# Background thread pool for non-blocking track discovery
+_executor = ThreadPoolExecutor(max_workers=1)
 
 def discover_track(map_path, start_pos=(220, 1700), start_angle=90, sample_rate=8, max_iterations=10000):
     """
@@ -174,6 +178,14 @@ def discover_track_visual(map_path, start_pos=(220, 1700), start_angle=90, sampl
 
     pygame.quit()
     return positions
+
+
+def discover_track_async(map_path, start_pos=(220, 1700), start_angle=90, sample_rate=8, max_iterations=10000):
+    """Start track discovery in a background thread. Returns a Future.
+    
+    Poll with future.done(); retrieve result with future.result().
+    """
+    return _executor.submit(discover_track, map_path, start_pos, start_angle, sample_rate, max_iterations)
 
 
 if __name__ == "__main__":

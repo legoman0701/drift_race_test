@@ -3,6 +3,8 @@ import drift.config.const as const
 from drift.tools.paths import normalize_asset_path
 from drift.core.rpm import RpmParams
 
+_SQRT2 = math.sqrt(2)  # pre-computed constant for isometric compensation
+
 # world
 WINDOW_WIDTH, WINDOW_HEIGHT = 1000, 700
 TRACK_MARGIN = 40
@@ -54,6 +56,77 @@ def clamp(x, lo, hi):
     return lo if x < lo else hi if x > hi else x
 
 
+# ── Spatial hash grid for broadphase collision ─────────────────────────────
+class SpatialHash:
+    """Grid-based spatial index for convex polygons."""
+    __slots__ = ('cell_size', 'inv_cell', 'cells')
+
+    def __init__(self, cell_size=80.0):
+        self.cell_size = cell_size
+        self.inv_cell = 1.0 / cell_size
+        self.cells = {}  # (cx, cy) -> list[int]  (polygon indices)
+
+    def build(self, polygons):
+        """Index all polygons by their AABB cells."""
+        self.cells.clear()
+        inv = self.inv_cell
+        cells = self.cells
+        for idx, poly in enumerate(polygons):
+            if len(poly) < 3:
+                continue
+            min_x = min_y = float('inf')
+            max_x = max_y = float('-inf')
+            for px, py in poly:
+                if px < min_x: min_x = px
+                if px > max_x: max_x = px
+                if py < min_y: min_y = py
+                if py > max_y: max_y = py
+            cx0 = int(min_x * inv)
+            cx1 = int(max_x * inv)
+            cy0 = int(min_y * inv)
+            cy1 = int(max_y * inv)
+            for cx in range(cx0, cx1 + 1):
+                for cy in range(cy0, cy1 + 1):
+                    key = (cx, cy)
+                    bucket = cells.get(key)
+                    if bucket is None:
+                        cells[key] = [idx]
+                    else:
+                        bucket.append(idx)
+
+    def query_point(self, x, y):
+        """Return polygon indices whose cell contains this point."""
+        return self.cells.get((int(x * self.inv_cell), int(y * self.inv_cell)), ())
+
+
+class CollisionMesh:
+    """Wraps a list of polygons with a spatial hash for fast broadphase."""
+    __slots__ = ('polygons', 'spatial_hash')
+
+    def __init__(self, polygons, cell_size=80.0):
+        self.polygons = list(polygons)
+        self.spatial_hash = SpatialHash(cell_size)
+        self.spatial_hash.build(self.polygons)
+
+    def __bool__(self):
+        return len(self.polygons) > 0
+
+    def __len__(self):
+        return len(self.polygons)
+
+    def __iter__(self):
+        return iter(self.polygons)
+
+    def query_point(self, x, y):
+        """Yield polygons near this point (broadphase filter)."""
+        polys = self.polygons
+        seen = set()
+        for idx in self.spatial_hash.query_point(x, y):
+            if idx not in seen:
+                seen.add(idx)
+                yield polys[idx]
+
+
 def _point_in_polygon(px, py, polygon):
     """Ray-casting point-in-polygon test."""
     n = len(polygon)
@@ -91,11 +164,12 @@ def _wall_pushout(px, py, polygon):
         if d_sq < min_dist_sq:
             min_dist_sq = d_sq
             nearest_x, nearest_y = cx, cy
+    # Use squared distance for the zero-check; only sqrt once at the end
+    if min_dist_sq < 1e-12:
+        return 0.0, 0.0, 0.0
     dx = nearest_x - px
     dy = nearest_y - py
-    depth = math.sqrt(dx * dx + dy * dy)
-    if depth < 1e-6:
-        return 0.0, 0.0, 0.0
+    depth = math.sqrt(min_dist_sq)
     return dx, dy, depth
 
 
@@ -233,6 +307,7 @@ class Car:
         
         # Extract specs values and create RpmParams
         specs_vals = extract_specs_values(self.specs)
+        self._cached_specs_vals = specs_vals  # cache for per-frame use in step()
         self.rpm_params = RpmParams(
             redline_rpm=specs_vals["MAX_RPM"],
             gear_ratios=specs_vals["GEAR_RATIOS"],
@@ -278,6 +353,7 @@ class Car:
         
         # Update RpmParams and palette colors for new car
         specs_vals = extract_specs_values(self.specs)
+        self._cached_specs_vals = specs_vals  # refresh cache
         self.rpm_params = RpmParams(
             redline_rpm=specs_vals["MAX_RPM"],
             gear_ratios=specs_vals["GEAR_RATIOS"],
@@ -288,8 +364,8 @@ class Car:
         self._init_spring_points(specs_vals)
 
     def step(self, inputs, dt, players, bounds, compute_debug=False, cursor_follow=False, cam=None, collision_mesh=None):        
-        # Load specs values using new format
-        specs_vals = extract_specs_values(self.specs)
+        # Use cached specs values (updated only on set_car_type or __init__)
+        specs_vals = self._cached_specs_vals
         CAR_LEN = specs_vals["CAR_LEN"]
         CAR_WID = specs_vals["CAR_WID"]
         WHEELBASE = specs_vals["WHEELBASE"]
@@ -532,12 +608,15 @@ class Car:
             ai_collision_scale = 0.25 if getattr(self, 'is_ai', False) else 1.0
             SPRING_K *= ai_collision_scale
             SPRING_DAMP *= ai_collision_scale
+            # Use spatial hash if available (CollisionMesh), else fall back to raw list
+            _use_spatial = hasattr(collision_mesh, 'query_point')
             for lx, ly in self.spring_points_local:
                 # Transform local rest position to world
                 wx = self.x + lx * forward_x - ly * forward_y
                 wy = self.y + lx * forward_y + ly * forward_x
                 displaced_x, displaced_y = wx, wy
-                for polygon in collision_mesh:
+                polys_to_check = collision_mesh.query_point(wx, wy) if _use_spatial else collision_mesh
+                for polygon in polys_to_check:
                     if len(polygon) < 3:
                         continue
                     push_x, push_y, depth = _wall_pushout(wx, wy, polygon)
@@ -652,7 +731,7 @@ class Car:
             self.vx -= excess * forward_x
             self.vy -= excess * forward_y
         self.x  += self.vx * dt
-        self.y  += (self.vy * dt) * math.sqrt(2)  # compensate for isometric view at 45deg
+        self.y  += (self.vy * dt) * _SQRT2  # compensate for isometric view at 45deg
 
         # Integrate yaw (angular) motion
         inertia_z = MASS * (CAR_LEN**2 + CAR_WID**2) / 12.0
@@ -681,7 +760,8 @@ class Car:
                 for lx, ly in self.spring_points_local:
                     wx = self.x + lx * ca2 - ly * sa2
                     wy = self.y + lx * sa2 + ly * ca2
-                    for polygon in collision_mesh:
+                    polys_to_check = collision_mesh.query_point(wx, wy) if _use_spatial else collision_mesh
+                    for polygon in polys_to_check:
                         if len(polygon) < 3:
                             continue
                         push_x, push_y, depth = _wall_pushout(wx, wy, polygon)
@@ -696,9 +776,10 @@ class Car:
                     break
                 avg_px = total_push_x / contacts
                 avg_py = total_push_y / contacts
-                avg_len = math.sqrt(avg_px * avg_px + avg_py * avg_py)
-                if avg_len < 1e-6:
+                avg_len_sq = avg_px * avg_px + avg_py * avg_py
+                if avg_len_sq < 1e-12:
                     break
+                avg_len = math.sqrt(avg_len_sq)
                 nx = avg_px / avg_len
                 ny = avg_py / avg_len
                 self.x += nx * worst_depth
@@ -785,11 +866,9 @@ class Car:
                     wy = self.y + lx * sa2 + ly * ca2
                     push_x, push_y, depth = _wall_pushout(wx, wy, other_poly)
                     if depth > 0:
-                        plen = math.sqrt(push_x * push_x + push_y * push_y)
-                        if plen < 1e-6:
-                            continue
-                        nx = push_x / plen
-                        ny = push_y / plen
+                        # depth already guaranteed > 1e-6 by _wall_pushout
+                        nx = push_x / depth
+                        ny = push_y / depth
                         # Push out only half — other player pushes their half
                         self.x += nx * depth * 0.5
                         self.y += ny * depth * 0.5
