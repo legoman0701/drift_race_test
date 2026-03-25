@@ -2,7 +2,7 @@
 
 Drift racing game with online multiplayer, AI opponents, and arcade physics.
 
-**Website**: [https://nmax0.github.io/drift-site/](https://nmax0.github.io/drift-site/index.html)  
+**Website**: [drift_race_web](https://nmax0.github.io/drift_race_web/index.html)  
 For a complete overview, features, and controls.
 
 ---
@@ -10,12 +10,12 @@ For a complete overview, features, and controls.
 ## Getting Started
 
 ### Quick Start
-1. Download the latest release from [Downloads](https://nmax0.github.io/drift-site/download.html)
+1. Download the latest release from [Downloads](https://nmax0.github.io/drift_race_web/download.html)
 2. Extract and run `Drift.exe` (Windows)
-3. For installation help, visit the [Help Page](https://nmax0.github.io/drift-site/help.html)
+3. For installation help, visit the [Help Page](https://nmax0.github.io/drift_race_web/help.html)
 
 ### Controls & Features
-See the [project website](https://nmax0.github.io/drift-site/index.html) for:
+See the [project website](https://nmax0.github.io/drift_race_web/index.html) for:
 - Complete controls reference
 - Feature documentation
 - Gameplay tips
@@ -25,7 +25,7 @@ See the [project website](https://nmax0.github.io/drift-site/index.html) for:
 
 ## Changelog
 
-Full changelog available at: [Changelog](https://nmax0.github.io/drift-site/changelog.html)
+Full changelog available at: [Changelog](https://nmax0.github.io/drift_race_web/changelog.html)
 
 ---
 

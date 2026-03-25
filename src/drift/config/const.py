@@ -2,7 +2,7 @@ import pygame, string, math
 from drift.tools.paths import get_available_cars
 
 # ======= APPLICATION INFO =======
-VERSION = "0.7.0"
+VERSION = "0.7.1"
 
 # ======= NETWORK =======
 RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
@@ -95,9 +95,10 @@ ESCAPE_KEY = pygame.K_ESCAPE  # open settings / pause menu
 UP_KEY = [pygame.K_UP, pygame.K_z]      # accelerate
 DOWN_KEY = [pygame.K_DOWN, pygame.K_s]  # reverse
 LEFT_KEY = [pygame.K_LEFT, pygame.K_q]  # steer left
-RIGHT_KEY = [pygame.K_RIGHT, pygame.K_d]  # steer right
+RIGHT_KEY = [pygame.K_RIGHT, pygame.K_d] # steer right
 BRAKE_KEY = pygame.K_SPACE              # handbrake
 RESET_KEY = pygame.K_r                  # reset car position
+RESTART_KEY = pygame.K_t                # restart current race
 
 # Game controls
 CHANGE_CAR_KEY = pygame.K_c             # change car

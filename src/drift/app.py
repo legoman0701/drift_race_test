@@ -822,6 +822,20 @@ def main():
                         my_car.x, my_car.y, my_car.angle = lx, ly, la
                         my_car.vx, my_car.vy = 0.0, 0.0
                         my_car.v_angle = 0.0
+                elif ev.key == const.RESTART_KEY:
+                    if stage1.startswith("mode") and len(remotes) == 0:
+                        # Restart race (solo player only, AI don't count)
+                        if game_mode is not None:
+                            game_mode.on_exit(); game_mode = None
+                        renderer.clear_tire_marks()
+                        my_car.last_checkpoint_coordinates = None
+                        _local_result_sent = False
+                        _prev_stage1 = "game"
+                    elif stage1.startswith("mode") and my_car.last_checkpoint_coordinates is not None:
+                        lx, ly, la = my_car.last_checkpoint_coordinates
+                        my_car.x, my_car.y, my_car.angle = lx, ly, la
+                        my_car.vx, my_car.vy = 0.0, 0.0
+                        my_car.v_angle = 0.0
                 elif ev.key == const.DEBUG_TOGGLE_KEY:
                     const.DEBUG = not const.DEBUG
                     invalidate_ui_text_cache('debug')
