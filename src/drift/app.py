@@ -880,6 +880,15 @@ def main():
                     except Exception:
                         pass
 
+        # ── Per-frame: apply completed non-blocking connection (runs once/frame, not per-event) ──
+        conn_result = poll_pending_connection()
+        if conn_result is not None:
+            stage1, stage2, sock, code, my_name, is_host, host_name, _err, track_image, chunked_map, checkpoints = conn_result
+            I_AM_HOST = is_host; host_ref[0] = is_host
+            engine_audio, current_engine_sound_id = sync_engine_audio_system(
+                engine_audio, audio_initialized, current_engine_sound_id, my_car
+            )
+
             # Sync renderer with any map changes from UI
             if renderer and track_image and renderer.track_image != track_image: renderer.track_image = track_image
             if renderer and chunked_map and renderer.chunked_map != chunked_map: renderer.chunked_map = chunked_map

@@ -551,13 +551,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
 def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref, host_name=None, new_game_rects=None, track_image=None, chunked_map=None, checkpoints=None):
     """Handle game events including new game UI interactions."""
     global _new_game_rects_cache, _palette_picker_rects_cache
-    
-    # Poll pending non-blocking connection each frame
-    conn_result = poll_pending_connection()
-    if conn_result is not None:
-        stage1, stage2, sock, code, my_name, is_host, host_name, _err, track_image, chunked_map, checkpoints = conn_result
-        is_host_flag_ref[0] = is_host
-    
+
     if ev.type == pygame.KEYDOWN: # press a key
         if stage1 == "lobby": # in lobby
             if stage2 == "": # main lobby
