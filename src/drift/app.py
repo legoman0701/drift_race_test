@@ -6,7 +6,7 @@
 import pygame, json, time, random, sys, math, uuid, argparse
 from collections import deque
 # local imports
-from drift.tools.paths import asset_path, chdir_to_exe_folder_if_frozen, get_available_cars, normalize_asset_path, get_available_sprite_layers
+from drift.tools.paths import asset_path, chdir_to_exe_folder_if_frozen, normalize_asset_path, get_available_sprite_layers
 import drift.config.const as const
 import drift.render.camera as camera
 import drift.core.car as car
@@ -18,7 +18,7 @@ from drift.core.helpers import clamp, rand_name
 from drift.core.gamemode import SimpleRace
 from drift.ai.ai import ai_algorithme
 from drift.core.inputs import read_inputs
-from drift.net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, recv_jsons
+from drift.net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping
 from drift.ui.ui import handle_game_events, draw_stage_ui, invalidate_ui_text_cache, invalidate_palette_cache, draw_car, poll_pending_connection
 from drift.ui.draw_stage import set_palette_colors_from_car, get_palette_colors
 from drift.core.rpm import calc_engine_rpm
