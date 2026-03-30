@@ -69,6 +69,14 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
             track = msg.get("track")
             if isinstance(track, str) and track:
                 result["start_track"] = track
+            laps = msg.get("laps")
+            if isinstance(laps, int) and 1 <= laps <= 10:
+                result["start_laps"] = laps
+            # Roster: authoritative list of all player/AI IDs from the relay,
+            # used to compute deterministic spawn positions on every client.
+            roster = msg.get("roster")
+            if isinstance(roster, list):
+                result["start_roster"] = roster
         elif t == "world": # Placeholder for receiving authoritative world state from server
             host_name = msg.get("host_name")
             if isinstance(host_name, str):
@@ -86,9 +94,9 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
                     result["start_mode"] = mode
                 if isinstance(track, str) and track:
                     result["start_track"] = track
-            elif isinstance(mode, str) and mode == "game":
-                # Use world snapshots as a reliable fallback for lobby return.
-                result["start_mode"] = "game"
+            elif isinstance(mode, str) and mode == "lobby":
+                # Use world snapshots as a reliable fallback for menu return.
+                result["start_mode"] = "lobby"
                 if isinstance(track, str) and track:
                     result["start_track"] = track
             players = msg.get("players", {}) or {}
@@ -152,6 +160,8 @@ def send_network_state(sock, code: str, my_id: str, my_car, palette=None):
 
 
 def send_ai_states(sock, code: str, ai_cars):
+    # Host broadcasts AI car states including palette so non-host
+    # clients can render AI cars with the correct colors.
     for i, ai in enumerate(ai_cars, start=1):
         pkt = {
             "t": "state",
@@ -166,6 +176,9 @@ def send_ai_states(sock, code: str, ai_cars):
             "name": ai.name,
             "car_type": getattr(ai, "car_type", "ae86"),
         }
+        palette = getattr(ai, "palette_colors", None)
+        if palette:
+            pkt["palette"] = [list(c) for c in palette]
         try:
             sock.send(json.dumps(pkt).encode("utf-8"))
         except Exception:

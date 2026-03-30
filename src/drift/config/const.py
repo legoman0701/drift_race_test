@@ -83,8 +83,8 @@ for car in AVAILABLE_CARS:
             f"cars/{car}/Palette/Image{{i:04}}.png"
         ]
     },
-DEFAULT_CAR_ID = "ae86"
-DEFAULT_CAR_NAME = "AE86"
+DEFAULT_CAR_ID = "911"
+DEFAULT_CAR_NAME = "911 SC"
 
 # ======= CONTROLS =======
 # Menu controls

@@ -20,7 +20,7 @@ from drift.ai.ai import ai_algorithme
 from drift.core.inputs import read_inputs
 from drift.net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping
 from drift.ui.ui import handle_game_events, draw_stage_ui, invalidate_ui_text_cache, invalidate_palette_cache, draw_car, poll_pending_connection
-from drift.ui.draw_stage import set_palette_colors_from_car, get_palette_colors
+from drift.ui.draw_stage import set_palette_colors_from_car, get_palette_colors, get_game_options, get_game_setup, set_game_option
 from drift.core.rpm import calc_engine_rpm
 from drift.audio.engine_audio import V8EngineAudio
 from drift.audio.gear_shift_sound import GearShiftSound
@@ -571,8 +571,8 @@ def main():
     engine_audio = loaded_assets["engine_audio"]
     shift_sound = loaded_assets["shift_sound"]
 
-    stage1 = "lobby" # lobby | game | error | mode1 | mode2
-    stage2 = "" # new_game | join_game | settings
+    stage1 = "menu" # menu | lobby | error | mode1 | mode2
+    stage2 = "" # settings
     stage3 = "" # controls
     error_msg = ""
     remotes = {}
@@ -582,9 +582,11 @@ def main():
     game_mode = None           # active BaseGameMode instance (SimpleRace, etc.)
     _collision_mesh = CollisionMesh([])  # collision polygons from map_meta.json (with spatial hash)
     _path_future = None        # Future for async track discovery
-    _prev_stage1 = "lobby"     # detect stage1 transitions
+    _prev_stage1 = "menu"     # detect stage1 transitions
     _return_btn_rect = None    # leaderboard button rect from previous frame
     _local_result_sent = False
+    _ai_results_sent = {}
+    _start_roster = None       # authoritative player/AI roster from relay at race start
 
     my_name = rand_name()
     my_id = str(uuid.uuid4())[:8]
@@ -637,7 +639,7 @@ def main():
             }
         except Exception as e:
             print(f"Failed to connect to relay - starting in offline mode: {e!r}")
-            sock = None; code = "Offline"; stage1 = "game"; I_AM_HOST = True
+            sock = None; code = "Offline"; stage1 = "lobby"; I_AM_HOST = True
     elif args.mode == "join" and args.code and args.name:
         my_name = args.name
         my_car.name = my_name
@@ -653,7 +655,7 @@ def main():
             }
         except Exception as e:
             print(f"Failed to connect to relay - starting in offline mode: {e!r}")
-            sock = None; code = "Offline"; stage1 = "game"; I_AM_HOST = False
+            sock = None; code = "Offline"; stage1 = "lobby"; I_AM_HOST = False
     
     # Renderer handles track, cars, and drift marks
     renderer = WorldRenderer(track_image, flags, chunked_map=chunked_map)
@@ -674,7 +676,7 @@ def main():
         sys.exit(0)
 
     def leave_room(sock, code, my_id, remotes):
-        nonlocal host_name, game_mode, _prev_stage1, _return_btn_rect, _local_result_sent
+        nonlocal host_name, game_mode, _prev_stage1, _return_btn_rect, _local_result_sent, _ai_results_sent, _start_roster
         if sock and code:
             try:
                 sock.send(json.dumps({"t": "bye", "code": code, "id": my_id}).encode("utf-8"))
@@ -690,14 +692,16 @@ def main():
         if game_mode is not None:
             game_mode.on_exit()
             game_mode = None
-        _prev_stage1 = "lobby"
+        _prev_stage1 = "menu"
         _return_btn_rect = None
         _local_result_sent = False
+        _ai_results_sent = {}
+        _start_roster = None
         invalidate_ui_text_cache('room')  # Clear cached room code text
         # Clear tire marks and chunk cache to free memory
         renderer.clear_tire_marks()
         renderer.clear_chunk_cache()
-        return "lobby", "", None, None, remotes # stage, substage sock, code, remotes
+        return "menu", "", None, None, remotes # stage, substage sock, code, remotes
     
     def handle_controls():
         nonlocal stage3
@@ -718,9 +722,9 @@ def main():
         except Exception: return stage1, "", None, None, {}
 
     settings_buttons = [ # todo : be able to use '*' like '*/settings' for key binds
-    btn.Button("Quit Game", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["lobby", "settings"]] ,lambda: quit_game()),
-    btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["leaderboard", "settings"]] ,lambda: leave_room(sock, code, my_id, remotes)),
-    btn.Button("Controls", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, [["lobby", "settings"], ["game", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["leaderboard", "settings"]], handle_controls),
+    btn.Button("Quit Game", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["menu", "settings"]] ,lambda: quit_game()),
+    btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["leaderboard", "settings"]] ,lambda: leave_room(sock, code, my_id, remotes)),
+    btn.Button("Controls", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, [["menu", "settings"], ["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["leaderboard", "settings"]], handle_controls),
     btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["mode1", "settings"], ["mode2", "settings"]], lambda: switch_cursor_follow_mode(stage1)),
     btn.Button("AI Path Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.65, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["mode1", "settings"], ["mode2", "settings"]], lambda: switch_ai_path_mode(stage1)),
     ]
@@ -747,17 +751,52 @@ def main():
         set_palette_colors_from_car(my_car.palette_colors)
         invalidate_palette_cache()
 
+    # ── Helper: load map start grid ──
+    def _load_start_grid():
+        """Return list of (x, y, a) tuples from the current map's map_meta.json."""
+        try:
+            meta_path = asset_path("track", f"map{const.MAP_NUM}", "map_meta.json")
+            with open(meta_path, "r", encoding="utf-8") as fh:
+                meta = json.load(fh)
+            return [
+                (float(sp.get("x", 400)), float(sp.get("y", 400)), float(sp.get("a", 0.0)))
+                for sp in (meta.get("start") or [])
+            ]
+        except Exception:
+            return []
+
     # ── Helper: spawn AI car (shared by keyboard & gamepad) ──
     def _try_spawn_ai():
         _max_p = game_mode.max_players if game_mode else 6
-        if I_AM_HOST and stage1 in ["game", "mode1", "mode2"] and stage2 == "" and 1 + len(remotes) + len(ai_cars) < _max_p:
-            ai_car_type = random.choice(const.AVAILABLE_CARS)
-            ai_inst = car.Car(
-                random.randint(const.TRACK_MARGIN + 200, const.WINDOW_WIDTH - const.TRACK_MARGIN - 200),
-                random.randint(const.TRACK_MARGIN + 120, const.WINDOW_HEIGHT - const.TRACK_MARGIN - 120),
-                name=f"AI-{len(ai_cars)+1}", is_ai=True, car_type=ai_car_type,
-            )
-            ai_cars.append(ai_inst)
+        if I_AM_HOST and stage1 in ["lobby", "mode1", "mode2"] and stage2 == "" and 1 + len(remotes) + len(ai_cars) < _max_p:
+            from drift.ui.draw_stage import set_game_option
+            set_game_option("ai_amount", len(ai_cars) + 1)
+
+    def _sync_ai_count():
+        """Spawn or remove AI cars to match game_options ai_amount."""
+        if not I_AM_HOST:
+            return
+        target = get_game_options()["ai_amount"]
+        if len(ai_cars) < target:
+            grid = _load_start_grid()
+            humans = 1 + len(remotes)  # slot 0..humans-1 occupied by real players
+            while len(ai_cars) < target:
+                slot = humans + len(ai_cars)
+                if grid and slot < len(grid):
+                    sx, sy, sa = grid[slot]
+                elif grid:
+                    sx, sy, sa = grid[len(ai_cars) % len(grid)]
+                else:
+                    sx, sy, sa = 400.0, 400.0, 0.0
+                ai_car_type = random.choice(const.AVAILABLE_CARS)
+                ai_inst = car.Car(
+                    sx, sy,
+                    name=f"AI-{len(ai_cars)+1}", is_ai=True, car_type=ai_car_type,
+                )
+                ai_inst.angle = sa
+                ai_cars.append(ai_inst)
+        while len(ai_cars) > target:
+            ai_cars.pop()
 
     # ══════════════════════════════════════════════════════════
     #  MAIN LOOP  —  strict  Input → Update → Draw  ordering
@@ -780,15 +819,15 @@ def main():
                         sock = _cli_conn["result"][3]
                     else:
                         sock = None; code = "Offline"
-                    stage1 = "game"; I_AM_HOST = True
+                    stage1 = "lobby"; I_AM_HOST = True
                 else:  # join
                     result = _cli_conn.get("result")
-                    if result and result[0] == "game" and result[3] is not None:
+                    if result and result[0] == "lobby" and result[3] is not None:
                         sock = result[3]; code = result[2]
-                        stage1 = "game"; I_AM_HOST = False
+                        stage1 = "lobby"; I_AM_HOST = False
                     else:
                         sock = None; code = "Offline"
-                        stage1 = "game"; I_AM_HOST = False
+                        stage1 = "lobby"; I_AM_HOST = False
                 _cli_conn = None
 
         # ────────────────────────────────────────────────────
@@ -830,7 +869,9 @@ def main():
                         renderer.clear_tire_marks()
                         my_car.last_checkpoint_coordinates = None
                         _local_result_sent = False
-                        _prev_stage1 = "game"
+                        _ai_results_sent = {}
+                        _start_roster = None
+                        _prev_stage1 = "lobby"
                     elif stage1.startswith("mode") and my_car.last_checkpoint_coordinates is not None:
                         lx, ly, la = my_car.last_checkpoint_coordinates
                         my_car.x, my_car.y, my_car.angle = lx, ly, la
@@ -866,7 +907,7 @@ def main():
                 cam.offset[0] -= ev.rel[0] / cam.zoom
                 cam.offset[1] -= ev.rel[1] / cam.zoom
 
-            # Delegate to UI event handler (menus, lobby, game setup)
+            # Delegate to UI event handler (menus, menu, lobby setup)
             ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map, checkpoints = handle_game_events(
                 screen, ev, stage1, stage2, stage3, gp, remotes, ai_cars, sock, code,
                 my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name,
@@ -884,13 +925,13 @@ def main():
                     and _return_btn_rect.collidepoint(ev.pos)):
                 if game_mode is not None:
                     game_mode.on_exit(); game_mode = None
-                stage1 = "game"; _prev_stage1 = "game"
-                _return_btn_rect = None; _local_result_sent = False
-                my_car.x, my_car.y = const.WINDOW_WIDTH // 2, const.WINDOW_HEIGHT // 2
+                stage1 = "lobby"; _prev_stage1 = "lobby"
+                _return_btn_rect = None; _local_result_sent = False; _ai_results_sent = {}; _start_roster = None
+                my_car.x, my_car.y = random.randint(100, const.WINDOW_WIDTH - 100), random.randint(100, const.WINDOW_HEIGHT - 100)
                 my_car.vx, my_car.vy = 0.0, 0.0
                 if sock and code and code != "Offline":
                     try:
-                        sock.send(json.dumps({"t": "start_race", "code": code, "id": my_id, "mode": "game"}).encode("utf-8"))
+                        sock.send(json.dumps({"t": "start_race", "code": code, "id": my_id, "mode": "lobby"}).encode("utf-8"))
                     except Exception:
                         pass
 
@@ -919,7 +960,12 @@ def main():
                 _try_spawn_ai()
 
         # 1c. Compute authoritative controls for this frame (single source of truth)
-        skip_physics = stage2 in ["new_game", "join_game"] or stage3 == "controls"
+        skip_physics = stage3 == "controls"
+
+        # Sync AI car count with game options (lobby + active gameplay)
+        if stage1 in ("lobby", "mode1", "mode2"):
+            _sync_ai_count()
+
         controls = {"th": 0.0, "st": 0.0, "br": 0.0}
         ai_debug_surface = None
         if not skip_physics:
@@ -951,26 +997,35 @@ def main():
             if net_result.get("host_id") is not None:
                 I_AM_HOST = (net_result["host_id"] == my_id)
                 host_ref[0] = I_AM_HOST
-            if net_result.get("start_mode") and stage1 in ["game", "mode1", "mode2", "leaderboard"]:
+            if net_result.get("start_mode") and stage1 in ["lobby", "mode1", "mode2", "leaderboard"]:
                 new_mode = net_result["start_mode"]
-                if new_mode in ["mode1", "mode2"] and stage1 != "game":
+                if new_mode.startswith("mode") and stage1 != "lobby":
                     new_mode = None
                 if new_mode is None:
                     pass
-                elif new_mode == "game":
-                    if stage1 != "game":
+                elif new_mode == "lobby":
+                    if stage1 != "lobby":
                         if game_mode is not None:
                             game_mode.on_exit(); game_mode = None
-                        _prev_stage1 = "game"; _return_btn_rect = None; _local_result_sent = False
-                        my_car.x, my_car.y = const.WINDOW_WIDTH // 2, const.WINDOW_HEIGHT // 2
+                        _prev_stage1 = "lobby"; _return_btn_rect = None; _local_result_sent = False; _ai_results_sent = {}; _start_roster = None
+                        my_car.x, my_car.y = random.randint(100, const.WINDOW_WIDTH - 100), random.randint(100, const.WINDOW_HEIGHT - 100)
                         my_car.vx, my_car.vy = 0.0, 0.0
                         renderer.clear_tire_marks()
                         stage1 = new_mode
                 else:
                     stage1 = new_mode
                     renderer.clear_tire_marks()
+                    start_laps = net_result.get("start_laps")
+                    if isinstance(start_laps, int):
+                        set_game_option("laps", start_laps)
+                    # Save relay roster so spawn positions are deterministic
+                    # across all clients (avoids AI/player slot mismatch).
+                    _start_roster = net_result.get("start_roster")
                     start_track = net_result.get("start_track")
-                    if not I_AM_HOST and isinstance(start_track, str) and start_track.startswith("track"):
+                    # For host, use selected_track from game setup (they may have changed it in the panel)
+                    if I_AM_HOST:
+                        start_track = get_game_setup().get("selected_track", "track1")
+                    if isinstance(start_track, str) and start_track.startswith("track"):
                         try:
                             new_map_num = int(start_track[5:])
                         except Exception:
@@ -996,7 +1051,7 @@ def main():
             if now - last_state_send >= 1.0 / const.SEND_HZ:
                 last_state_send = now
                 send_network_state(sock, code, my_id, my_car, palette=get_palette_colors())
-                if I_AM_HOST and ai_cars:
+                if I_AM_HOST and ai_cars and stage1 != "lobby":
                     send_ai_states(sock, code, ai_cars)
             if now - last_ping >= 1.0 / const.PING_HZ:
                 last_ping = now
@@ -1010,7 +1065,7 @@ def main():
         profiler.begin("gamemode")
 
         if stage1 != _prev_stage1:
-            if _prev_stage1 in ["mode1", "mode2"] and game_mode is not None:
+            if _prev_stage1.startswith("mode") and game_mode is not None:
                 if stage1 != "leaderboard":
                     game_mode.on_exit(); game_mode = None
 
@@ -1028,15 +1083,29 @@ def main():
                     pass
 
                 renderer.collision_mesh = _collision_mesh
-                game_mode = SimpleRace(renderer.checkpoints or [], total_laps=1, start_grid=_start_grid, lines=_lines, local_player_id=my_id)
+                game_mode = SimpleRace(renderer.checkpoints or [], total_laps=get_game_options()["laps"], start_grid=_start_grid, lines=_lines, local_player_id=my_id)
                 _local_result_sent = False
+                _ai_results_sent = {}
                 _mode_players = {my_id: {"car_type": my_car.car_type, "name": my_car.name}}
                 for pid, rd in remotes.items():
                     _mode_players[pid] = {"car_type": rd.get("car_type", "ae86"), "name": rd.get("name", pid)}
                 for i, ai in enumerate(ai_cars, start=1):
                     _mode_players[f"AI-{i}"] = {"car_type": ai.car_type, "name": ai.name}
                 game_mode.on_enter(_mode_players)
-                sorted_spawn_ids = sorted(_mode_players.keys())
+
+                # Use the relay-provided roster for spawn slot assignment so
+                # every client (host & non-host) computes identical positions,
+                # even if some AI world-states haven't arrived yet.
+                if _start_roster and isinstance(_start_roster, list):
+                    sorted_spawn_ids = sorted(_start_roster)
+                    # Ensure our own id is in the roster (shouldn't be missing,
+                    # but guard against relay hiccups).
+                    if my_id not in sorted_spawn_ids:
+                        sorted_spawn_ids.append(my_id)
+                        sorted_spawn_ids.sort()
+                else:
+                    sorted_spawn_ids = sorted(_mode_players.keys())
+
                 start_positions = game_mode.get_start_positions(sorted_spawn_ids)
                 if my_id in start_positions:
                     sx, sy, sa = start_positions[my_id]
@@ -1057,7 +1126,7 @@ def main():
             _prev_stage1 = stage1
 
         mode_result = {}
-        if game_mode is not None and stage1 in ["mode1", "mode2", "leaderboard"]:
+        if game_mode is not None and (stage1.startswith("mode") or stage1 in ["leaderboard"]):
             _mode_players_update = dict(remotes)
             for i, ai in enumerate(ai_cars, start=1):
                 _mode_players_update[f"AI-{i}"] = ai
@@ -1065,10 +1134,44 @@ def main():
             local_finish_time = game_mode.get_local_finish_time()
             if local_finish_time is not None and not _local_result_sent and sock and code and code != "Offline":
                 try:
-                    sock.send(json.dumps({
-                        "t": "race_result", "code": code, "id": my_id, "time": float(local_finish_time),
-                    }).encode("utf-8"))
+                    # Include best lap time if available so relay can broadcast it
+                    best_lap = None
+                    try:
+                        if game_mode and my_id in getattr(game_mode, 'player_states', {}):
+                            bp = game_mode.player_states.get(my_id)
+                            best_lap = bp.best_lap_time if bp is not None else None
+                    except Exception:
+                        best_lap = None
+
+                    payload = {"t": "race_result", "code": code, "id": my_id, "time": float(local_finish_time)}
+                    if best_lap is not None:
+                        payload["best_lap"] = float(best_lap)
+
+                    sock.send(json.dumps(payload).encode("utf-8"))
                     _local_result_sent = True
+                except Exception:
+                    pass
+            # If host, send race_result for AI cars when they finish so relay records authoritative results
+            if I_AM_HOST and game_mode is not None and sock and code and code != "Offline":
+                try:
+                    for i, ai in enumerate(ai_cars, start=1):
+                        aid = f"AI-{i}"
+                        ps = game_mode.player_states.get(aid)
+                        if ps is None:
+                            continue
+                        if ps.finished and not _ai_results_sent.get(aid):
+                            # send race_result for this AI
+                            payload = {"t": "race_result", "code": code, "id": aid, "time": float(ps.finish_time)}
+                            try:
+                                if ps.best_lap_time is not None:
+                                    payload["best_lap"] = float(ps.best_lap_time)
+                            except Exception:
+                                pass
+                            try:
+                                sock.send(json.dumps(payload).encode("utf-8"))
+                            except Exception:
+                                pass
+                            _ai_results_sent[aid] = True
                 except Exception:
                     pass
             if mode_result.get("stage_transition") == "leaderboard":
@@ -1124,8 +1227,8 @@ def main():
             except Exception:
                 pass
 
-            # AI cars
-            if I_AM_HOST and ai_cars:
+            # AI cars (skip in lobby – AI exists in room but is inactive)
+            if I_AM_HOST and ai_cars and stage1 != "lobby":
                 remotes_with_ai_for_ais = dict(remotes)
                 remotes_with_ai_for_ais[f"PLAYER-{my_id}"] = {"x": my_car.x, "y": my_car.y, "a": my_car.angle, "vx": my_car.vx, "vy": my_car.vy, "drift_ratio": my_car.drift_ratio, "name": my_car.name}
                 for i, ai in enumerate(ai_cars, start=1):
@@ -1151,7 +1254,8 @@ def main():
         profiler.begin("render_world")
         if not skip_physics:
             render_stage = stage1 if stage1 != "leaderboard" else "mode1"
-            world_surf, resized, is_viewport = renderer.render_world(cam, render_stage, my_car, ai_cars, remotes, lights_on, car_sprites_cache)
+            visible_ai = ai_cars if stage1 != "lobby" else []
+            world_surf, resized, is_viewport = renderer.render_world(cam, render_stage, my_car, visible_ai, remotes, lights_on, car_sprites_cache)
             if resized and not is_viewport and _path_future is None:
                 _path_future = path_finder.discover_track_async(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png"))
 
@@ -1184,11 +1288,12 @@ def main():
         if game_mode is not None and stage1 in ["mode1", "leaderboard"]:
             ui_checkpoints = []
 
-        world_surf, button_results, new_game_rects, join_game_rects, palette_picker_rects = draw_stage_ui(
+        world_surf, button_results, menu_bar_rects, palette_picker_rects, game_options_rects = draw_stage_ui(
             ui_surf, stage1 if stage1 != "leaderboard" else "mode1",
             stage2, stage3, code, world_surf, world_size, ui_checkpoints,
             settings_buttons, error_msg, my_car, cam, gp, font_big, font_medium, font_small,
             controls, engine_state, fps, dt, I_AM_HOST, host_name, car_sprites_cache,
+            room_clients_count=1 + len(remotes),
         )
         draw_engine_audio_debug(ui_surf, engine_audio)
         draw_chunk_minimap(ui_surf, renderer)
@@ -1200,7 +1305,7 @@ def main():
             if stage1 == "leaderboard":
                 lb_result = game_mode.draw_leaderboard(ui_surf, font_big, font_medium, font_small, I_AM_HOST)
                 _return_btn_rect = lb_result.get("return_btn_rect")
-            elif stage1 in ["mode1", "mode2"]:
+            elif stage1.startswith("mode"):
                 game_mode.draw_hud(ui_surf, cam, font_big, font_medium, font_small)
 
         if show_frame_analysis:
@@ -1212,7 +1317,7 @@ def main():
                 stage1, stage2, sock, code, remotes = res
 
         # AI path debug overlay
-        if const.AI_PATH_FOLLOW and stage1 == "game" and ai_debug_surface is not None:
+        if const.AI_PATH_FOLLOW and stage1 == "lobby" and ai_debug_surface is not None:
             try:
                 top_left = cam.x - (const.WINDOW_WIDTH / 2) / cam.zoom, cam.y - (const.WINDOW_HEIGHT / 2) / cam.zoom
                 camera_rect = pygame.Rect(top_left[0], top_left[1], const.WINDOW_WIDTH / cam.zoom, const.WINDOW_HEIGHT / cam.zoom)

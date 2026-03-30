@@ -60,7 +60,8 @@ class BaseGameMode(ABC):
 
 class _PlayerRaceState:
     __slots__ = ("player_id", "current_checkpoint", "current_lap",
-                 "finished", "finish_time", "car_type", "name")
+                 "finished", "finish_time", "car_type", "name",
+                 "best_lap_time", "_lap_start_time")
 
     def __init__(self, player_id, car_type="ae86", name=""):
         self.player_id = player_id
@@ -70,6 +71,8 @@ class _PlayerRaceState:
         self.finish_time = 0.0
         self.car_type = car_type
         self.name = name
+        self.best_lap_time = None   # float | None
+        self._lap_start_time = 0.0  # race_time when current lap began
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +96,7 @@ class SimpleRace(BaseGameMode):
         self.countdown_duration = 3.0 # seconds
         self.cooldown_start = 0.0
         self.cooldown_duration = 5.0 # seconds
-        self.max_time = 120.0 # seconds (2 min race time limit)
+        self.max_time = 90.0 * total_laps # seconds (90 seconds per lap)
         self.max_players = 6
 
         # Optional spawn coordinates from map_meta.json -> "start"
@@ -157,6 +160,10 @@ class SimpleRace(BaseGameMode):
         if self.local_player_id not in self.player_states:
             self.player_states[self.local_player_id] = _PlayerRaceState(self.local_player_id, name="You")
 
+        # Initialize lap start times to zero so first lap timing is consistent.
+        for ps in self.player_states.values():
+            ps._lap_start_time = 0.0
+
     def on_exit(self):
         self.active = False
         self.player_states.clear()
@@ -179,6 +186,9 @@ class SimpleRace(BaseGameMode):
             if elapsed >= self.countdown_duration:
                 self.phase = self.PHASE_RACING
                 self.race_time = 0.0
+                # mark lap start for all players when racing begins
+                for ps in self.player_states.values():
+                    ps._lap_start_time = 0.0
             return result
 
         if self.phase == self.PHASE_RACING:
@@ -278,6 +288,14 @@ class SimpleRace(BaseGameMode):
             ps = self.player_states[pid]
             ps.name = entry.get("name", ps.name)
             ps.car_type = entry.get("car_type", ps.car_type)
+            # Apply best lap time if present in networked results
+            try:
+                if "best_lap" in entry and entry["best_lap"] is not None:
+                    b = float(entry.get("best_lap"))
+                    if b >= 0.0:
+                        ps.best_lap_time = b
+            except Exception:
+                pass
             prev_time = ps.finish_time
             prev_finished = ps.finished
             self._mark_player_finished(ps, finish_time)
@@ -335,6 +353,11 @@ class SimpleRace(BaseGameMode):
                 # Completed all checkpoints + return to CP0 → lap done
                 if ps.current_checkpoint > num_cp:
                     ps.current_lap += 1
+                    # Track best lap time
+                    lap_time = self.race_time - ps._lap_start_time
+                    if ps.best_lap_time is None or lap_time < ps.best_lap_time:
+                        ps.best_lap_time = lap_time
+                    ps._lap_start_time = self.race_time
                     if ps.current_lap >= self.total_laps:
                         self._mark_player_finished(ps, self.race_time)
                     else:
@@ -355,7 +378,13 @@ class SimpleRace(BaseGameMode):
             positions = {}
             count = len(self.start_grid)
             for i, pid in enumerate(player_ids):
-                positions[pid] = self.start_grid[i % count]
+                bx, by, ba = self.start_grid[i % count]
+                # Offset wrapped players so they don't overlap
+                wrap = i // count
+                if wrap > 0:
+                    bx += wrap * 40.0
+                    by += wrap * 40.0
+                positions[pid] = (bx, by, ba)
             return positions
 
         if not self._cp_rects:
@@ -532,14 +561,15 @@ class SimpleRace(BaseGameMode):
         ui_surf.blit(title, (const.WINDOW_WIDTH // 2 - title.get_width() // 2, 60))
 
         # Column headers
-        col_rank_x = const.WINDOW_WIDTH // 2 - 250
+        col_rank_x = const.WINDOW_WIDTH // 2 - 300
         col_name_x = col_rank_x + 70
-        col_car_x = col_name_x + 180
-        col_time_x = col_car_x + 140
+        col_car_x = col_name_x + 170
+        col_best_x = col_car_x + 120
+        col_time_x = col_best_x + 120
         header_y = 120
 
         for label, lx in [("Rank", col_rank_x), ("Player", col_name_x),
-                           ("Car", col_car_x), ("Time", col_time_x)]:
+                           ("Car", col_car_x), ("Best Lap", col_best_x), ("Time", col_time_x)]:
             hdr = font_medium.render(label, True, const.GREY_200)
             ui_surf.blit(hdr, (lx, header_y))
 
@@ -551,6 +581,13 @@ class SimpleRace(BaseGameMode):
             else: rank_s = font_medium.render(f"DNF", True, const.WHITE_240)
             name_s = font_medium.render(ps.name[:16], True, const.WHITE_240)
             car_s = font_medium.render(ps.car_type, True, const.GREY_200)
+            if ps.best_lap_time is not None:
+                bl_mins = int(ps.best_lap_time) // 60
+                bl_secs = ps.best_lap_time - bl_mins * 60
+                best_str = f"{bl_mins}:{bl_secs:05.2f}"
+            else:
+                best_str = "-"
+            best_s = font_medium.render(best_str, True, (180, 220, 255))
             mins = int(ps.finish_time) // 60
             secs = ps.finish_time - mins * 60
             time_str = f"{mins}:{secs:05.2f}" if ps.finish_time < self.max_time else "DNF"
@@ -559,6 +596,7 @@ class SimpleRace(BaseGameMode):
             ui_surf.blit(rank_s, (col_rank_x, row_y))
             ui_surf.blit(name_s, (col_name_x, row_y))
             ui_surf.blit(car_s, (col_car_x, row_y))
+            ui_surf.blit(best_s, (col_best_x, row_y))
             ui_surf.blit(time_s, (col_time_x, row_y))
             row_y += 36
 

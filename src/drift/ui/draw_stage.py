@@ -43,6 +43,60 @@ _color_palette = {
 }
 _palette_initialized_for_car = None
 
+# Game options panel state (lobby slide-out menu)
+_game_options = {
+    "panel_open": False,
+    "panel_page": "main",   # "main", "mode", "ai"
+    "selected_car_index": 0,
+    "selected_map_index": 0,
+    "selected_mode_index": 0,
+    "laps": 3,
+    "ai_amount": 0,
+    "ai_difficulty": "Random",
+}
+
+# Map metadata cache
+_map_meta_cache = {}
+
+# Map thumbnail cache (scaled previews)
+_map_thumb_cache = {}
+
+def get_game_options():
+    """Get current game options state."""
+    return _game_options
+
+def set_game_option(key, value):
+    """Set a game option value."""
+    _game_options[key] = value
+
+def _get_map_names():
+    """Return list of (track_key, display_name) for all maps."""
+    maps = []
+    for i in range(1, const.TOTAL_MAPS + 1):
+        key = f"track{i}"
+        if key not in _map_meta_cache:
+            try:
+                meta_path = asset_path("track", f"map{i}", "map_meta.json")
+                with open(meta_path, "r", encoding="utf-8") as fh:
+                    _map_meta_cache[key] = json.load(fh)
+            except Exception:
+                _map_meta_cache[key] = {"map_name": f"Map {i}"}
+        maps.append((key, _map_meta_cache[key].get("map_name", f"Map {i}")))
+    return maps
+
+def _get_map_thumbnail(map_index, thumb_w=100, thumb_h=70):
+    """Get a scaled thumbnail of a map image. Cached."""
+    key = f"map{map_index + 1}"
+    if key in _map_thumb_cache:
+        return _map_thumb_cache[key]
+    try:
+        img = pygame.image.load(normalize_asset_path("track", key, "main.png")).convert()
+        thumb = pygame.transform.smoothscale(img, (thumb_w, thumb_h))
+        _map_thumb_cache[key] = thumb
+        return thumb
+    except Exception:
+        return None
+
 
 def _resolve_car_folder(car_type):
     """Resolve car folder using case-insensitive lookup from available cars."""
@@ -265,10 +319,10 @@ def handle_palette_picker_keypress(ev):
         _color_palette[color_key] = (r, g, b)
         invalidate_palette_cache()  # Clear cache so changes are visible immediately
 
-def draw_lobby():         
+def draw_menu():         
     pass
 
-def draw_game(ui_surf, font_big, font_medium, is_host):
+def draw_menu(ui_surf, font_big, font_medium, is_host):
     """Draw the game lobby/waiting room with start button (host only)."""
     
     btn_width = const.BTN_WIDTH
@@ -278,12 +332,458 @@ def draw_game(ui_surf, font_big, font_medium, is_host):
     # Start button (bottom center) - only if host
     if is_host:
         start_btn_y = const.WINDOW_HEIGHT - 150  # Bottom area
-        start_btn = Button("Start Game", center_x - btn_width // 2, start_btn_y, btn_width, btn_height, const.GREEN, ["game"])
-        start_btn.draw(ui_surf, "game")
+        start_btn = Button("Start Game", center_x - btn_width // 2, start_btn_y, btn_width, btn_height, const.GREEN, ["lobby"])
+        start_btn.draw(ui_surf, "lobby")
         
         return {"start_btn": start_btn.rect}
     
     return {}
+
+
+# ── Game Options Panel Constants ──
+_PANEL_WIDTH = 210
+_PANEL_PADDING = 10
+_TOGGLE_SIZE = 40
+_SECTION_BOX_W = 130
+_SECTION_BOX_H = 90
+_ARROW_BTN_SIZE = 35
+_NAV_BTN_W = 180
+_NAV_BTN_H = 45
+_PM_BTN_SIZE = 40  # plus/minus button size
+_DIFF_BTN_W = 80
+_DIFF_BTN_H = 36
+_CONTENT_PAD = 8   # vertical padding inside the panel rect
+
+
+def draw_game_options_panel(ui_surf, font_big, font_medium, font_small, is_host,
+                            car_sprites_cache, room_clients_count=1, dt=0.016):
+    """Draw the slide-out game options panel on the right side of the lobby.
+
+    Returns dict of clickable rects for event handling.
+    """
+    _update_car_rotation(dt)
+    rects = {}
+    panel_x = const.WINDOW_WIDTH - _PANEL_WIDTH
+    cx = panel_x + _PANEL_WIDTH // 2
+    fh_m = font_medium.get_height()
+
+    # ── Closed state: toggle at screen centre-right ──
+    if not _game_options["panel_open"]:
+        toggle_x = const.WINDOW_WIDTH - _TOGGLE_SIZE - 5
+        toggle_y = const.WINDOW_HEIGHT // 2 - _TOGGLE_SIZE // 2
+        toggle_rect = pygame.Rect(toggle_x, toggle_y, _TOGGLE_SIZE, _TOGGLE_SIZE)
+        pygame.draw.rect(ui_surf, (100, 100, 110), toggle_rect)
+        pygame.draw.rect(ui_surf, const.WHITE, toggle_rect, 2)
+        arrow_surf = font_big.render("<", True, const.WHITE_240)
+        ui_surf.blit(arrow_surf, (toggle_rect.centerx - arrow_surf.get_width() // 2,
+                                   toggle_rect.centery - arrow_surf.get_height() // 2))
+        rects["toggle"] = toggle_rect
+        return rects
+
+    # ── Compute content height for the current page ──
+    page = _game_options["panel_page"]
+    if page == "main":
+        title_text = "Game Options"
+        content_h = _CONTENT_PAD
+        content_h += fh_m + 3 + _SECTION_BOX_H + 8          # Car
+        if is_host:
+            content_h += fh_m + 3 + _SECTION_BOX_H + 8      # Map
+            content_h += 5 + _NAV_BTN_H + 8                  # Mode nav
+            content_h += _NAV_BTN_H                          # AI nav
+        content_h += _CONTENT_PAD
+    elif page == "mode":
+        title_text = "Mode Options"
+        content_h = _CONTENT_PAD
+        content_h += fh_m + 3 + _SECTION_BOX_H + 8          # Mode selector
+        content_h += 5 + fh_m + 5 + _PM_BTN_SIZE            # Laps
+        content_h += _CONTENT_PAD
+    elif page == "ai":
+        title_text = "AI Options"
+        content_h = _CONTENT_PAD
+        content_h += fh_m + 5 + _PM_BTN_SIZE + 15           # Amount
+        content_h += fh_m + 5 + 2 * (_DIFF_BTN_H + 6) - 6  # Difficulty grid
+        content_h += _CONTENT_PAD
+    else:
+        return rects
+
+    # ── Centre everything vertically ──
+    title_surf = font_medium.render(title_text, True, const.WHITE_240)
+    title_h = title_surf.get_height()
+    title_gap = 5
+    total_h = title_h + title_gap + content_h
+    top_y = const.WINDOW_HEIGHT // 2 - total_h // 2
+
+    # Title (outside the rect)
+    ui_surf.blit(title_surf, (cx - title_surf.get_width() // 2, top_y))
+
+    # Back button for sub-pages (outside the rect, next to title)
+    if page in ("mode", "ai"):
+        back_rect = pygame.Rect(panel_x + 5, top_y, 30, title_h)
+        pygame.draw.rect(ui_surf, (80, 80, 90), back_rect)
+        pygame.draw.rect(ui_surf, const.WHITE, back_rect, 1)
+        back_arr = font_medium.render("<", True, const.WHITE_240)
+        ui_surf.blit(back_arr, (back_rect.centerx - back_arr.get_width() // 2,
+                                 back_rect.centery - back_arr.get_height() // 2))
+        rects["back"] = back_rect
+
+    # Panel rect (tight fit around content)
+    rect_y = top_y + title_h + title_gap
+    bg_surf = pygame.Surface((_PANEL_WIDTH, content_h), pygame.SRCALPHA)
+    bg_surf.fill((20, 20, 26, 230))
+    ui_surf.blit(bg_surf, (panel_x, rect_y))
+    pygame.draw.rect(ui_surf, const.WHITE, (panel_x, rect_y, _PANEL_WIDTH, content_h), 1)
+
+    # Toggle button (vertically centred with the rect)
+    toggle_x = panel_x - _TOGGLE_SIZE - 5
+    toggle_y = rect_y + content_h // 2 - _TOGGLE_SIZE // 2
+    toggle_rect = pygame.Rect(toggle_x, toggle_y, _TOGGLE_SIZE, _TOGGLE_SIZE)
+    pygame.draw.rect(ui_surf, (100, 100, 110), toggle_rect)
+    pygame.draw.rect(ui_surf, const.WHITE, toggle_rect, 2)
+    arrow_surf = font_big.render(">", True, const.WHITE_240)
+    ui_surf.blit(arrow_surf, (toggle_rect.centerx - arrow_surf.get_width() // 2,
+                               toggle_rect.centery - arrow_surf.get_height() // 2))
+    rects["toggle"] = toggle_rect
+
+    # ── Draw page content inside the rect ──
+    if page == "main":
+        _draw_options_main_page(ui_surf, font_big, font_medium, font_small,
+                                is_host, car_sprites_cache, panel_x, rect_y, rects)
+    elif page == "mode":
+        _draw_options_mode_page(ui_surf, font_big, font_medium, font_small,
+                                car_sprites_cache, panel_x, rect_y, rects)
+    elif page == "ai":
+        _draw_options_ai_page(ui_surf, font_big, font_medium, font_small,
+                              panel_x, rect_y, room_clients_count, rects)
+
+    return rects
+
+
+def _draw_options_main_page(ui_surf, font_big, font_medium, font_small,
+                            is_host, car_sprites_cache, px, py, rects):
+    """Draw the main options page content (Car, Map, Mode, AI)."""
+    cx = px + _PANEL_WIDTH // 2
+    y = py + _CONTENT_PAD
+
+    # ── Car section ──
+    y = _draw_item_selector(ui_surf, font_medium, font_small, car_sprites_cache,
+                            "Car", _game_options["selected_car_index"],
+                            AVAILABLE_CARS, px, y, rects, "car", show_car=True)
+
+    if is_host:
+        # ── Map section ──
+        maps = _get_map_names()
+        map_labels = [m[1] for m in maps]
+        y = _draw_item_selector(ui_surf, font_medium, font_small, None,
+                                "Map", _game_options["selected_map_index"],
+                                map_labels, px, y, rects, "map", show_map=True)
+
+        # ── Mode nav button ──
+        y += 5
+        nav_x = cx - _NAV_BTN_W // 2
+        mode_rect = pygame.Rect(nav_x, y, _NAV_BTN_W, _NAV_BTN_H)
+        pygame.draw.rect(ui_surf, (100, 100, 110), mode_rect)
+        pygame.draw.rect(ui_surf, const.GREY_180, mode_rect, 1)
+        lbl = font_medium.render("mode", True, const.WHITE_240)
+        ui_surf.blit(lbl, (mode_rect.x + 15, mode_rect.centery - lbl.get_height() // 2))
+        arr = font_big.render(">", True, const.WHITE_240)
+        ui_surf.blit(arr, (mode_rect.right - arr.get_width() - 10,
+                           mode_rect.centery - arr.get_height() // 2))
+        rects["nav_mode"] = mode_rect
+        y += _NAV_BTN_H + 8
+
+        # ── AI nav button ──
+        ai_rect = pygame.Rect(nav_x, y, _NAV_BTN_W, _NAV_BTN_H)
+        pygame.draw.rect(ui_surf, (100, 100, 110), ai_rect)
+        pygame.draw.rect(ui_surf, const.GREY_180, ai_rect, 1)
+        lbl = font_medium.render("ai", True, const.WHITE_240)
+        ui_surf.blit(lbl, (ai_rect.x + 15, ai_rect.centery - lbl.get_height() // 2))
+        arr = font_big.render(">", True, const.WHITE_240)
+        ui_surf.blit(arr, (ai_rect.right - arr.get_width() - 10,
+                           ai_rect.centery - arr.get_height() // 2))
+        rects["nav_ai"] = ai_rect
+
+
+def _draw_item_selector(ui_surf, font_medium, font_small, car_sprites_cache,
+                        label, index, items, px, y, rects, prefix,
+                        show_car=False, show_map=False, car_id_override=None):
+    """Draw a selection widget (used for Car, Map, Mode).
+
+    Returns the new y position after drawing.
+    """
+    cx = px + _PANEL_WIDTH // 2
+
+    # Section label
+    lbl = font_medium.render(label, True, const.WHITE_240)
+    ui_surf.blit(lbl, (cx - lbl.get_width() // 2, y))
+    y += lbl.get_height() + 3
+
+    total = len(items)
+    if total == 0:
+        return y + _SECTION_BOX_H + 10
+
+    safe_index = index % total
+
+    # Item display box with green border
+    box_x = px + _PANEL_PADDING
+    box_rect = pygame.Rect(box_x, y, _SECTION_BOX_W, _SECTION_BOX_H)
+    pygame.draw.rect(ui_surf, (30, 30, 36), box_rect)
+    pygame.draw.rect(ui_surf, const.GREEN, box_rect, 2)
+
+    # Draw content inside the box
+    if show_car and car_sprites_cache:
+        car_id = car_id_override if car_id_override else items[safe_index]
+        text_over = items[safe_index] if car_id_override else None
+        _draw_rotating_car(ui_surf, car_id, box_rect, font_small, car_sprites_cache, _car_rotation_angle, text_override=text_over)
+    elif show_map:
+        thumb = _get_map_thumbnail(safe_index, _SECTION_BOX_W - 4, _SECTION_BOX_H - 25)
+        item_name = items[safe_index]
+        name_surf = font_small.render(item_name, True, const.WHITE_240)
+        ui_surf.blit(name_surf, (box_rect.centerx - name_surf.get_width() // 2, box_rect.y + 3))
+        if thumb:
+            ui_surf.blit(thumb, (box_rect.x + 2, box_rect.y + 22))
+    else:
+        item_name = items[safe_index]
+        name_surf = font_medium.render(item_name, True, const.WHITE_240)
+        ui_surf.blit(name_surf, (box_rect.centerx - name_surf.get_width() // 2,
+                                  box_rect.centery - name_surf.get_height() // 2))
+
+    # Up/Down arrows and counter on the right side
+    arr_x = box_x + _SECTION_BOX_W + 3
+    up_rect = pygame.Rect(arr_x, y, _ARROW_BTN_SIZE, _ARROW_BTN_SIZE)
+    pygame.draw.rect(ui_surf, (60, 60, 70), up_rect)
+    pygame.draw.rect(ui_surf, const.WHITE, up_rect, 1)
+    up_sym = font_medium.render("^", True, const.WHITE_240)
+    ui_surf.blit(up_sym, (up_rect.centerx - up_sym.get_width() // 2,
+                           up_rect.centery - up_sym.get_height() // 2))
+    rects[f"{prefix}_up"] = up_rect
+
+    # Counter
+    counter_text = f"{safe_index + 1}/{total}"
+    counter_surf = font_small.render(counter_text, True, const.WHITE_240)
+    counter_y = y + _ARROW_BTN_SIZE + 2
+    ui_surf.blit(counter_surf, (arr_x + _ARROW_BTN_SIZE // 2 - counter_surf.get_width() // 2,
+                                 counter_y))
+
+    down_y = counter_y + counter_surf.get_height() + 2
+    down_rect = pygame.Rect(arr_x, down_y, _ARROW_BTN_SIZE, _ARROW_BTN_SIZE)
+    pygame.draw.rect(ui_surf, (60, 60, 70), down_rect)
+    pygame.draw.rect(ui_surf, const.WHITE, down_rect, 1)
+    down_sym = font_medium.render("v", True, const.WHITE_240)
+    ui_surf.blit(down_sym, (down_rect.centerx - down_sym.get_width() // 2,
+                             down_rect.centery - down_sym.get_height() // 2))
+    rects[f"{prefix}_down"] = down_rect
+
+    return y + _SECTION_BOX_H + 8
+
+
+def _draw_options_mode_page(ui_surf, font_big, font_medium, font_small,
+                            car_sprites_cache, px, py, rects):
+    """Draw Mode Options sub-page content."""
+    cx = px + _PANEL_WIDTH // 2
+    y = py + _CONTENT_PAD
+
+    # Mode selector with decorative current car
+    mode_labels = ["Simple Race"]
+    current_car = AVAILABLE_CARS[_game_options["selected_car_index"] % len(AVAILABLE_CARS)] if AVAILABLE_CARS else None
+    y = _draw_item_selector(ui_surf, font_medium, font_small, car_sprites_cache,
+                            "Mode", _game_options["selected_mode_index"],
+                            mode_labels, px, y, rects, "mode",
+                            show_car=True, car_id_override=current_car)
+
+    # Laps section
+    y += 5
+    laps_lbl = font_medium.render("Laps", True, const.WHITE_240)
+    ui_surf.blit(laps_lbl, (cx - laps_lbl.get_width() // 2, y))
+    y += laps_lbl.get_height() + 5
+
+    # -  [value]  +
+    total_w = _PM_BTN_SIZE * 2 + 60
+    start_x = cx - total_w // 2
+
+    minus_rect = pygame.Rect(start_x, y, _PM_BTN_SIZE, _PM_BTN_SIZE)
+    pygame.draw.rect(ui_surf, (60, 60, 70), minus_rect)
+    pygame.draw.rect(ui_surf, const.WHITE, minus_rect, 1)
+    m_sym = font_big.render("-", True, const.WHITE_240)
+    ui_surf.blit(m_sym, (minus_rect.centerx - m_sym.get_width() // 2,
+                          minus_rect.centery - m_sym.get_height() // 2))
+    rects["laps_minus"] = minus_rect
+
+    val_rect = pygame.Rect(start_x + _PM_BTN_SIZE, y, 60, _PM_BTN_SIZE)
+    pygame.draw.rect(ui_surf, (40, 40, 46), val_rect)
+    pygame.draw.rect(ui_surf, const.WHITE, val_rect, 1)
+    val_surf = font_big.render(str(_game_options["laps"]), True, const.WHITE_240)
+    ui_surf.blit(val_surf, (val_rect.centerx - val_surf.get_width() // 2,
+                             val_rect.centery - val_surf.get_height() // 2))
+
+    plus_rect = pygame.Rect(start_x + _PM_BTN_SIZE + 60, y, _PM_BTN_SIZE, _PM_BTN_SIZE)
+    pygame.draw.rect(ui_surf, (60, 60, 70), plus_rect)
+    pygame.draw.rect(ui_surf, const.WHITE, plus_rect, 1)
+    p_sym = font_big.render("+", True, const.WHITE_240)
+    ui_surf.blit(p_sym, (plus_rect.centerx - p_sym.get_width() // 2,
+                          plus_rect.centery - p_sym.get_height() // 2))
+    rects["laps_plus"] = plus_rect
+
+
+def _draw_options_ai_page(ui_surf, font_big, font_medium, font_small,
+                          px, py, room_clients_count, rects):
+    """Draw AI Options sub-page content."""
+    cx = px + _PANEL_WIDTH // 2
+    y = py + _CONTENT_PAD
+
+    # Amount section
+    amount_lbl = font_medium.render("Amount", True, const.WHITE_240)
+    ui_surf.blit(amount_lbl, (cx - amount_lbl.get_width() // 2, y))
+    y += amount_lbl.get_height() + 5
+
+    total_w = _PM_BTN_SIZE * 2 + 60
+    start_x = cx - total_w // 2
+
+    minus_rect = pygame.Rect(start_x, y, _PM_BTN_SIZE, _PM_BTN_SIZE)
+    pygame.draw.rect(ui_surf, (60, 60, 70), minus_rect)
+    pygame.draw.rect(ui_surf, const.WHITE, minus_rect, 1)
+    m_sym = font_big.render("-", True, const.WHITE_240)
+    ui_surf.blit(m_sym, (minus_rect.centerx - m_sym.get_width() // 2,
+                          minus_rect.centery - m_sym.get_height() // 2))
+    rects["ai_amount_minus"] = minus_rect
+
+    val_rect = pygame.Rect(start_x + _PM_BTN_SIZE, y, 60, _PM_BTN_SIZE)
+    pygame.draw.rect(ui_surf, (40, 40, 46), val_rect)
+    pygame.draw.rect(ui_surf, const.WHITE, val_rect, 1)
+    val_surf = font_big.render(str(_game_options["ai_amount"]), True, const.WHITE_240)
+    ui_surf.blit(val_surf, (val_rect.centerx - val_surf.get_width() // 2,
+                             val_rect.centery - val_surf.get_height() // 2))
+
+    plus_rect = pygame.Rect(start_x + _PM_BTN_SIZE + 60, y, _PM_BTN_SIZE, _PM_BTN_SIZE)
+    pygame.draw.rect(ui_surf, (60, 60, 70), plus_rect)
+    pygame.draw.rect(ui_surf, const.WHITE, plus_rect, 1)
+    p_sym = font_big.render("+", True, const.WHITE_240)
+    ui_surf.blit(p_sym, (plus_rect.centerx - p_sym.get_width() // 2,
+                          plus_rect.centery - p_sym.get_height() // 2))
+    rects["ai_amount_plus"] = plus_rect
+    y += _PM_BTN_SIZE + 15
+
+    # Difficulty section
+    diff_lbl = font_medium.render("Difficulty", True, const.WHITE_240)
+    ui_surf.blit(diff_lbl, (cx - diff_lbl.get_width() // 2, y))
+    y += diff_lbl.get_height() + 5
+
+    difficulties = ["Easy", "Medium", "Hard", "Random"]
+    grid_w = _DIFF_BTN_W * 2 + 8
+    grid_x = cx - grid_w // 2
+    for i, diff in enumerate(difficulties):
+        col = i % 2
+        row = i // 2
+        bx = grid_x + col * (_DIFF_BTN_W + 8)
+        by = y + row * (_DIFF_BTN_H + 6)
+        btn_rect = pygame.Rect(bx, by, _DIFF_BTN_W, _DIFF_BTN_H)
+        is_selected = _game_options["ai_difficulty"] == diff
+        bg_color = (40, 80, 40) if is_selected else (60, 60, 70)
+        border_color = const.GREEN if is_selected else const.WHITE
+        border_w = 2 if is_selected else 1
+        pygame.draw.rect(ui_surf, bg_color, btn_rect)
+        pygame.draw.rect(ui_surf, border_color, btn_rect, border_w)
+        btn_text = font_small.render(diff, True, const.WHITE_240)
+        ui_surf.blit(btn_text, (btn_rect.centerx - btn_text.get_width() // 2,
+                                 btn_rect.centery - btn_text.get_height() // 2))
+        rects[f"diff_{diff.lower()}"] = btn_rect
+
+
+def handle_game_options_click(click_pos, rects, is_host, room_clients_count=1):
+    """Handle clicks on the game options panel.
+
+    Returns an action string or None.
+    Possible actions:
+      "toggle_panel", "car_prev", "car_next", "map_prev", "map_next",
+      "nav_mode", "nav_ai", "back",
+      "mode_prev", "mode_next", "laps_minus", "laps_plus",
+      "ai_amount_minus", "ai_amount_plus", "diff_<name>"
+    """
+    for name, rect in rects.items():
+        if not rect.collidepoint(click_pos):
+            continue
+
+        if name == "toggle":
+            _game_options["panel_open"] = not _game_options["panel_open"]
+            return "toggle_panel"
+
+        if name == "back":
+            _game_options["panel_page"] = "main"
+            return "back"
+
+        if name == "nav_mode" and is_host:
+            _game_options["panel_page"] = "mode"
+            return "nav_mode"
+
+        if name == "nav_ai" and is_host:
+            _game_options["panel_page"] = "ai"
+            return "nav_ai"
+
+        # Car selection
+        if name == "car_up":
+            total = len(AVAILABLE_CARS)
+            if total > 0:
+                _game_options["selected_car_index"] = (_game_options["selected_car_index"] - 1) % total
+                _game_setup["selected_car"] = AVAILABLE_CARS[_game_options["selected_car_index"]]
+                _init_palette_for_selected_car(_game_setup["selected_car"], force=True)
+            return "car_prev"
+        if name == "car_down":
+            total = len(AVAILABLE_CARS)
+            if total > 0:
+                _game_options["selected_car_index"] = (_game_options["selected_car_index"] + 1) % total
+                _game_setup["selected_car"] = AVAILABLE_CARS[_game_options["selected_car_index"]]
+                _init_palette_for_selected_car(_game_setup["selected_car"], force=True)
+            return "car_next"
+
+        # Map selection (host only)
+        if name == "map_up" and is_host:
+            maps = _get_map_names()
+            total = len(maps)
+            if total > 0:
+                _game_options["selected_map_index"] = (_game_options["selected_map_index"] - 1) % total
+                _game_setup["selected_track"] = maps[_game_options["selected_map_index"]][0]
+            return "map_prev"
+        if name == "map_down" and is_host:
+            maps = _get_map_names()
+            total = len(maps)
+            if total > 0:
+                _game_options["selected_map_index"] = (_game_options["selected_map_index"] + 1) % total
+                _game_setup["selected_track"] = maps[_game_options["selected_map_index"]][0]
+            return "map_next"
+
+        # Mode selection
+        if name == "mode_up":
+            # Only 1 mode for now
+            pass
+            return "mode_prev"
+        if name == "mode_down":
+            pass
+            return "mode_next"
+
+        # Laps
+        if name == "laps_minus":
+            _game_options["laps"] = max(1, _game_options["laps"] - 1)
+            return "laps_minus"
+        if name == "laps_plus":
+            _game_options["laps"] = min(10, _game_options["laps"] + 1)
+            return "laps_plus"
+
+        # AI amount
+        if name == "ai_amount_minus":
+            _game_options["ai_amount"] = max(0, _game_options["ai_amount"] - 1)
+            return "ai_amount_minus"
+        if name == "ai_amount_plus":
+            max_ai = max(0, 6 - room_clients_count)
+            _game_options["ai_amount"] = min(max_ai, _game_options["ai_amount"] + 1)
+            return "ai_amount_plus"
+
+        # Difficulty
+        for diff in ("easy", "medium", "hard", "random"):
+            if name == f"diff_{diff}":
+                _game_options["ai_difficulty"] = diff.capitalize()
+                return f"diff_{diff}"
+
+    return None
+
 
 def draw_mode1(ui_surf, font_big, font_medium, cam, cp_rects=[]):
     # screen dimensions for culling
@@ -365,7 +865,7 @@ def draw_error(ui_surf, error_msg, font_small):
     tip = font_small.render("Press R to restart", True, const.GREY_200)
     ui_surf.blit(tip, (const.WINDOW_WIDTH//2 - tip.get_width()//2, const.WINDOW_HEIGHT//2 + 40))
 
-def _draw_rotating_car(ui_surf, car_id, rect, font_medium, car_sprites_cache, rotation_angle):
+def _draw_rotating_car(ui_surf, car_id, rect, font_medium, car_sprites_cache, rotation_angle, text_override=None):
     """Helper to draw a rotating car sprite and its text centered in a given rect."""
     # draw cars' sprites
     if car_sprites_cache and car_id in car_sprites_cache:
@@ -384,399 +884,98 @@ def _draw_rotating_car(ui_surf, car_id, rect, font_medium, car_sprites_cache, ro
                          car_sprites_list=sprites,
                          palette_colors=get_palette_colors())
     
-    # draw car's name
-    model = _load_car_specs(car_id)
-    text_surf = font_medium.render(f"{model}", True, const.WHITE_240)
+    # draw label text
+    label = text_override if text_override else _load_car_specs(car_id)
+    text_surf = font_medium.render(f"{label}", True, const.WHITE_240)
     text_x = rect.centerx - text_surf.get_width() // 2
     text_y = rect.top + text_surf.get_height() - 5
     ui_surf.blit(text_surf, (text_x, text_y))
 
-def draw_new_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.016):
-    """Draw new game setup screen with username input, car/track/mode selection.
-    This creates a clean new page with solid background color."""
-    
-    # Update car rotation
-    _update_car_rotation(dt)
-    
-    # Button dimensions
-    btn_width = const.BTN_WIDTH
-    btn_height = const.BTN_HEIGHT
+def draw_menu_connection_bar(ui_surf, font_medium):
+    """Draw horizontal connection bar at bottom center of menu screen.
+
+    Layout: [Username] [margin] [Code] [Action Button]
+    Action button is orange "Host" when code is empty, green "Join" when code has text.
+    Returns dict of rects for click detection.
+    """
+    ORANGE = (255, 165, 0)
+    bar_height = 40
+    bar_y = const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y - bar_height - 15
     center_x = const.WINDOW_WIDTH // 2
-    
-    y_start = const.WINDOW_HEIGHT * 0.08
-    spacing = btn_height + 30
-    
-    # Username section
-    y = y_start
-    label = font_medium.render("Username", True, const.WHITE_240)
-    ui_surf.blit(label, (center_x - label.get_width() // 2, y))
-    
-    # Username input box
-    input_box_rect = pygame.Rect(center_x - btn_width // 2, y + 35, btn_width, btn_height)
-    input_color = (100, 200, 100) if _game_setup["username_active"] else (80, 80, 90)
-    pygame.draw.rect(ui_surf, input_color, input_box_rect, 2)
-    
-    # Username text (only show if username exists, no placeholder)
+
+    # Element dimensions
+    username_w = 180
+    code_w = 100
+    action_btn_w = 80
+    margin = 15
+
+    total_w = username_w + margin + code_w + action_btn_w
+    x = center_x - total_w // 2
+
+    rects = {}
+
+    # 1. Username textbox
+    username_rect = pygame.Rect(x, bar_y, username_w, bar_height)
+    username_color = (100, 200, 100) if _game_setup["username_active"] else (80, 80, 90)
+    pygame.draw.rect(ui_surf, username_color, username_rect, 2)
     if _game_setup["username"]:
-        username_surf = font_medium.render(_game_setup["username"], True, const.WHITE_240)
-        ui_surf.blit(username_surf, (input_box_rect.centerx - username_surf.get_width() // 2, 
-                                      input_box_rect.centery - username_surf.get_height() // 2))
-    
-    # Car selection section
-    y += spacing + 35
-    label = font_medium.render("Car", True, const.WHITE_240)
-    ui_surf.blit(label, (center_x - label.get_width() // 2, y))
-    
-    # dimension
-    car_spacing = 30
-    car_btn_width = (btn_width - car_spacing) // 2
-    car_btn_height = btn_height + 40  # Extra height for car sprite and manufacturer text
-    sidebar_width = 40
-    total_width = car_btn_width + sidebar_width
-    start_x = center_x - total_width // 2
-    car_box_y = y + 35
-    
-    # Get current car index
-    selected_car = _normalize_selected_car(_game_setup.get("selected_car", AVAILABLE_CARS[0] if AVAILABLE_CARS else "ae86"))
-    _game_setup["selected_car"] = selected_car
-    try: current_index = AVAILABLE_CARS.index(selected_car)
-    except ValueError: current_index = 0
-    _init_palette_for_selected_car(selected_car)
+        text_surf = font_medium.render(_game_setup["username"], True, const.WHITE_240)
+    else:
+        text_surf = font_medium.render("Username", True, const.GREY_180)
+    ui_surf.blit(text_surf, (username_rect.centerx - text_surf.get_width() // 2,
+                              username_rect.centery - text_surf.get_height() // 2))
+    rects["username_box"] = username_rect
 
-    # 1. Main Display Box (Green Border)
-    main_car_rect = pygame.Rect(start_x, car_box_y, car_btn_width, car_btn_height)
-    pygame.draw.rect(ui_surf, const.GREEN, main_car_rect, 2)
-    
-    # Use the helper to draw the rotating car inside the centered box
-    _draw_rotating_car(ui_surf, selected_car, main_car_rect, font_medium, car_sprites_cache, _car_rotation_angle)
-
-    # 2. Sidebar Layout (White Borders) attached to the right edge
-    sidebar_x = main_car_rect.right
-    section_height = car_btn_height // 3
-    
-    # Define the 3 clickable/display zones
-    up_rect = pygame.Rect(sidebar_x, car_box_y, sidebar_width, section_height)
-    # Middle rect takes remaining height to ensure it perfectly aligns with the bottom
-    counter_rect = pygame.Rect(sidebar_x, car_box_y + section_height, sidebar_width, car_btn_height - 2 * section_height)
-    down_rect = pygame.Rect(sidebar_x, main_car_rect.bottom - section_height, sidebar_width, section_height)
-    
-    # Draw Sidebar outlines
-    pygame.draw.rect(ui_surf, const.WHITE_240, up_rect, 2)
-    pygame.draw.rect(ui_surf, const.WHITE_240, counter_rect, 2)
-    pygame.draw.rect(ui_surf, const.WHITE_240, down_rect, 2)
-    
-    # Draw Up Arrow (^)
-    arrow_offset_x = 8
-    arrow_offset_y = 6
-    pygame.draw.lines(ui_surf, const.WHITE_240, False, [
-        (up_rect.centerx - arrow_offset_x, up_rect.centery + arrow_offset_y),
-        (up_rect.centerx, up_rect.centery - arrow_offset_y),
-        (up_rect.centerx + arrow_offset_x, up_rect.centery + arrow_offset_y)
-    ], 2)
-    
-    # Draw Down Arrow (v)
-    pygame.draw.lines(ui_surf, const.WHITE_240, False, [
-        (down_rect.centerx - arrow_offset_x, down_rect.centery - arrow_offset_y),
-        (down_rect.centerx, down_rect.centery + arrow_offset_y),
-        (down_rect.centerx + arrow_offset_x, down_rect.centery - arrow_offset_y)
-    ], 2)
-    
-    # Draw Counter Text
-    counter_text = font_medium.render(f"{current_index + 1}/{len(AVAILABLE_CARS)}", True, const.WHITE_240)
-    ui_surf.blit(counter_text, (counter_rect.centerx - counter_text.get_width() // 2, 
-                                counter_rect.centery - counter_text.get_height() // 2))
-
-    # Track selection section
-    y += spacing + 75  # Extra space to account for taller car buttons
-    label = font_medium.render("Track", True, const.WHITE_240)
-    ui_surf.blit(label, (center_x - label.get_width() // 2, y))
-    
-    # Track buttons - two side by side
-    track_spacing = 20
-    track_btn_width = (btn_width - track_spacing) // 2
-    track1_rect = pygame.Rect(center_x - btn_width // 2, y + 35, track_btn_width, btn_height)
-    track2_rect = pygame.Rect(center_x - btn_width // 2 + track_btn_width + track_spacing, y + 35, track_btn_width, btn_height)
-    
-    track1_color = const.GREEN if _game_setup["selected_track"] == "track1" else (80, 80, 90)
-    track2_color = const.GREEN if _game_setup["selected_track"] == "track2" else (80, 80, 90)
-    
-    pygame.draw.rect(ui_surf, track1_color, track1_rect, 2)
-    pygame.draw.rect(ui_surf, track2_color, track2_rect, 2)
-
-    track1_text = font_medium.render("Acre Fields", True, const.WHITE_240)
-    ui_surf.blit(track1_text, (track1_rect.centerx - track1_text.get_width() // 2, 
-                               track1_rect.centery - track1_text.get_height() // 2))
-    
-    track2_text = font_medium.render("Beta Center", True, const.WHITE_240)
-    ui_surf.blit(track2_text, (track2_rect.centerx - track2_text.get_width() // 2, 
-                               track2_rect.centery - track2_text.get_height() // 2))
-    
-    # Mode selection section
-    y += spacing + 35
-    label = font_medium.render("Mode", True, const.WHITE_240)
-    ui_surf.blit(label, (center_x - label.get_width() // 2, y))
-
-    # Mode buttons - two side by side
-    mode_spacing = 20
-    mode_btn_width = (btn_width - mode_spacing) // 2
-    mode1_rect = pygame.Rect(center_x - btn_width // 2, y + 35, mode_btn_width, btn_height)
-    mode2_rect = pygame.Rect(center_x - btn_width // 2 + mode_btn_width + mode_spacing, y + 35, mode_btn_width, btn_height)
-    
-    mode1_color = const.GREEN if _game_setup["selected_mode"] == "mode1" else (80, 80, 90)
-    mode2_color = const.GREEN if _game_setup["selected_mode"] == "mode2" else (80, 80, 90)
-    
-    pygame.draw.rect(ui_surf, mode1_color, mode1_rect, 2)
-    pygame.draw.rect(ui_surf, mode2_color, mode2_rect, 2)
-
-    mode1_text = font_medium.render("Classic Race", True, const.WHITE_240)
-    ui_surf.blit(mode1_text, (mode1_rect.centerx - mode1_text.get_width() // 2, 
-                              mode1_rect.centery - mode1_text.get_height() // 2))
-    
-    mode2_text = font_medium.render("Coming Soon", True, const.WHITE_240)
-    ui_surf.blit(mode2_text, (mode2_rect.centerx - mode2_text.get_width() // 2, 
-                              mode2_rect.centery - mode2_text.get_height() // 2))
-
-    # Host Game button
-    y += spacing + 50
-    host_btn_rect = pygame.Rect(center_x - btn_width // 2, y, btn_width, btn_height)
-    pygame.draw.rect(ui_surf, const.GREEN, host_btn_rect)
-    
-    host_text = font_big.render("Host", True, const.WHITE_240)
-    ui_surf.blit(host_text, (host_btn_rect.centerx - host_text.get_width() // 2, 
-                              host_btn_rect.centery - host_text.get_height() // 2))
-    
-    # Error message area
-    y += btn_height + 20
-    if _game_setup["error_message"]:
-        error_surf = font_medium.render(_game_setup["error_message"], True, (255, 100, 100))
-        ui_surf.blit(error_surf, (center_x - error_surf.get_width() // 2, y))
-    
-    # Store rects for click detection (returned for event handling)
-    return {
-        "username_box": input_box_rect,
-        "car_up_btn": up_rect,
-        "car_down_btn": down_rect,
-        "track1_btn": track1_rect,
-        "track2_btn": track2_rect,
-        "mode1_btn": mode1_rect,
-        "mode2_btn": mode2_rect,
-        "host_btn": host_btn_rect,
-    }
-
-def draw_join_game(ui_surf, font_big, font_medium, car_sprites_cache=None, dt=0.016):
-    _update_car_rotation(dt)
-    ui_surf.fill(const.GREY_20)
-    
-    # scales
-    btn_width = const.BTN_WIDTH
-    btn_height = const.BTN_HEIGHT
-    center_x = const.WINDOW_WIDTH // 2    
-    y_start = const.WINDOW_HEIGHT * 0.08
-    spacing = btn_height + 30
-    
-    # --- Username section ---
-    y = y_start
-    label = font_medium.render("Username", True, const.WHITE_240)
-    ui_surf.blit(label, (center_x - label.get_width() // 2, y))
-    
-    input_box_rect = pygame.Rect(center_x - btn_width // 2, y + 35, btn_width, btn_height)
-    input_color = (100, 200, 100) if _game_setup["username_active"] else (80, 80, 90)
-    pygame.draw.rect(ui_surf, input_color, input_box_rect, 2)
-    
-    if _game_setup["username"]:
-        username_surf = font_medium.render(_game_setup["username"], True, const.WHITE_240)
-        ui_surf.blit(username_surf, (input_box_rect.centerx - username_surf.get_width() // 2, 
-                                      input_box_rect.centery - username_surf.get_height() // 2))
-    
-    # --- Car section ---
-    y += spacing + 35
-    label = font_medium.render("Car", True, const.WHITE_240)
-    ui_surf.blit(label, (center_x - label.get_width() // 2, y))
-    
-    # dimension
-    car_spacing = 30
-    car_btn_width = (btn_width - car_spacing) // 2
-    car_btn_height = btn_height + 40  # Extra height for car sprite and manufacturer text
-    sidebar_width = 40
-    total_width = car_btn_width + sidebar_width
-    start_x = center_x - total_width // 2
-    car_box_y = y + 35
-    
-    # Get current car index
-    selected_car = _normalize_selected_car(_game_setup.get("selected_car", AVAILABLE_CARS[0] if AVAILABLE_CARS else "ae86"))
-    _game_setup["selected_car"] = selected_car
-    try: current_index = AVAILABLE_CARS.index(selected_car)
-    except ValueError: current_index = 0
-    _init_palette_for_selected_car(selected_car)
-
-    # 1. Main Display Box (Green Border)
-    main_car_rect = pygame.Rect(start_x, car_box_y, car_btn_width, car_btn_height)
-    pygame.draw.rect(ui_surf, const.GREEN, main_car_rect, 2)
-    
-    # Use the helper to draw the rotating car inside the centered box
-    _draw_rotating_car(ui_surf, selected_car, main_car_rect, font_medium, car_sprites_cache, _car_rotation_angle)
-
-    # 2. Sidebar Layout (White Borders) attached to the right edge
-    sidebar_x = main_car_rect.right
-    section_height = car_btn_height // 3
-    
-    # Define the 3 clickable/display zones
-    up_rect = pygame.Rect(sidebar_x, car_box_y, sidebar_width, section_height)
-    # Middle rect takes remaining height to ensure it perfectly aligns with the bottom
-    counter_rect = pygame.Rect(sidebar_x, car_box_y + section_height, sidebar_width, car_btn_height - 2 * section_height)
-    down_rect = pygame.Rect(sidebar_x, main_car_rect.bottom - section_height, sidebar_width, section_height)
-    
-    # Draw Sidebar outlines
-    pygame.draw.rect(ui_surf, const.WHITE_240, up_rect, 2)
-    pygame.draw.rect(ui_surf, const.WHITE_240, counter_rect, 2)
-    pygame.draw.rect(ui_surf, const.WHITE_240, down_rect, 2)
-    
-    # Draw Up Arrow (^) - Scaled down slightly for the smaller box
-    arrow_offset_x = 8
-    arrow_offset_y = 6
-    pygame.draw.lines(ui_surf, const.WHITE_240, False, [
-        (up_rect.centerx - arrow_offset_x, up_rect.centery + arrow_offset_y),
-        (up_rect.centerx, up_rect.centery - arrow_offset_y),
-        (up_rect.centerx + arrow_offset_x, up_rect.centery + arrow_offset_y)
-    ], 2)
-    
-    # Draw Down Arrow (v)
-    pygame.draw.lines(ui_surf, const.WHITE_240, False, [
-        (down_rect.centerx - arrow_offset_x, down_rect.centery - arrow_offset_y),
-        (down_rect.centerx, down_rect.centery + arrow_offset_y),
-        (down_rect.centerx + arrow_offset_x, down_rect.centery - arrow_offset_y)
-    ], 2)
-    
-    # Draw Counter Text
-    counter_text = font_medium.render(f"{current_index + 1}/{len(AVAILABLE_CARS)}", True, const.WHITE_240)
-    ui_surf.blit(counter_text, (counter_rect.centerx - counter_text.get_width() // 2, 
-                                counter_rect.centery - counter_text.get_height() // 2))
-
-    # Add the buttons to the rects dictionary so we can click them later
-    rects_to_return = {
-        "username_box": input_box_rect,
-        "car_up_btn": up_rect,
-        "car_down_btn": down_rect
-        # (Make sure to include your other existing return rects here!)
-    }
-
-    
-    # Code section
-    y += spacing + 75
-    label = font_medium.render("Room Code", True, const.WHITE_240)
-    ui_surf.blit(label, (center_x - label.get_width() // 2, y))
-    
-    # Code input box
-    code_box_rect = pygame.Rect(center_x - btn_width // 2, y + 35, btn_width, btn_height)
+    # 2. Code textbox
+    x += username_w + margin
+    code_rect = pygame.Rect(x, bar_y, code_w, bar_height)
     code_color = (100, 200, 100) if _game_setup.get("code_active", False) else (80, 80, 90)
-    pygame.draw.rect(ui_surf, code_color, code_box_rect, 2)
-    rects_to_return["code_box"] = code_box_rect
-    
-    # Code text (only show if code exists, no placeholder)
+    pygame.draw.rect(ui_surf, code_color, code_rect, 2)
     if _game_setup.get("room_code", ""):
         code_surf = font_medium.render(_game_setup["room_code"], True, const.WHITE_240)
-        ui_surf.blit(code_surf, (code_box_rect.centerx - code_surf.get_width() // 2, 
-                                  code_box_rect.centery - code_surf.get_height() // 2))
-    
-    # Join Game button
-    y += spacing + 50
-    join_btn_rect = pygame.Rect(center_x - btn_width // 2, y, btn_width, btn_height)
-    pygame.draw.rect(ui_surf, const.GREEN, join_btn_rect)
-    rects_to_return["join_btn"] = join_btn_rect
-    
-    join_text = font_big.render("Join", True, const.WHITE_240)
-    ui_surf.blit(join_text, (join_btn_rect.centerx - join_text.get_width() // 2, 
-                              join_btn_rect.centery - join_text.get_height() // 2))
-    
-    # Error message
-    y += btn_height + 10
+    else:
+        code_surf = font_medium.render("Code", True, const.GREY_180)
+    ui_surf.blit(code_surf, (code_rect.centerx - code_surf.get_width() // 2,
+                              code_rect.centery - code_surf.get_height() // 2))
+    rects["code_box"] = code_rect
+
+    # 3. Dynamic action button (immediately next to code)
+    x += code_w
+    has_code = bool(_game_setup.get("room_code", ""))
+    action_color = const.GREEN if has_code else ORANGE
+    action_label = "Join" if has_code else "Host"
+    action_rect = pygame.Rect(x, bar_y, action_btn_w, bar_height)
+    pygame.draw.rect(ui_surf, action_color, action_rect)
+    action_text = font_medium.render(action_label, True, const.WHITE_240)
+    ui_surf.blit(action_text, (action_rect.centerx - action_text.get_width() // 2,
+                                action_rect.centery - action_text.get_height() // 2))
+    rects["action_btn"] = action_rect
+
+    # Error message (above bar)
     if _game_setup["error_message"]:
         error_surf = font_medium.render(_game_setup["error_message"], True, (255, 100, 100))
-        ui_surf.blit(error_surf, (center_x - error_surf.get_width() // 2, y))
-    
-    return rects_to_return
+        ui_surf.blit(error_surf, (center_x - error_surf.get_width() // 2, bar_y - 30))
 
-def handle_new_game_click(click_pos, rects):
-    """Handle mouse clicks on new game UI elements."""
+    return rects
+
+def handle_menu_bar_click(click_pos, rects):
+    """Handle mouse clicks on the menu connection bar."""
     if "username_box" in rects and rects["username_box"].collidepoint(click_pos):
         _game_setup["username_active"] = True
         _game_setup["code_active"] = False
         return "username_clicked"
-    elif "track1_btn" in rects and rects["track1_btn"].collidepoint(click_pos):
-        _game_setup["selected_track"] = "track1"
-        return "track1_selected"
-    elif "track2_btn" in rects and rects["track2_btn"].collidepoint(click_pos):
-        _game_setup["selected_track"] = "track2"
-        return "track2_selected"
-    elif "mode1_btn" in rects and rects["mode1_btn"].collidepoint(click_pos):
-        _game_setup["selected_mode"] = "mode1"
-        return "mode1_selected"
-    elif "mode2_btn" in rects and rects["mode2_btn"].collidepoint(click_pos):
-        _game_setup["selected_mode"] = "mode2"
-        return "mode2_selected"
-    elif "host_btn" in rects and rects["host_btn"].collidepoint(click_pos):
-        return "host_game"
-    # car selection
-    current_car = _game_setup.get("selected_car", AVAILABLE_CARS[0])
-    current_idx = AVAILABLE_CARS.index(current_car) if current_car in AVAILABLE_CARS else 0
-    if "car_up_btn" in rects and rects["car_up_btn"].collidepoint(click_pos):
-        new_idx = (current_idx - 1) % len(AVAILABLE_CARS)
-        _game_setup["selected_car"] = AVAILABLE_CARS[new_idx]
-        _init_palette_for_selected_car(_game_setup["selected_car"], force=True)
-        return "car_changed"
-    elif "car_down_btn" in rects and rects["car_down_btn"].collidepoint(click_pos):
-        new_idx = (current_idx + 1) % len(AVAILABLE_CARS)
-        _game_setup["selected_car"] = AVAILABLE_CARS[new_idx]
-        _init_palette_for_selected_car(_game_setup["selected_car"], force=True)
-        return "car_changed"
-    return None
-
-def handle_join_game_click(click_pos, rects):
-    """Handle mouse clicks on join game UI elements."""
-    # username box
-    if "username_box" in rects and rects["username_box"].collidepoint(click_pos):
-        _game_setup["username_active"] = True
-        _game_setup["code_active"] = False
-        return "username_clicked"
-    # code box
     elif "code_box" in rects and rects["code_box"].collidepoint(click_pos):
         _game_setup["code_active"] = True
         _game_setup["username_active"] = False
         return "code_clicked"
-    # join button
-    elif "join_btn" in rects and rects["join_btn"].collidepoint(click_pos):
-        return "join_game"
-    # car selection
-    current_car = _game_setup.get("selected_car", AVAILABLE_CARS[0])
-    current_idx = AVAILABLE_CARS.index(current_car) if current_car in AVAILABLE_CARS else 0
-    if "car_up_btn" in rects and rects["car_up_btn"].collidepoint(click_pos):
-        new_idx = (current_idx - 1) % len(AVAILABLE_CARS)
-        _game_setup["selected_car"] = AVAILABLE_CARS[new_idx]
-        _init_palette_for_selected_car(_game_setup["selected_car"], force=True)
-        return "car_changed"
-    elif "car_down_btn" in rects and rects["car_down_btn"].collidepoint(click_pos):
-        new_idx = (current_idx + 1) % len(AVAILABLE_CARS)
-        _game_setup["selected_car"] = AVAILABLE_CARS[new_idx]
-        _init_palette_for_selected_car(_game_setup["selected_car"], force=True)
-        return "car_changed"
-    
+    elif "action_btn" in rects and rects["action_btn"].collidepoint(click_pos):
+        if _game_setup.get("room_code", ""):
+            return "join_game"
+        return "host_game"
     return None
 
-def handle_new_game_keypress(event):
-    """Handle keyboard input for username field."""
-    if _game_setup["username_active"]:
-        if event.key == pygame.K_BACKSPACE:
-            _game_setup["username"] = _game_setup["username"][:-1]
-        elif event.key == pygame.K_ESCAPE:
-            _game_setup["username_active"] = False
-        else:
-            # Add character if printable and within length limit
-            if event.unicode and event.unicode.isprintable():
-                if len(_game_setup["username"]) < const.MAX_NAME_LENGTH:
-                    _game_setup["username"] += event.unicode
-
-def handle_join_game_keypress(event):
-    """Handle keyboard input for username and code fields in join game."""
+def handle_menu_bar_keypress(event):
+    """Handle keyboard input for username and code fields in menu bar."""
     if _game_setup["username_active"]:
         if event.key == pygame.K_TAB:
             _game_setup["code_active"] = True
@@ -786,7 +985,6 @@ def handle_join_game_keypress(event):
         elif event.key == pygame.K_ESCAPE:
             _game_setup["username_active"] = False
         else:
-            # Add character if printable and within length limit
             if event.unicode and event.unicode.isprintable():
                 if len(_game_setup["username"]) < const.MAX_NAME_LENGTH:
                     _game_setup["username"] += event.unicode
@@ -794,15 +992,18 @@ def handle_join_game_keypress(event):
         if event.key == pygame.K_TAB:
             _game_setup["code_active"] = False
             _game_setup["username_active"] = True
+        elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            _game_setup["code_active"] = False
+            if _game_setup["room_code"]:
+                return "join_game"
         elif event.key == pygame.K_BACKSPACE:
             _game_setup["room_code"] = _game_setup["room_code"][:-1]
         elif event.key == pygame.K_ESCAPE:
             _game_setup["code_active"] = False
         else:
-            # Add character if printable and within length limit (room codes are typically short)
             if event.unicode and event.unicode.isprintable():
-                if len(_game_setup["room_code"]) < 4:  # Room codes are usually short
-                    _game_setup["room_code"] += event.unicode.upper()  # Convert to uppercase
+                if len(_game_setup["room_code"]) < 4:
+                    _game_setup["room_code"] += event.unicode.upper()
 
 def get_game_setup():
     """Get current game setup configuration."""
@@ -819,6 +1020,15 @@ def reset_game_setup():
     _game_setup["code_active"] = False
     _game_setup["error_message"] = None
     _init_palette_for_selected_car(_game_setup["selected_car"], force=True)
+    # Reset game options panel
+    _game_options["panel_open"] = False
+    _game_options["panel_page"] = "main"
+    _game_options["selected_car_index"] = 0
+    _game_options["selected_map_index"] = 0
+    _game_options["selected_mode_index"] = 0
+    _game_options["laps"] = 3
+    _game_options["ai_amount"] = 0
+    _game_options["ai_difficulty"] = "Random"
 
 def set_error_message(message):
     """Set an error message to display in the UI."""
@@ -897,7 +1107,7 @@ def join_new_game(my_id):
         print(f"Failed to join game: {error}")
         return {
             "status": "done",
-            "result": ("lobby", my_name, "", None, False, "Host", error, None, None, []),
+            "result": ("menu", my_name, "", None, False, "Host", error, None, None, []),
         }
 
     return {
@@ -952,7 +1162,7 @@ def poll_connection(conn):
                     )
                 else:
                     conn["status"] = "done"
-                    conn["result"] = ("lobby", my_name, "", None, False, "Host", error_msg, None, None, [])
+                    conn["result"] = ("menu", my_name, "", None, False, "Host", error_msg, None, None, [])
                 return conn
     except Exception:
         pass
@@ -968,7 +1178,7 @@ def poll_connection(conn):
             )
         else:
             conn["status"] = "done"
-            conn["result"] = ("lobby", my_name, "", None, False, "Host", "join_timeout", None, None, [])
+            conn["result"] = ("menu", my_name, "", None, False, "Host", "join_timeout", None, None, [])
         return conn
 
     return conn
@@ -993,9 +1203,9 @@ def _finalize_connection(my_name, code, sock, is_host, host_name, error, is_host
 
     invalidate_ui_text_cache('room')
     if is_host_mode:
-        return ("game", my_name, code, sock, is_host, host_name, track_image, chunked_map, _cp_rects)
+        return ("lobby", my_name, code, sock, is_host, host_name, track_image, chunked_map, _cp_rects)
     else:
-        return ("game", my_name, code, sock, is_host, host_name, error, track_image, chunked_map, _cp_rects)
+        return ("lobby", my_name, code, sock, is_host, host_name, error, track_image, chunked_map, _cp_rects)
 
 def draw_settings(ui_surf, world_surf, world_size, buttons, stage_path, font_small=None):    
     # Draw buttons and handle their state

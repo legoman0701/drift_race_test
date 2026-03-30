@@ -142,6 +142,18 @@ def loop():
             # remove room if empty
             if not room["clients"]:
                 rooms.pop(code, None)
+            else:
+                # Prune stale AI states that haven't been updated recently
+                try:
+                    for sid, sinfo in list(room.get("states", {}).items()):
+                        if isinstance(sid, str) and sid.startswith("AI-"):
+                            last = float(sinfo.get("last", 0.0))
+                            if now - last > CLIENT_TIMEOUT:
+                                room["states"].pop(sid, None)
+                                room.get("results", {}).pop(sid, None)
+                                room["dirty"] = True
+                except Exception:
+                    pass
 
         # Broadcast worlds for rooms marked dirty (throttled)
         for code, room in list(rooms.items()):
@@ -232,6 +244,9 @@ def loop():
                 new_car_type = msg.get("car_type")
                 if isinstance(new_car_type, str) and new_car_type:
                     room["clients"][addr]["car_type"] = new_car_type[:16]
+            # Validate and store palette (3 RGB triplets) for car coloring.
+            # Both player and AI states can carry a palette; non-host clients
+            # use it to render remote/AI cars with the correct colors.
             raw_palette = msg.get("palette")
             if (isinstance(raw_palette, list) and len(raw_palette) == 3 and
                     all(isinstance(c, list) and len(c) == 3 and
@@ -251,6 +266,11 @@ def loop():
                 "car_type": (str(msg.get("car_type")) if is_ai else room["clients"][addr]["car_type"]),
                 "palette": palette,
             }
+            # timestamp for pruning stale AI states later
+            try:
+                st["last"] = now
+            except Exception:
+                pass
             room["states"][pid] = st
             room["dirty"] = True
 
@@ -295,9 +315,9 @@ def loop():
             if requested_track:
                 room["track"] = requested_track
 
-            if requested_mode == "game":
+            if requested_mode == "lobby":
                 room["race_started"] = False
-                room["mode"] = "game"
+                room["mode"] = "lobby"
                 room["results"] = {}
             else:
                 room["race_started"] = True
@@ -307,7 +327,14 @@ def loop():
             room["dirty"] = True
             player_count = len(room["states"])
             print(f"[relay] Race started in room {code!r} | mode={requested_mode} track={room.get('track','track1')} players={player_count}")
-            start_msg = {"t": "start_race", "code": code, "mode": requested_mode, "track": room.get("track", "track1")}
+            # Include the full roster (all state keys) so every client can
+            # compute identical spawn-slot assignments, even if some AI states
+            # haven't been received yet via world snapshots.
+            roster = sorted(room["states"].keys())
+            start_msg = {"t": "start_race", "code": code, "mode": requested_mode, "track": room.get("track", "track1"), "roster": roster}
+            laps = msg.get("laps")
+            if isinstance(laps, int) and 1 <= laps <= 10:
+                start_msg["laps"] = laps
             for caddr in list(room["clients"].keys()):
                 sendto_json(sock, caddr, start_msg)
 
@@ -317,8 +344,14 @@ def loop():
             room = rooms.get(code)
             if not room or addr not in room["clients"]:
                 sendto_json(sock, addr, {"t":"error","msg":"room_not_found_or_not_joined"}); continue
-            if not pid or pid != room["clients"][addr].get("id"):
-                sendto_json(sock, addr, {"t":"error","msg":"invalid_player_id"}); continue
+            is_ai_result = isinstance(pid, str) and pid.startswith("AI-")
+            if is_ai_result:
+                # Only the host may submit AI results
+                if addr != room.get("host_addr"):
+                    sendto_json(sock, addr, {"t":"error","msg":"only_host_can_submit_ai_results"}); continue
+            else:
+                if not pid or pid != room["clients"][addr].get("id"):
+                    sendto_json(sock, addr, {"t":"error","msg":"invalid_player_id"}); continue
             try:
                 finish_time = float(msg.get("time", 0.0))
             except Exception:
@@ -326,11 +359,30 @@ def loop():
             if finish_time < 0.0:
                 sendto_json(sock, addr, {"t":"error","msg":"invalid_finish_time"}); continue
 
+            # For AI results, use the name/car_type from the AI state if available;
+            # fall back to host's client info.
+            if is_ai_result:
+                ai_state = room.get("states", {}).get(pid, {})
+                result_name = ai_state.get("name", pid)
+                result_car_type = ai_state.get("car_type", "ae86")
+            else:
+                result_name = room["clients"][addr].get("name", pid)
+                result_car_type = room["clients"][addr].get("car_type", "ae86")
+
             room.setdefault("results", {})[pid] = {
                 "time": round(finish_time, 4),
-                "name": room["clients"][addr].get("name", pid),
-                "car_type": room["clients"][addr].get("car_type", "ae86"),
+                "name": result_name,
+                "car_type": result_car_type,
             }
+            # include optional best lap if provided by client
+            try:
+                best = msg.get("best_lap")
+                if best is not None:
+                    bval = float(best)
+                    if bval >= 0.0:
+                        room["results"][pid]["best_lap"] = round(bval, 4)
+            except Exception:
+                pass
             room["dirty"] = True
 
         else:

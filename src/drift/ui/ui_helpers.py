@@ -57,9 +57,9 @@ def invalidate_ui_text_cache(cache_type=None):
             elif cache_type == 'host' and 'host' in str(key).lower():
                 keys_to_remove.append(key)
             elif cache_type == 'title' and isinstance(key[1], str):
-                # Title keys are like (font_id, "Lobby", color)
+                # Title keys are like (font_id, "menu", color)
                 # Remove if it's a known title string
-                if key[1] in ["Lobby", "In Game", "Settings", "Host Game", "Join Game", "Error"]:
+                if key[1] in ["menu", "In Game", "Settings", "Host Game", "Join Game", "Error"]:
                     keys_to_remove.append(key)
     
     for key in keys_to_remove:

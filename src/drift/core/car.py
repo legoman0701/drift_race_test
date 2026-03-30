@@ -277,7 +277,7 @@ def get_car_engine_sound_id(car_type: str) -> str:
     return str(specs.get("engine", {}).get("sound_id", "v8"))
 
 class Car:
-    def __init__(self, x, y, name, is_ai=False, car_type="ae86", car_name="AE86"):
+    def __init__(self, x, y, name, is_ai=False, car_type="911", car_name="911 SC"):
         self.x, self.y = float(x), float(y)
         self.vx, self.vy = 0.0, 0.0
         self.angle = 0.0
