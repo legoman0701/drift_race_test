@@ -36,12 +36,6 @@ def read_inputs(gamepad, car, cam, mouse_follow_mode: bool, ai_path_mode: bool) 
     # Use raw steering input (target angle system handles smoothing)
     st = raw_st
 
-    # --- Mouse following mode ---
-    if mouse_follow_mode:
-        # Mouse steering is handled directly in car.step() by setting target_angle
-        # Set steering to 0 to avoid interfering with direct angle control
-        st = 0.0
-
     # --- Joystick inputs ---
     if gamepad and gamepad.joystick:
         js = gamepad.joystick
@@ -54,8 +48,18 @@ def read_inputs(gamepad, car, cam, mouse_follow_mode: bool, ai_path_mode: bool) 
             st = steering if abs(steering) > 0.1 else st  # Deadzone
             th = throttle if abs(throttle) > 0.1 else th
             br = handbrake if handbrake > 0.1 else br
-    
-    return {"th": float(th), "st": float(st), "br": float(br)}
+
+    # Capture combined user steering (keyboard + joystick) before mouse mode can zero it.
+    # This is the value car.step() uses for drift yaw-rate control.
+    raw_st = st
+
+    # --- Mouse following mode ---
+    if mouse_follow_mode:
+        # Mouse steering is handled directly in car.step() by setting target_angle
+        # Set steering to 0 to avoid interfering with direct angle control
+        st = 0.0
+
+    return {"th": float(th), "st": float(st), "br": float(br), "raw_st": float(raw_st)}
 
 
 def apply_driver_assists(inputs: Dict[str, float], car, dt: float) -> Dict[str, float]:

@@ -30,13 +30,15 @@
         "braking": {
             "max_torque": 3800,
             "bias": 1,
-            "handbrake_force": 0.1
+            "handbrake_force": 0.42
         },
         "wheels": {
-            "front_grip": 0.95,
-            "rear_grip": 1.10,
+            "front_grip": 0.90,
+            "rear_grip": 0.88,
             "stiffness_factor": 0.8
         },
-        "cornering_stiffness": 0.80
+        "cornering_stiffness": 0.65,
+        "mass_t_k": 32.0,
+        "mass_t_d": 2.8
     }
 }

@@ -68,7 +68,7 @@ TRACK_BORDER_WIDTH = 4
 # ======= CAR PHYSICS =======
 CAR_LEN = 38.0
 CAR_WID = 20.0
-STEER_BIAS = 1.0  # how much the car automatically steers into the drift
+STEER_BIAS = 2.2  # how much the car automatically steers into the drift
 VIEW_ANGLE = 70 * math.pi / 180.0  # radians
 
 # ======= CAR SPRITES =======

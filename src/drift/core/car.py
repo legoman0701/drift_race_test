@@ -51,6 +51,7 @@ GRAVITY = 9.81
 ROLLING_RES_COEFF = 0.015  # typical car tire rolling resistance coefficient
 AERO_DRAG_COEFF = 0.005    # combined 0.5*rho*CdA scaling (tune to taste)
 BRAKE_DRAG_COEFF = 800.0    # body-level brake drag (opposes velocity)
+MT_SCALE = 80.0             # mass transfer: px/s² per unit of weight input normalisation
 
 def clamp(x, lo, hi):
     return lo if x < lo else hi if x > hi else x
@@ -209,6 +210,10 @@ def extract_specs_values(specs: dict) -> dict:
         cornering_stiffness = specs.get("physics", {}).get("cornering_stiffness", 0.80)
         # Scale to match old values which ranged 0.8-2.0, multiply by 2.5 to get in range ~1.5-2.5
         cornering_stiffness = cornering_stiffness * 2.5
+
+        # Mass transfer spring/damper coefficients
+        mass_t_k = float(specs.get("physics", {}).get("mass_t_k", 25.0))
+        mass_t_d = float(specs.get("physics", {}).get("mass_t_d", 9.0))
         
         # Wheels stiffness factor 
         stiffness_factor = specs.get("physics", {}).get("wheels", {}).get("stiffness_factor", 0.85)
@@ -245,7 +250,9 @@ def extract_specs_values(specs: dict) -> dict:
             "GEAR_RATIOS": gear_ratios,
             "FINAL_DRIVE": final_drive,
             "ENGINE_SOUND_ID": str(engine_sound_id),
-            "PALETTE_COLORS": palette_tuple
+            "PALETTE_COLORS": palette_tuple,
+            "MASS_T_K": mass_t_k,
+            "MASS_T_D": mass_t_d
         }
     except (KeyError, TypeError, IndexError):
         # Fallback to defaults if specs are malformed
@@ -266,7 +273,9 @@ def extract_specs_values(specs: dict) -> dict:
             "GEAR_RATIOS": (3.166, 1.481, 1.1, 0.8),
             "FINAL_DRIVE": 4.1,
             "ENGINE_SOUND_ID": "v8",
-            "PALETTE_COLORS": ((255, 0, 0), (0, 255, 0), (0, 0, 255))
+            "PALETTE_COLORS": ((255, 0, 0), (0, 255, 0), (0, 0, 255)),
+            "MASS_T_K": 25.0,
+            "MASS_T_D": 9.0
         }
 
 
@@ -290,6 +299,12 @@ class Car:
         self.drift_points = [(0,0),(0,0),(0,0),(0,0)]
         self.drift_points_old = [(0,0),(0,0),(0,0),(0,0)]
         self.has_grip = (1.0, 1.0, 1.0, 1.0)  # wheel grip coefficient (FL, FR, RL, RR)
+        # Mass transfer: weight-on-spring in body frame (x = forward, y = +y-axle side)
+        # +1 = fully front/+y loaded, -1 = fully rear/-y loaded
+        self.weight_pos_x = 0.0
+        self.weight_pos_y = 0.0
+        self.weight_vel_x = 0.0
+        self.weight_vel_y = 0.0
         self.is_reversing = False
         self.steering_multiplier = 1.0
         # Target angle steering system
@@ -362,6 +377,11 @@ class Car:
         self.engine_sound_id = specs_vals["ENGINE_SOUND_ID"]
         self.palette_colors = specs_vals["PALETTE_COLORS"]
         self._init_spring_points(specs_vals)
+        # Reset mass transfer state when car type changes
+        self.weight_pos_x = 0.0
+        self.weight_pos_y = 0.0
+        self.weight_vel_x = 0.0
+        self.weight_vel_y = 0.0
 
     def step(self, inputs, dt, players, bounds, compute_debug=False, cursor_follow=False, cam=None, collision_mesh=None):        
         # Use cached specs values (updated only on set_car_type or __init__)
@@ -384,38 +404,9 @@ class Car:
 
         # Inputs
         throttle_input = clamp(inputs.get("th", 0.0), -1.0, 1.0)
-        raw_steering_input = clamp(inputs.get("st", 0.0), -1.0, 1.0)
+        raw_steering_input = clamp(inputs.get("raw_st", inputs.get("st", 0.0)), -1.0, 1.0)
         brake_input = clamp(inputs.get("br", 0.0), 0.0, 1.0)
         
-        # Update target angle based on steering mode
-        if cursor_follow and cam is not None:
-            # Mouse/cursor mode: directly set target angle to point at cursor
-            import pygame
-            mouse_pos = pygame.mouse.get_pos()
-            # Convert mouse position to world coordinates
-            world_mouse_x = mouse_pos[0] + cam.x - const.WINDOW_WIDTH / 2
-            world_mouse_y = mouse_pos[1] + cam.y - const.WINDOW_HEIGHT / 2
-            
-            # Calculate angle from car to mouse
-            dx = world_mouse_x - self.x
-            dy = world_mouse_y - self.y
-            self.target_angle = math.atan2(dy, dx)
-        else:
-            # Keyboard/joystick mode: accumulate steering input
-            target_angle_change_rate = 2.0  # radians per second
-            self.target_angle += raw_steering_input * target_angle_change_rate * dt
-            # Normalize target angle to [-pi, pi]
-            self.target_angle = ((self.target_angle + math.pi) % (2 * math.pi)) - math.pi
-            
-            # Clamp target angle to maximum difference from current angle
-            max_angle_difference = math.radians(45)  # Maximum 45 degrees difference
-            angle_diff = ((self.target_angle - self.angle + math.pi) % (2 * math.pi)) - math.pi
-            if abs(angle_diff) > max_angle_difference:
-                # Clamp to maximum allowed difference
-                self.target_angle = self.angle + math.copysign(max_angle_difference, angle_diff)
-                # Normalize again
-                self.target_angle = ((self.target_angle + math.pi) % (2 * math.pi)) - math.pi
-                
         # Orientation and basis vectors
         forward_x, forward_y = math.cos(self.angle), math.sin(self.angle)
         right_x, right_y = -forward_y, forward_x
@@ -425,9 +416,53 @@ class Car:
         body_lateral_speed = self.vx * right_x + self.vy * right_y
         self.is_reversing = body_forward_speed < -5.0
 
-        # Calculate steering input to reach target angle
-        angle_error = ((self.target_angle - self.angle + math.pi) % (2 * math.pi)) - math.pi
-        steering_input = clamp(angle_error * 2.0, -1.0, 1.0) * math.copysign(1, body_forward_speed)  # P controller with gain 2.0
+        # Drift angle/ratio (difference between velocity vector and heading)
+        # Computed early so it can gate the steering mode selection below.
+        speed_norm = math.sqrt(body_forward_speed**2 + body_lateral_speed**2 + 1e-4)
+        vel_dir_f = body_forward_speed / speed_norm
+        vel_dir_r = body_lateral_speed / speed_norm
+        drift_angle = ((math.atan2(vel_dir_f, vel_dir_r) - math.pi/2 + math.pi) % (2*math.pi) - math.pi)
+        self.drift_ratio = clamp(abs(drift_angle) * clamp(abs(body_forward_speed) - 10.0, 0.0, 1.0), 0.0, 1.0)
+        is_drifting = abs(drift_angle) > 0.15  # ~8.6° threshold
+
+        # Update target angle / compute steering input
+        if cursor_follow and cam is not None:
+            # Mouse/cursor mode: directly set target angle to point at cursor
+            import pygame
+            mouse_pos = pygame.mouse.get_pos()
+            # Convert mouse position to world coordinates
+            world_mouse_x = mouse_pos[0] + cam.x - const.WINDOW_WIDTH / 2
+            world_mouse_y = mouse_pos[1] + cam.y - const.WINDOW_HEIGHT / 2
+            # Calculate angle from car to mouse
+            dx = world_mouse_x - self.x
+            dy = world_mouse_y - self.y
+            self.target_angle = math.atan2(dy, dx)
+            angle_error = ((self.target_angle - self.angle + math.pi) % (2 * math.pi)) - math.pi
+            steering_input = clamp(angle_error * 2.0, -1.0, 1.0) * math.copysign(1, body_forward_speed)
+        elif is_drifting:
+            # Drift mode: steering input controls desired yaw rate, not heading.
+            # Full stick = MAX_DRIFT_YAW_RATE rad/s spin; a P-controller translates the
+            # error between desired and actual yaw rate into a wheel steer command.
+            MAX_DRIFT_YAW_RATE = 7.0  # rad/s at full stick
+            target_v_angle = raw_steering_input * MAX_DRIFT_YAW_RATE * math.copysign(1, body_forward_speed)
+            angular_error = target_v_angle - self.v_angle
+            steering_input = clamp(angular_error * 1.2, -1.0, 1.0)
+            # Keep target_angle tracking current angle so there is no snap on exit
+            self.target_angle = self.angle
+        else:
+            # Normal mode: accumulate target angle, P-control to reach it
+            target_angle_change_rate = 2.0  # radians per second
+            self.target_angle += raw_steering_input * target_angle_change_rate * dt
+            # Normalize target angle to [-pi, pi]
+            self.target_angle = ((self.target_angle + math.pi) % (2 * math.pi)) - math.pi
+            # Clamp target angle to maximum difference from current angle
+            max_angle_difference = math.radians(45)  # Maximum 45 degrees difference
+            angle_diff = ((self.target_angle - self.angle + math.pi) % (2 * math.pi)) - math.pi
+            if abs(angle_diff) > max_angle_difference:
+                self.target_angle = self.angle + math.copysign(max_angle_difference, angle_diff)
+                self.target_angle = ((self.target_angle + math.pi) % (2 * math.pi)) - math.pi
+            angle_error = ((self.target_angle - self.angle + math.pi) % (2 * math.pi)) - math.pi
+            steering_input = clamp(angle_error * 2.0, -1.0, 1.0) * math.copysign(1, body_forward_speed)
 
         # Understeer tuning from previous-frame front grip state.
         front_understeer = (self.has_grip[0] < 0.5) or (self.has_grip[1] < 0.5)
@@ -440,13 +475,6 @@ class Car:
             self.steering_multiplier += grow_rate * dt
         
         self.steering_multiplier = clamp(self.steering_multiplier, 0.2, 1.0)
-
-        # Drift angle/ratio (difference between velocity vector and heading)
-        speed_norm = math.sqrt(body_forward_speed**2 + body_lateral_speed**2 + 1e-4)
-        vel_dir_f = body_forward_speed / speed_norm
-        vel_dir_r = body_lateral_speed / speed_norm
-        drift_angle = ((math.atan2(vel_dir_f, vel_dir_r) - math.pi/2 + math.pi) % (2*math.pi) - math.pi)
-        self.drift_ratio = clamp(abs(drift_angle) * clamp(abs(body_forward_speed) - 10.0, 0.0, 1.0), 0.0, 1.0)
 
         # Wheel configuration (local positions in body frame) - compute from current car dimensions
         wheel_x_off = WHEELBASE * 0.5
@@ -466,7 +494,7 @@ class Car:
             steer_bias = const.STEER_BIAS*0.1
 
         if vel_dir_f > 0:
-            wheel_steer_angle = -drift_angle*0.8* steer_bias
+            wheel_steer_angle = -drift_angle* steer_bias
 
         wheel_steer_angle += steering_input * MAX_STEER_ANGLE * self.steering_multiplier
 
@@ -485,6 +513,19 @@ class Car:
         total_torque_z = 0.0
         wheel_debug_list = [] if compute_debug else None
         grip_per_wheel = []
+
+        # --- Mass transfer: per-wheel normal-load multiplier from previous-frame weight position ---
+        # Wheel layout sign conventions: +x = front, +y = one lateral side (same as wheel_local_positions).
+        # weight_pos_x > 0 → weight shifted forward → front wheels loaded, rear unloaded.
+        # weight_pos_y > 0 → weight shifted toward +y side → +y wheels loaded, -y wheels unloaded.
+        _MT_LONG = 0.4   # longitudinal influence (fraction of grip per unit displacement)
+        _MT_LAT  = 0.3   # lateral influence
+        weight_grip_mod = (
+            clamp(1.0 + _MT_LONG * self.weight_pos_x + _MT_LAT * self.weight_pos_y, 0.2, 1.8),  # wheel 0: +x,+y
+            clamp(1.0 + _MT_LONG * self.weight_pos_x - _MT_LAT * self.weight_pos_y, 0.2, 1.8),  # wheel 1: +x,-y
+            clamp(1.0 - _MT_LONG * self.weight_pos_x + _MT_LAT * self.weight_pos_y, 0.2, 1.8),  # wheel 2: -x,+y
+            clamp(1.0 - _MT_LONG * self.weight_pos_x - _MT_LAT * self.weight_pos_y, 0.2, 1.8),  # wheel 3: -x,-y
+        )
 
         for index, (wx_local, wy_local) in enumerate(wheel_local_positions):
             # Velocity at wheel contact in body frame: v + omega x r
@@ -533,7 +574,7 @@ class Car:
                 long_grip *= clamp(1.0 - 0.65 * brake_input, 0.18, 1.0)
                 lat_grip *= clamp(1.0 - 0.55 * brake_input, 0.22, 1.0)
 
-            has_grip = clamp(clamp(lat_grip, 0.0, 1.0) * clamp(long_grip, 0.0, 1.0), 0.1, 1.0)
+            has_grip = clamp(clamp(lat_grip, 0.0, 1.0) * clamp(long_grip, 0.0, 1.0) * weight_grip_mod[index], 0.05, 1.0)
             axle_grip = FRONT_GRIP if index in (0, 1) else REAR_GRIP
             grip_per_wheel.append(has_grip)
 
@@ -718,6 +759,23 @@ class Car:
                     total_force_world_x += efx
                     total_force_world_y += efy
                     total_torque_z += rx * efy - ry * efx
+
+        # --- Mass transfer spring update (drives weight position for next frame) ---
+        # Project total acceleration onto body frame axes.
+        # Inertial pseudo-force on the weight is opposite to car acceleration → -accel_body.
+        accel_world_x = total_force_world_x / MASS
+        accel_world_y = total_force_world_y / MASS
+        accel_body_fwd = accel_world_x * forward_x + accel_world_y * forward_y
+        accel_body_lat = accel_world_x * right_x  + accel_world_y * right_y
+        mt_in_x = clamp(accel_body_fwd / MT_SCALE, -2.0, 2.0)
+        mt_in_y = clamp(accel_body_lat / MT_SCALE, -2.0, 2.0)
+        # Spring-damper coefficients from specs.
+        MT_K = specs_vals["MASS_T_K"]
+        MT_C = specs_vals["MASS_T_D"]
+        self.weight_vel_x += (-MT_K * self.weight_pos_x - MT_C * self.weight_vel_x - mt_in_x) * dt
+        self.weight_vel_y += (-MT_K * self.weight_pos_y - MT_C * self.weight_vel_y - mt_in_y) * dt
+        self.weight_pos_x = clamp(self.weight_pos_x + self.weight_vel_x * dt, -1.0, 1.0)
+        self.weight_pos_y = clamp(self.weight_pos_y + self.weight_vel_y * dt, -1.0, 1.0)
 
         # Integrate linear motion
         accel_x = total_force_world_x / MASS

@@ -298,6 +298,31 @@ def draw_wheel_debug(surface: pygame.Surface, car, offx: int = 0, offy: int = 0)
     forward_x, forward_y = ca, sa
     right_x,   right_y   = -sa, ca
 
+    # ---- Center of gravity moving indicator ----
+    wp_x = getattr(car, "weight_pos_x", None)
+    wp_y = getattr(car, "weight_pos_y", None)
+    if wp_x is not None and wp_y is not None:
+        specs_vals = getattr(car, "_cached_specs_vals", {})
+        half_len = specs_vals.get("CAR_LEN", 38.0) * 0.7  # CoG travels up to 30% of half-length
+        half_wid = specs_vals.get("CAR_WID", 20.0) * 0.7
+        # Local body-frame offset of CoG
+        cog_lx = wp_x * half_len
+        cog_ly = wp_y * half_wid
+        # Rotate to world/screen space
+        cx2, cy2 = int(car.x - offx), int(car.y - offy)
+        cog_sx = cx2 + int(cog_lx * ca - cog_ly * sa)
+        cog_sy = cy2 + int(cog_lx * sa + cog_ly * ca)
+        # Line from car center to CoG dot
+        pygame.draw.line(surface, (120, 120, 120), (cx2, cy2), (cog_sx, cog_sy), 1)
+        # Colour: yellow at rest → red under heavy load
+        load = min(1.0, math.sqrt(wp_x * wp_x + wp_y * wp_y))
+        cog_r = 255
+        cog_g = int((1.0 - load) * 220)
+        pygame.draw.circle(surface, (cog_r, cog_g, 0), (cog_sx, cog_sy), 4)
+        # Small crosshair inside the dot
+        pygame.draw.line(surface, (255, 255, 255), (cog_sx - 3, cog_sy), (cog_sx + 3, cog_sy), 1)
+        pygame.draw.line(surface, (255, 255, 255), (cog_sx, cog_sy - 3), (cog_sx, cog_sy + 3), 1)
+
     # Scale factors: keep vectors readable regardless of force magnitude
     ANGLE_VEC_LEN = 14   # pixels for wheel heading arrow
     FLAT_SCALE    = 0.04  # pixels per unit of lateral force
