@@ -349,6 +349,7 @@ def draw_frame_analysis(surface: pygame.Surface, profiler: 'FrameProfiler'):
 
     if not hasattr(draw_frame_analysis, "_font"):
         draw_frame_analysis._font = pygame.font.SysFont(None, 12)
+        draw_frame_analysis._panel = None
     font = draw_frame_analysis._font
 
     labels  = profiler.labels
@@ -362,7 +363,11 @@ def draw_frame_analysis(surface: pygame.Surface, profiler: 'FrameProfiler'):
     PANEL_X  = const.WINDOW_WIDTH  - PANEL_W - 6
     PANEL_Y  = const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y - PANEL_H - 4
 
-    panel = pygame.Surface((PANEL_W, PANEL_H), pygame.SRCALPHA)
+    cached = draw_frame_analysis._panel
+    if cached is None or cached.get_size() != (PANEL_W, PANEL_H):
+        cached = pygame.Surface((PANEL_W, PANEL_H), pygame.SRCALPHA)
+        draw_frame_analysis._panel = cached
+    panel = cached
     panel.fill((8, 10, 14, 200))
     pygame.draw.rect(panel, (80, 110, 160, 180), panel.get_rect(), 1)
 
@@ -414,7 +419,7 @@ def draw_engine_audio_debug(surface, engine_audio):
 
     if not hasattr(draw_engine_audio_debug, "_font"):
         draw_engine_audio_debug._font = pygame.font.SysFont(None, 13)
-
+        draw_engine_audio_debug._panel = None
     font = draw_engine_audio_debug._font
     rpm  = snapshot.get("rpm", 0.0)
     th   = snapshot.get("throttle", 0.0)
@@ -436,7 +441,11 @@ def draw_engine_audio_debug(surface, engine_audio):
 
     panel_h = len(lines) * row_h + 4
     panel_y = const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y - panel_h - 4
-    panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+    cached = draw_engine_audio_debug._panel
+    if cached is None or cached.get_size() != (panel_w, panel_h):
+        cached = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+        draw_engine_audio_debug._panel = cached
+    panel = cached
     panel.fill((8, 10, 14, 180))
     pygame.draw.rect(panel, (80, 110, 160, 160), panel.get_rect(), 1)
 
@@ -464,6 +473,86 @@ def draw_engine_audio_debug(surface, engine_audio):
     surface.blit(panel, (4, panel_y))
 
 
+def draw_minimap(surface, path_poly, world_size, my_car, remotes, ai_cars, stage1):
+    """Bottom-left minimap: shows track path and car positions during gameplay."""
+    if not path_poly or stage1 not in ("game", "mode1", "mode2", "leaderboard"):
+        return
+    if world_size is None or world_size[0] <= 0 or world_size[1] <= 0:
+        return
+
+    MAP_W, MAP_H = 160, 130
+    PAD = 8
+
+    ww, wh = world_size
+    scale = min(MAP_W / ww, MAP_H / wh)
+    off_x = (MAP_W - ww * scale) / 2
+    off_y = (MAP_H - wh * scale) / 2
+
+    panel_x = 6
+    panel_y = const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y - MAP_H - PAD * 2 - 4
+
+    # Reuse fixed-size panel surface
+    if draw_minimap._panel is None:
+        draw_minimap._panel = pygame.Surface((MAP_W + PAD * 2, MAP_H + PAD * 2), pygame.SRCALPHA)
+    panel = draw_minimap._panel
+
+    def to_mini(wx, wy):
+        return (PAD + off_x + wx * scale, PAD + off_y + wy * scale)
+
+    # Rebuild static track layer only when path_poly changes
+    poly_key = (id(path_poly), len(path_poly), world_size)
+    if draw_minimap._track_surf is None or draw_minimap._track_key != poly_key:
+        track_surf = pygame.Surface((MAP_W + PAD * 2, MAP_H + PAD * 2), pygame.SRCALPHA)
+        track_surf.fill((8, 10, 16, 200))
+        pygame.draw.rect(track_surf, (80, 110, 160, 180), track_surf.get_rect(), 1)
+        if len(path_poly) >= 2:
+            n = len(path_poly)
+            for i in range(n):
+                ax, ay, aw = path_poly[i]
+                bx, by, bw = path_poly[(i + 1) % n]
+                max_a, may = to_mini(ax, ay)
+                mbx, mby = to_mini(bx, by)
+                dx, dy = mbx - max_a, mby - may
+                seg_len = math.hypot(dx, dy)
+                if seg_len < 1e-4:
+                    continue
+                px_u, py_u = -dy / seg_len, dx / seg_len
+                ha = max(1.0, aw * scale / 2)
+                hb = max(1.0, bw * scale / 2)
+                quad = [
+                    (max_a + px_u * ha, may + py_u * ha),
+                    (max_a - px_u * ha, may - py_u * ha),
+                    (mbx  - px_u * hb, mby - py_u * hb),
+                    (mbx  + px_u * hb, mby + py_u * hb),
+                ]
+                pygame.draw.polygon(track_surf, (40, 55, 85), [(int(x), int(y)) for x, y in quad])
+            pts = [to_mini(p[0], p[1]) for p in path_poly]
+            pygame.draw.lines(track_surf, (70, 110, 180), True, [(int(x), int(y)) for x, y in pts], 1)
+        draw_minimap._track_surf = track_surf
+        draw_minimap._track_key = poly_key
+
+    # Start from the cached track layer
+    panel.blit(draw_minimap._track_surf, (0, 0))
+
+    # Remote/AI cars
+    for rd in remotes.values():
+        rx, ry = to_mini(rd.get("x", 0), rd.get("y", 0))
+        pygame.draw.circle(panel, (255, 160, 80), (int(rx), int(ry)), 3)
+    for ai in ai_cars:
+        ax, ay = to_mini(ai.x, ai.y)
+        pygame.draw.circle(panel, (80, 220, 120), (int(ax), int(ay)), 3)
+
+    # Player (drawn last so it's on top)
+    mx, my = to_mini(my_car.x, my_car.y)
+    pygame.draw.circle(panel, (200, 230, 255), (int(mx), int(my)), 3)
+
+    surface.blit(panel, (panel_x, panel_y))
+
+draw_minimap._panel = None
+draw_minimap._track_surf = None
+draw_minimap._track_key = None
+
+
 def draw_chunk_minimap(surface, renderer):
     """Top-right debug minimap: shows tire-mark chunks vs camera viewport."""
     if not const.DEBUG:
@@ -472,6 +561,8 @@ def draw_chunk_minimap(surface, renderer):
         return
     if not hasattr(draw_chunk_minimap, "_font"):
         draw_chunk_minimap._font = pygame.font.SysFont(None, 12)
+        draw_chunk_minimap._panel = None
+        draw_chunk_minimap._panel_size = None
     font = draw_chunk_minimap._font
 
     grid = renderer.tire_mark_grid
@@ -493,7 +584,10 @@ def draw_chunk_minimap(surface, renderer):
     panel_x = const.WINDOW_WIDTH - map_w - 6
     panel_y = const.TOP_LINE_Y + 6
 
-    panel = pygame.Surface((map_w, map_h), pygame.SRCALPHA)
+    if draw_chunk_minimap._panel is None or draw_chunk_minimap._panel_size != (map_w, map_h):
+        draw_chunk_minimap._panel = pygame.Surface((map_w, map_h), pygame.SRCALPHA)
+        draw_chunk_minimap._panel_size = (map_w, map_h)
+    panel = draw_chunk_minimap._panel
     panel.fill((10, 12, 18, 200))
     pygame.draw.rect(panel, (80, 110, 160, 180), panel.get_rect(), 1)
 
@@ -582,6 +676,8 @@ def main():
     game_mode = None           # active BaseGameMode instance (SimpleRace, etc.)
     _collision_mesh = CollisionMesh([])  # collision polygons from map_meta.json (with spatial hash)
     _path_future = None        # Future for async track discovery
+    _ai_debug_surf = None      # Cached surface for AI path debug overlay
+    _skip_surf = None          # Cached surface for skip-physics (menu) background
     _prev_stage1 = "lobby"     # detect stage1 transitions
     _return_btn_rect = None    # leaderboard button rect from previous frame
     _local_result_sent = False
@@ -926,9 +1022,14 @@ def main():
             ai_controls_ok = False
             if const.AI_PATH_FOLLOW and path_poly:
                 try:
+                    _ai_surf_size = (track_image.get_width(), track_image.get_height())
+                    if _ai_debug_surf is None or _ai_debug_surf.get_size() != _ai_surf_size:
+                        _ai_debug_surf = pygame.Surface(_ai_surf_size, pygame.SRCALPHA)
+                    else:
+                        _ai_debug_surf.fill((0, 0, 0, 0))
                     controls, ai_debug_surface = ai_algorithme(
                         path_poly, my_car, ai_path_mode=True,
-                        surface=pygame.Surface((track_image.get_width(), track_image.get_height()), pygame.SRCALPHA),
+                        surface=_ai_debug_surf,
                         font_small=font_small,
                     )
                     ai_controls_ok = True
@@ -1153,7 +1254,24 @@ def main():
             render_stage = stage1 if stage1 != "leaderboard" else "mode1"
             world_surf, resized, is_viewport = renderer.render_world(cam, render_stage, my_car, ai_cars, remotes, lights_on, car_sprites_cache)
             if resized and not is_viewport and _path_future is None:
-                _path_future = path_finder.discover_track_async(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png"))
+                _disc_start_pos, _disc_start_angle = (220, 1700), 90
+                try:
+                    import json as _json
+                    with open(asset_path("track", f"map{const.MAP_NUM}", "map_meta.json"), "r", encoding="utf-8") as _mf:
+                        _meta_disc = _json.load(_mf)
+                    _starts = _meta_disc.get("start", []) or []
+                    if _starts:
+                        _disc_start_pos = (
+                            sum(s["x"] for s in _starts) / len(_starts),
+                            sum(s["y"] for s in _starts) / len(_starts),
+                        )
+                        _disc_start_angle = math.degrees(sum(s["a"] for s in _starts) / len(_starts))
+                except Exception:
+                    pass
+                _path_future = path_finder.discover_track_async(
+                    normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png"),
+                    start_pos=_disc_start_pos, start_angle=_disc_start_angle,
+                )
 
             # Poll for async path discovery result
             if _path_future is not None and _path_future.done():
@@ -1168,8 +1286,10 @@ def main():
             else:
                 final_surf = pygame.transform.scale(world_surf, (const.WINDOW_WIDTH, const.WINDOW_HEIGHT)) if is_viewport else cam.apply(world_surf)
         else:
-            world_surf = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
-            world_surf.fill(const.GREY_20)
+            if _skip_surf is None or _skip_surf.get_size() != (const.WINDOW_WIDTH, const.WINDOW_HEIGHT):
+                _skip_surf = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
+                _skip_surf.fill(const.GREY_20)
+            world_surf = _skip_surf
             final_surf = world_surf
         profiler.end("render_world")
 
@@ -1192,6 +1312,7 @@ def main():
         )
         draw_engine_audio_debug(ui_surf, engine_audio)
         draw_chunk_minimap(ui_surf, renderer)
+        draw_minimap(ui_surf, path_poly, world_size, my_car, remotes, ai_cars, stage1)
         profiler.end("ui")
 
         # Game mode overlays
