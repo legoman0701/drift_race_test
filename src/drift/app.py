@@ -494,6 +494,7 @@ def draw_minimap(surface, path_poly, world_size, my_car, remotes, ai_cars, stage
     # Reuse fixed-size panel surface
     if draw_minimap._panel is None:
         draw_minimap._panel = pygame.Surface((MAP_W + PAD * 2, MAP_H + PAD * 2), pygame.SRCALPHA)
+        draw_minimap._panel.set_alpha(200)
     panel = draw_minimap._panel
 
     def to_mini(wx, wy):
@@ -502,36 +503,41 @@ def draw_minimap(surface, path_poly, world_size, my_car, remotes, ai_cars, stage
     # Rebuild static track layer only when path_poly changes
     poly_key = (id(path_poly), len(path_poly), world_size)
     if draw_minimap._track_surf is None or draw_minimap._track_key != poly_key:
-        track_surf = pygame.Surface((MAP_W + PAD * 2, MAP_H + PAD * 2), pygame.SRCALPHA)
-        track_surf.fill((8, 10, 16, 200))
+        track_surf = pygame.Surface((MAP_W + PAD * 2, MAP_H + PAD * 2))
+        track_surf.fill((8, 10, 16))
         pygame.draw.rect(track_surf, (80, 110, 160, 180), track_surf.get_rect(), 1)
         if len(path_poly) >= 2:
             n = len(path_poly)
+            # Build perpendicular unit vectors for each point using its neighbours
+            perps = []
             for i in range(n):
-                ax, ay, aw = path_poly[i]
-                bx, by, bw = path_poly[(i + 1) % n]
-                max_a, may = to_mini(ax, ay)
-                mbx, mby = to_mini(bx, by)
-                dx, dy = mbx - max_a, mby - may
+                ax, ay, _ = path_poly[i]
+                bx, by, _ = path_poly[(i + 1) % n]
+                dx, dy = bx - ax, by - ay
                 seg_len = math.hypot(dx, dy)
                 if seg_len < 1e-4:
-                    continue
-                px_u, py_u = -dy / seg_len, dx / seg_len
-                ha = max(1.0, aw * scale / 2)
-                hb = max(1.0, bw * scale / 2)
-                quad = [
-                    (max_a + px_u * ha, may + py_u * ha),
-                    (max_a - px_u * ha, may - py_u * ha),
-                    (mbx  - px_u * hb, mby - py_u * hb),
-                    (mbx  + px_u * hb, mby + py_u * hb),
-                ]
-                pygame.draw.polygon(track_surf, (40, 55, 85), [(int(x), int(y)) for x, y in quad])
-            pts = [to_mini(p[0], p[1]) for p in path_poly]
-            pygame.draw.lines(track_surf, (70, 110, 180), True, [(int(x), int(y)) for x, y in pts], 1)
+                    perps.append((0.0, 0.0))
+                else:
+                    perps.append((-dy / seg_len, dx / seg_len))
+
+            outer = []
+            inner = []
+            for i in range(n):
+                mx2, my2 = to_mini(path_poly[i][0], path_poly[i][1])
+                hw = max(1.0, path_poly[i][2] * scale / 2)
+                px_u, py_u = perps[i]
+                outer.append((int(mx2 + px_u * hw), int(my2 + py_u * hw)))
+                inner.append((int(mx2 - px_u * hw), int(my2 - py_u * hw)))
+
+            # Fill road area: outer ring forward + inner ring backward = closed polygon
+            road_poly = outer + inner[::-1]
+            pygame.draw.polygon(track_surf, (40, 55, 85), road_poly)
+            pygame.draw.lines(track_surf, (60, 80, 110), True, outer, 1)
+            pygame.draw.lines(track_surf, (60, 80, 110), True, inner, 1)
+
         draw_minimap._track_surf = track_surf
         draw_minimap._track_key = poly_key
-
-    # Start from the cached track layer
+    
     panel.blit(draw_minimap._track_surf, (0, 0))
 
     # Remote/AI cars

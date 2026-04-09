@@ -30,13 +30,16 @@ def _make_pil_raycast(px, width, height, length=800):
 def _make_pygame_raycast(surface, length=800):
     """Return a raycast function backed by a pygame Surface."""
     w, h = surface.get_width(), surface.get_height()
+    def color_dist(c1, c2):
+        return math.sqrt(sum((a - b) ** 2 for a, b in zip(c1, c2)))
     def raycast(pos, angle):
         x, y = pos[0], pos[1]
+        base_color = surface.get_at((int(x), int(y)))
         for l in range(length):
             rx = int(x + math.cos(math.radians(angle)) * l)
             ry = int(y + math.sin(math.radians(angle)) * l)
             if 0 <= rx < w and 0 <= ry < h:
-                if surface.get_at((rx, ry))[1] > 180:
+                if color_dist(surface.get_at((rx, ry)), base_color) > 100:
                     return l
         return length
     return raycast
