@@ -393,7 +393,6 @@ class Car:
             if self.vx**2 + self.vy**2 > 25 or self.last_checkpoint_coordinates is None:
                 self.time_since_mouvement = time.time()
             if time.time() - self.time_since_mouvement > 3.0 and self.last_checkpoint_coordinates is not None:
-                print(f"{self.name} is stuck, respawning at last checkpoint.")
                 lx, ly, la = self.last_checkpoint_coordinates
                 self.x, self.y, self.angle = lx, ly, la
                 self.vx, self.vy = 0.0, 0.0

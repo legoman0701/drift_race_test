@@ -399,8 +399,8 @@ class SimpleRace(BaseGameMode):
         best_ax, best_ay, best_bx, best_by = poly[0][0], poly[0][1], poly[1][0], poly[1][1]
         n = len(poly)
         for i in range(n - 1):
-            ax, ay = poly[i]
-            bx, by = poly[i + 1]
+            ax, ay, _ = poly[i]
+            bx, by, _ = poly[i + 1]
             vx, vy = bx - ax, by - ay
             denom = vx * vx + vy * vy
             if denom == 0:
