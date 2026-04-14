@@ -88,7 +88,7 @@ class SimpleRace(BaseGameMode):
     PHASE_COOLDOWN  = "cooldown" # 5-second wait after all finish
     PHASE_LEADERBOARD = "leaderboard"
 
-    def __init__(self, checkpoints, total_laps=3, start_grid=None, lines=None, local_player_id="local"):
+    def __init__(self, checkpoints, total_laps=3, start_grid=None, lines=None, local_player_id="local", path_poly=None):
         super().__init__(checkpoints, total_laps)
         self.local_player_id = str(local_player_id)
         self.phase = self.PHASE_COUNTDOWN
@@ -135,6 +135,9 @@ class SimpleRace(BaseGameMode):
 
         # Precompute spatial grid for checkpoint hit testing
         self._cp_rects = checkpoints  # already pygame.Rect
+
+        # Optional AI polypath for tangent-based respawn orientation
+        self._path_poly = list(path_poly) if path_poly else []
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -347,8 +350,27 @@ class SimpleRace(BaseGameMode):
             # When expected_cp == num_cp, test against CP0 (the finish line)
             rect = self._cp_rects[0] if expected_cp == num_cp else self._cp_rects[expected_cp]
             if rect.collidepoint(pos[0], pos[1]):
+                current_idx = 0 if expected_cp == num_cp else expected_cp
+                rx = float(self._cp_rects[current_idx].centerx)
+                ry = float(self._cp_rects[current_idx].centery)
+                tangent = self._tangent_angle_at(rx, ry)
+                if tangent is not None:
+                    ra = tangent
+                elif num_cp > 1:
+                    next_idx = (current_idx + 1) % num_cp
+                    ra = math.atan2(
+                        float(self._cp_rects[next_idx].centery) - ry,
+                        float(self._cp_rects[next_idx].centerx) - rx,
+                    )
+                else:
+                    ra = my_car.angle if pid == self.local_player_id else 0.0
+                respawn_coords = (rx, ry, ra)
                 if pid == self.local_player_id:
-                    my_car.last_checkpoint_coordinates = (my_car.x, my_car.y, my_car.angle)
+                    my_car.last_checkpoint_coordinates = respawn_coords
+                else:
+                    car_obj = players.get(pid)
+                    if hasattr(car_obj, 'last_checkpoint_coordinates'):
+                        car_obj.last_checkpoint_coordinates = respawn_coords
                 ps.current_checkpoint += 1
                 # Completed all checkpoints + return to CP0 → lap done
                 if ps.current_checkpoint > num_cp:
@@ -362,6 +384,34 @@ class SimpleRace(BaseGameMode):
                         self._mark_player_finished(ps, self.race_time)
                     else:
                         ps.current_checkpoint = 0  # reset for next lap
+
+    # ------------------------------------------------------------------
+    # Path tangent helper
+    # ------------------------------------------------------------------
+
+    def _tangent_angle_at(self, x, y):
+        """Return the path tangent angle (radians) at the point on _path_poly
+        closest to (x, y).  Falls back to None if the path is not available."""
+        poly = self._path_poly
+        if len(poly) < 2:
+            return None
+        best_d2 = float("inf")
+        best_ax, best_ay, best_bx, best_by = poly[0][0], poly[0][1], poly[1][0], poly[1][1]
+        n = len(poly)
+        for i in range(n - 1):
+            ax, ay = poly[i]
+            bx, by = poly[i + 1]
+            vx, vy = bx - ax, by - ay
+            denom = vx * vx + vy * vy
+            if denom == 0:
+                continue
+            t = max(0.0, min(1.0, ((x - ax) * vx + (y - ay) * vy) / denom))
+            cx, cy = ax + vx * t, ay + vy * t
+            d2 = (x - cx) ** 2 + (y - cy) ** 2
+            if d2 < best_d2:
+                best_d2 = d2
+                best_ax, best_ay, best_bx, best_by = ax, ay, bx, by
+        return math.atan2(best_by - best_ay, best_bx - best_ax)
 
     # ------------------------------------------------------------------
     # Teleport helpers

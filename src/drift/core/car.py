@@ -1,4 +1,4 @@
-import json, math
+import json, math, time
 import drift.config.const as const
 from drift.tools.paths import normalize_asset_path
 from drift.core.rpm import RpmParams
@@ -300,6 +300,8 @@ class Car:
         self.wheel_debug = {
             "wheels": []  # list of dicts per wheel
         }
+
+        self.time_since_mouvement = 0
         
         spec_path = normalize_asset_path("cars", self.car_type, "specs.json")
         with open(spec_path, "r", encoding="utf-8") as fh:
@@ -386,6 +388,17 @@ class Car:
         throttle_input = clamp(inputs.get("th", 0.0), -1.0, 1.0)
         raw_steering_input = clamp(inputs.get("st", 0.0), -1.0, 1.0)
         brake_input = clamp(inputs.get("br", 0.0), 0.0, 1.0)
+
+        if self.is_ai:
+            if self.vx**2 + self.vy**2 > 25 or self.last_checkpoint_coordinates is None:
+                self.time_since_mouvement = time.time()
+            if time.time() - self.time_since_mouvement > 3.0 and self.last_checkpoint_coordinates is not None:
+                print(f"{self.name} is stuck, respawning at last checkpoint.")
+                lx, ly, la = self.last_checkpoint_coordinates
+                self.x, self.y, self.angle = lx, ly, la
+                self.vx, self.vy = 0.0, 0.0
+                self.v_angle = 0.0
+                self.time_since_mouvement = time.time()
         
         # Update target angle based on steering mode
         if cursor_follow and cam is not None:
@@ -861,6 +874,8 @@ class Car:
                 oca, osa = math.cos(oa), math.sin(oa)
                 other_poly = [(ox + clx * oca - cly * osa, oy + clx * osa + cly * oca)
                               for clx, cly in other_corners_local]
+                ovx = pdata.get("vx", 0.0)
+                ovy = pdata.get("vy", 0.0)
                 for lx, ly in self.spring_points_local:
                     wx = self.x + lx * ca2 - ly * sa2
                     wy = self.y + lx * sa2 + ly * ca2
@@ -872,7 +887,9 @@ class Car:
                         # Push out only half — other player pushes their half
                         self.x += nx * depth * 0.5
                         self.y += ny * depth * 0.5
-                        v_into = self.vx * nx + self.vy * ny
+                        # Use relative velocity so a car following at the same speed
+                        # doesn't receive a huge impulse from its own forward motion.
+                        v_into = (self.vx - ovx) * nx + (self.vy - ovy) * ny
                         if v_into < 0:
                             imp_x = -(1.0 + P2P_REST) * v_into * nx * 0.5
                             imp_y = -(1.0 + P2P_REST) * v_into * ny * 0.5

@@ -18,7 +18,7 @@ from drift.core.helpers import clamp, rand_name
 from drift.core.gamemode import SimpleRace
 from drift.ai.ai import ai_algorithme
 from drift.core.inputs import read_inputs
-from drift.net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping
+from drift.net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, advance_remotes
 from drift.ui.ui import handle_game_events, draw_stage_ui, invalidate_ui_text_cache, invalidate_palette_cache, draw_car, poll_pending_connection
 from drift.ui.draw_stage import set_palette_colors_from_car, get_palette_colors, get_game_options, get_game_setup, set_game_option
 from drift.core.rpm import calc_engine_rpm
@@ -1083,7 +1083,7 @@ def main():
                     pass
 
                 renderer.collision_mesh = _collision_mesh
-                game_mode = SimpleRace(renderer.checkpoints or [], total_laps=get_game_options()["laps"], start_grid=_start_grid, lines=_lines, local_player_id=my_id)
+                game_mode = SimpleRace(renderer.checkpoints or [], total_laps=get_game_options()["laps"], start_grid=_start_grid, lines=_lines, local_player_id=my_id, path_poly=path_poly)
                 _local_result_sent = False
                 _ai_results_sent = {}
                 _mode_players = {my_id: {"car_type": my_car.car_type, "name": my_car.name}}

@@ -1,7 +1,13 @@
-import socket, json, math
+import socket, json, math, time
 from typing import Dict, Any
 
 import drift.config.const as const
+
+_SQRT2 = math.sqrt(2)  # must match car.py isometric compensation
+_SNAP_DIST_SQ = 400.0 ** 2  # teleport if error > 400 px (e.g. respawn)
+_CORRECTION_RATE = 8.0       # position error blended at this rate (units/s fraction)
+_PING_EWMA_ALPHA = 0.2       # smoothing factor for per-player ping estimate
+_MAX_AGE = 0.5               # clamp packet age to 500 ms (guards against clock skew)
 
 
 def recv_jsons(sock: socket.socket):
@@ -48,6 +54,7 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
         "race_results": None,
     }
     players = {}
+    now = time.time()
     for msg in recv_jsons(sock):
         msg_code = msg.get("code")
         if room_code and isinstance(msg_code, str) and msg_code.upper() != str(room_code).upper():
@@ -100,10 +107,6 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
                 if isinstance(track, str) and track:
                     result["start_track"] = track
             players = msg.get("players", {}) or {}
-            POS_SMOOTHING_MULTIPLIER = 300.0
-            ANGLE_SMOOTHING_MULTIPLIER = 300.0
-            alpha_pos = min(1.0, dt * POS_SMOOTHING_MULTIPLIER)
-            alpha_angle = min(1.0, dt * ANGLE_SMOOTHING_MULTIPLIER)
             for pid, d in players.items():
                 if pid == my_id:
                     continue
@@ -111,20 +114,51 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
                     # host owns AI locally; skip echoed server AI
                     continue
                 tx, ty, ta = float(d["x"]), float(d["y"]), float(d["a"])
+                tvx, tvy = float(d.get("vx", 0.0)), float(d.get("vy", 0.0))
                 thg = d.get("has_grip", [1.0, 1.0, 1.0, 1.0])
                 name = d.get("name", f"Player{pid}")
                 car_type = d.get("car_type", "ae86")
                 raw_palette = d.get("palette")
                 palette = tuple(tuple(c) for c in raw_palette) if raw_palette and len(raw_palette) == 3 else None
+
+                # Estimate one-way transit time from sender's timestamp.
+                # Pre-advance the received position so we place the car where it
+                # likely is *now*, not where it was when the packet was sent.
+                ts = d.get("ts")
+                age = min(_MAX_AGE, max(0.0, now - float(ts))) if ts is not None else 0.0
+                tx += tvx * age
+                ty += tvy * age * _SQRT2
+
                 if pid not in remotes:
-                    remotes[pid] = {"x": tx, "y": ty, "a": ta, "name": name, "has_grip": thg, "car_type": car_type, "palette": palette}
+                    # First sighting: place exactly at received position
+                    remotes[pid] = {
+                        "x": tx, "y": ty, "a": ta,
+                        "vx": tvx, "vy": tvy,
+                        "name": name, "has_grip": thg,
+                        "car_type": car_type, "palette": palette,
+                        "ping": age * 1000.0,
+                    }
                 else:
                     cur = remotes[pid]
-                    cur["x"] += (tx - cur["x"]) * alpha_pos
-                    cur["y"] += (ty - cur["y"]) * alpha_pos
+                    # Update ping EWMA (milliseconds)
+                    old_ping = cur.get("ping", age * 1000.0)
+                    cur["ping"] = old_ping + _PING_EWMA_ALPHA * (age * 1000.0 - old_ping)
+                    # Teleport on large errors (respawn, new race start, etc.)
+                    ex, ey = tx - cur["x"], ty - cur["y"]
+                    if ex * ex + ey * ey > _SNAP_DIST_SQ:
+                        cur["x"], cur["y"] = tx, ty
+                    else:
+                        # Soft correction: blend predicted position toward received truth.
+                        # The advance_remotes() call each frame keeps the car moving;
+                        # this nudge corrects accumulated drift without visible snapping.
+                        cur["x"] += ex * min(1.0, dt * _CORRECTION_RATE)
+                        cur["y"] += ey * min(1.0, dt * _CORRECTION_RATE)
+                    # Always update velocity so dead reckoning uses fresh data
+                    cur["vx"] = tvx
+                    cur["vy"] = tvy
                     cur["has_grip"] = thg
                     da = ((ta - cur["a"] + math.pi) % (2 * math.pi)) - math.pi
-                    cur["a"] = (cur["a"] + da * alpha_angle) % (2 * math.pi)
+                    cur["a"] = (cur["a"] + da * min(1.0, dt * _CORRECTION_RATE)) % (2 * math.pi)
                     cur["name"] = name
                     cur["car_type"] = car_type
                     cur["palette"] = palette
@@ -150,6 +184,7 @@ def send_network_state(sock, code: str, my_id: str, my_car, palette=None):
         "has_grip": [round(v, 3) for v in my_car.has_grip],
         "name": my_car.name,
         "car_type": getattr(my_car, "car_type", "ae86"),
+        "ts": round(time.time(), 4),
     }
     if palette:
         pkt["palette"] = [list(c) for c in palette]
@@ -175,6 +210,7 @@ def send_ai_states(sock, code: str, ai_cars):
             "has_grip": [round(v, 3) for v in ai.has_grip],
             "name": ai.name,
             "car_type": getattr(ai, "car_type", "ae86"),
+            "ts": round(time.time(), 4),
         }
         palette = getattr(ai, "palette_colors", None)
         if palette:
@@ -190,3 +226,15 @@ def send_ping(sock, code: str):
         sock.send(json.dumps({"t": "ping", "code": code}).encode("utf-8"))
     except Exception:
         pass
+
+
+def advance_remotes(remotes: Dict[str, Any], dt: float):
+    """Dead-reckoning: advance every remote car's predicted position by its
+    last known velocity.  Call this every frame *before* physics/rendering so
+    remotes appear to move smoothly between network packets."""
+    for cur in remotes.values():
+        vx = cur.get("vx", 0.0)
+        vy = cur.get("vy", 0.0)
+        if vx or vy:
+            cur["x"] += vx * dt
+            cur["y"] += vy * dt * _SQRT2  # isometric compensation matches car.py
