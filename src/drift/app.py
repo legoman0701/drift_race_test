@@ -19,7 +19,7 @@ from drift.core.gamemode import SimpleRace
 from drift.ai.ai import ai_algorithme
 from drift.core.inputs import read_inputs
 from drift.net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, advance_remotes
-from drift.ui.ui import handle_game_events, draw_stage_ui, invalidate_ui_text_cache, invalidate_palette_cache, draw_car, poll_pending_connection
+from drift.ui.ui import handle_game_events, draw_stage_ui, draw_scoreboard, invalidate_ui_text_cache, invalidate_palette_cache, draw_car, poll_pending_connection
 from drift.ui.draw_stage import set_palette_colors_from_car, get_palette_colors, get_game_options, get_game_setup, set_game_option
 from drift.core.rpm import calc_engine_rpm
 from drift.audio.engine_audio import V8EngineAudio
@@ -682,7 +682,7 @@ def main():
     game_mode = None           # active BaseGameMode instance (SimpleRace, etc.)
     _collision_mesh = CollisionMesh([])  # collision polygons from map_meta.json (with spatial hash)
     _path_future = None        # Future for async track discovery
-    
+
     _ai_debug_surf = None      # Cached surface for AI path debug overlay
     _skip_surf = None          # Cached surface for skip-physics (menu) background
     _prev_stage1 = "menu"     # detect stage1 transitions
@@ -835,6 +835,8 @@ def main():
     
     profiler = FrameProfiler()
     show_frame_analysis = False
+    show_scoreboard = False
+    _my_ping_ms = None  # persists between frames; updated from relay RTT echo
 
     # Reusable UI surface (avoid per-frame allocation)
     ui_surf = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), pygame.SRCALPHA)
@@ -986,6 +988,11 @@ def main():
                     invalidate_ui_text_cache('debug')
                 elif ev.key == pygame.K_F4:
                     show_frame_analysis = not show_frame_analysis
+                elif ev.key == pygame.K_TAB:
+                    show_scoreboard = True
+            if ev.type == pygame.KEYUP:
+                if ev.key == pygame.K_TAB:
+                    show_scoreboard = False
                 elif ev.key == const.FULLSCREEN_KEY:
                     is_fullscreen = not is_fullscreen
                     if is_fullscreen:
@@ -1101,6 +1108,8 @@ def main():
         profiler.begin("network")
         if sock:
             net_result = handle_network_messages(sock, remotes, dt, my_id, I_AM_HOST, code)
+            if net_result.get("my_ping") is not None:
+                _my_ping_ms = net_result["my_ping"]
             if net_result.get("host_name") is not None:
                 host_name = net_result["host_name"] or None
             if net_result.get("host_id") is not None:
@@ -1159,7 +1168,7 @@ def main():
             now = time.time()
             if now - last_state_send >= 1.0 / const.SEND_HZ:
                 last_state_send = now
-                send_network_state(sock, code, my_id, my_car, palette=get_palette_colors())
+                send_network_state(sock, code, my_id, my_car, palette=get_palette_colors(), my_ping=_my_ping_ms)
                 if I_AM_HOST and ai_cars and stage1 != "lobby":
                     send_ai_states(sock, code, ai_cars)
             if now - last_ping >= 1.0 / const.PING_HZ:
@@ -1412,6 +1421,7 @@ def main():
         profiler.begin("ui")
         ui_surf.fill((0, 0, 0, 0))
         fps = clock.get_fps()
+        ping_ms = _my_ping_ms
         ui_checkpoints = renderer.checkpoints
         if game_mode is not None and stage1 in ["mode1", "leaderboard"]:
             ui_checkpoints = []
@@ -1422,6 +1432,7 @@ def main():
             settings_buttons, error_msg, my_car, cam, gp, font_big, font_medium, font_small,
             controls, engine_state, fps, dt, I_AM_HOST, host_name, car_sprites_cache,
             room_clients_count=1 + len(remotes),
+            ping_ms=ping_ms,
         )
         draw_engine_audio_debug(ui_surf, engine_audio)
         draw_chunk_minimap(ui_surf, renderer)
@@ -1439,6 +1450,9 @@ def main():
 
         if show_frame_analysis:
             draw_frame_analysis(ui_surf, profiler)
+
+        if show_scoreboard:
+            draw_scoreboard(ui_surf, font_medium, font_small, my_car, remotes, ai_cars, my_ping=_my_ping_ms)
 
         # Apply settings button results
         for res in button_results:

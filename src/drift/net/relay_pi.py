@@ -265,6 +265,12 @@ def loop():
                 "has_grip": list(msg.get("has_grip", [1.0, 1.0, 1.0, 1.0])),
                 "car_type": (str(msg.get("car_type")) if is_ai else room["clients"][addr]["car_type"]),
                 "palette": palette,
+                # pass through timestamp for RTT echo (client uses this to measure own ping)
+                "ts": msg.get("ts"),
+                # pass through self-reported ping so other clients can display it
+                "ps": msg.get("ps"),
+                # pass through sequence number for client-side packet-loss detection
+                "sq": msg.get("sq"),
             }
             # timestamp for pruning stale AI states later
             try:
@@ -279,6 +285,8 @@ def loop():
             room = rooms.get(code)
             if room and addr in room["clients"]:
                 room["clients"][addr]["last"] = now
+                # Echo ts back so client can measure RTT
+                sendto_json(sock, addr, {"t": "pong", "ts": msg.get("ts")})
 
         elif mtype == "bye": # player leaves
             code = (msg.get("code") or "").upper().strip()

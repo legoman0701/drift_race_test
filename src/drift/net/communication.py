@@ -1,4 +1,5 @@
 import socket, json, math, time
+from collections import deque
 from typing import Dict, Any
 
 import drift.config.const as const
@@ -6,8 +7,17 @@ import drift.config.const as const
 _SQRT2 = math.sqrt(2)  # must match car.py isometric compensation
 _SNAP_DIST_SQ = 400.0 ** 2  # teleport if error > 400 px (e.g. respawn)
 _CORRECTION_RATE = 8.0       # position error blended at this rate (units/s fraction)
-_PING_EWMA_ALPHA = 0.2       # smoothing factor for per-player ping estimate
+_PING_EWMA_ALPHA = 0.15      # smoothing factor for ping estimate
 _MAX_AGE = 0.5               # clamp packet age to 500 ms (guards against clock skew)
+_PL_WINDOW = 5.0             # seconds over which packet-loss % is computed
+
+# Module-level per-player recv stats (cleared on disconnect)
+_recv_stats: Dict[str, Dict] = {}
+# Track when we last sent a state packet so we can compute RTT from world echo
+_last_send_time: float = 0.0
+_my_ping_ewma: float | None = None
+# Monotonically-incrementing send sequence number for packet-loss detection
+_send_seq: int = 0
 
 
 def recv_jsons(sock: socket.socket):
@@ -52,16 +62,31 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
         "host_name": None,
         "host_id": None,
         "race_results": None,
+        "my_ping": None,   # RTT/2 in ms measured via world echo of own state
     }
     players = {}
     now = time.time()
     for msg in recv_jsons(sock):
         msg_code = msg.get("code")
+        t = msg.get("t")
+        if t not in ("world",):  # skip spammy world packets in debug log
+            print(f"[net] recv t={t!r} code={msg_code!r}")
         if room_code and isinstance(msg_code, str) and msg_code.upper() != str(room_code).upper():
             # Ignore stale/wrong-room packets so stage transitions stay session-scoped.
             continue
 
-        t = msg.get("t")
+        if t == "pong":
+            ts_sent = msg.get("ts")
+            print(f"[net] pong received, ts={ts_sent}, rtt={(time.time()-float(ts_sent))*1000:.1f}ms" if ts_sent else "[net] pong received but no ts")
+            if ts_sent is not None:
+                rtt_ms = (now - float(ts_sent)) * 1000.0
+                if 0.0 < rtt_ms < 2000.0:
+                    prev = result["my_ping"]
+                    if prev is None:
+                        result["my_ping"] = rtt_ms / 2.0
+                    else:
+                        result["my_ping"] = prev + _PING_EWMA_ALPHA * (rtt_ms / 2.0 - prev)
+            continue
         if t == "join_ok":
             host_name = msg.get("host_name")
             if isinstance(host_name, str):
@@ -109,6 +134,17 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
             players = msg.get("players", {}) or {}
             for pid, d in players.items():
                 if pid == my_id:
+                    # Own echo in world → measure RTT from local send time
+                    global _my_ping_ewma
+                    if _last_send_time > 0.0:
+                        rtt_ms = (now - _last_send_time) * 1000.0
+                        if 0.0 < rtt_ms < 2000.0:
+                            if _my_ping_ewma is None:
+                                _my_ping_ewma = rtt_ms / 2.0
+                            else:
+                                _my_ping_ewma = _my_ping_ewma + _PING_EWMA_ALPHA * (rtt_ms / 2.0 - _my_ping_ewma)
+                            result["my_ping"] = _my_ping_ewma
+                            print(f"[net] RTT={rtt_ms:.1f}ms  ping={_my_ping_ewma:.1f}ms")
                     continue
                 if is_host and isinstance(pid, str) and pid.startswith("AI-"):
                     # host owns AI locally; skip echoed server AI
@@ -121,13 +157,49 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
                 raw_palette = d.get("palette")
                 palette = tuple(tuple(c) for c in raw_palette) if raw_palette and len(raw_palette) == 3 else None
 
-                # Estimate one-way transit time from sender's timestamp.
-                # Pre-advance the received position so we place the car where it
-                # likely is *now*, not where it was when the packet was sent.
+                # ── Per-player recv stats (ping + packet loss) ──────────────
+                if pid not in _recv_stats:
+                    _recv_stats[pid] = {"last_recv": now, "ping": 0.0, "last_sq": None, "pl_events": deque()}
+                st = _recv_stats[pid]
+                interval = now - st["last_recv"]
+                st["last_recv"] = now
+                # Running EWMA of inter-arrival interval → smoothed one-way delay proxy
+                prev_ping = st["ping"]
+                raw_interval_ms = interval * 1000.0
+                st["ping"] = prev_ping + _PING_EWMA_ALPHA * (raw_interval_ms - prev_ping)
+                # Sequence-number based packet loss: count gaps between received sq values
+                new_sq = int(d["sq"]) if d.get("sq") is not None else None
+                if new_sq is not None:
+                    if st["last_sq"] is not None:
+                        gap = max(1, new_sq - st["last_sq"])
+                        st["pl_events"].append((now, gap, 1))  # (time, expected, received)
+                    else:
+                        st["pl_events"].append((now, 1, 1))  # first packet, no gap yet
+                    st["last_sq"] = new_sq
+                # Large ping spike → treat as implicit packet loss even without sq gap
+                # A sudden ×1.5 jump in interval suggests a dropped packet caused queuing
+                if prev_ping > 0.0 and raw_interval_ms > prev_ping * 1.5:
+                    st["pl_events"].append((now, 2, 1))  # 2 expected, 1 received (1 implied drop)
+                # Trim events outside the window
+                while st["pl_events"] and now - st["pl_events"][0][0] > _PL_WINDOW:
+                    st["pl_events"].popleft()
+                # PL%: (expected - received) / expected
+                # Shows None only if sq never seen AND no spike events yet
+                if st["pl_events"]:
+                    total_exp = sum(e[1] for e in st["pl_events"])
+                    total_recv = sum(e[2] for e in st["pl_events"])
+                    pl_pct = max(0.0, 100.0 * (1.0 - total_recv / total_exp)) if total_exp > 0 else 0.0
+                else:
+                    pl_pct = None
+                # ────────────────────────────────────────────────────────────
+
+                # Pre-advance position by ts age (same-clock only, i.e. same host)
                 ts = d.get("ts")
                 age = min(_MAX_AGE, max(0.0, now - float(ts))) if ts is not None else 0.0
                 tx += tvx * age
                 ty += tvy * age * _SQRT2
+
+                ping_to_server = float(d["ps"]) if d.get("ps") is not None else None
 
                 if pid not in remotes:
                     # First sighting: place exactly at received position
@@ -136,24 +208,22 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
                         "vx": tvx, "vy": tvy,
                         "name": name, "has_grip": thg,
                         "car_type": car_type, "palette": palette,
-                        "ping": age * 1000.0,
+                        "ping": ping_to_server,
+                        "pl": pl_pct,
                     }
                 else:
                     cur = remotes[pid]
-                    # Update ping EWMA (milliseconds)
-                    old_ping = cur.get("ping", age * 1000.0)
-                    cur["ping"] = old_ping + _PING_EWMA_ALPHA * (age * 1000.0 - old_ping)
+                    if ping_to_server is not None:
+                        cur["ping"] = ping_to_server
+                    cur["pl"] = pl_pct
                     # Teleport on large errors (respawn, new race start, etc.)
                     ex, ey = tx - cur["x"], ty - cur["y"]
                     if ex * ex + ey * ey > _SNAP_DIST_SQ:
                         cur["x"], cur["y"] = tx, ty
                     else:
-                        # Soft correction: blend predicted position toward received truth.
-                        # The advance_remotes() call each frame keeps the car moving;
-                        # this nudge corrects accumulated drift without visible snapping.
+                        # Soft correction toward received truth
                         cur["x"] += ex * min(1.0, dt * _CORRECTION_RATE)
                         cur["y"] += ey * min(1.0, dt * _CORRECTION_RATE)
-                    # Always update velocity so dead reckoning uses fresh data
                     cur["vx"] = tvx
                     cur["vy"] = tvy
                     cur["has_grip"] = thg
@@ -162,6 +232,10 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
                     cur["name"] = name
                     cur["car_type"] = car_type
                     cur["palette"] = palette
+            # Clean up disconnected players from recv stats
+            for pid in list(_recv_stats.keys()):
+                if pid not in players:
+                    _recv_stats.pop(pid, None)
             for pid in list(remotes.keys()):
                 if pid not in players:
                     remotes.pop(pid, None)
@@ -171,7 +245,10 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
     return result
 
 
-def send_network_state(sock, code: str, my_id: str, my_car, palette=None):
+def send_network_state(sock, code: str, my_id: str, my_car, palette=None, my_ping=None):
+    global _last_send_time, _send_seq
+    _last_send_time = time.time()
+    _send_seq += 1
     pkt = {
         "t": "state",
         "code": code,
@@ -185,6 +262,8 @@ def send_network_state(sock, code: str, my_id: str, my_car, palette=None):
         "name": my_car.name,
         "car_type": getattr(my_car, "car_type", "ae86"),
         "ts": round(time.time(), 4),
+        "ps": round(my_ping, 1) if my_ping is not None else None,
+        "sq": _send_seq,
     }
     if palette:
         pkt["palette"] = [list(c) for c in palette]
@@ -223,7 +302,7 @@ def send_ai_states(sock, code: str, ai_cars):
 
 def send_ping(sock, code: str):
     try:
-        sock.send(json.dumps({"t": "ping", "code": code}).encode("utf-8"))
+        sock.send(json.dumps({"t": "ping", "code": code, "ts": round(time.time(), 4)}).encode("utf-8"))
     except Exception:
         pass
 

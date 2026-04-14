@@ -386,7 +386,7 @@ def draw_collision_debug(surface: pygame.Surface, car, collision_mesh, offx: int
             sx, sy = int(wx - offx), int(wy - offy)
             pygame.draw.circle(surface, (0, 255, 255), (sx, sy), 3)
 
-def draw_header(surface, font_big, font_small, title_str: str, fps: float, host_username: str = None):
+def draw_header(surface, font_big, font_small, title_str: str, fps: float, host_username: str = None, ping_ms: float = None):
     # header background
     pygame.draw.rect(surface, const.TRACK_BORDER_COLOR, (0, 0, const.WINDOW_WIDTH, const.TOP_LINE_Y))
     pygame.draw.line(surface, const.WHITE, (0, const.TOP_LINE_Y), (const.WINDOW_WIDTH, const.TOP_LINE_Y))
@@ -408,7 +408,19 @@ def draw_header(surface, font_big, font_small, title_str: str, fps: float, host_
     
     fps_text = get_cached_text(font_small, f"FPS: {fps_rounded}", color,
                                 cache_key=(id(font_small), "fps", fps_rounded, color))
-    surface.blit(fps_text, (const.WINDOW_WIDTH - fps_text.get_width() - 10, const.NAVBAR_Y))
+    fps_x = const.WINDOW_WIDTH - fps_text.get_width() - 10
+    surface.blit(fps_text, (fps_x, const.NAVBAR_Y))
+
+    # ping display (shown right next to fps when available)
+    if ping_ms is not None:
+        ping_v = round(ping_ms)
+        if ping_v < 60: ping_color = (120, 255, 120)
+        elif ping_v < 120: ping_color = (255, 255, 120)
+        else: ping_color = (255, 120, 120)
+        ping_text = font_small.render(f"{ping_v} ms", True, ping_color)
+    else:
+        ping_text = font_small.render("ping: --", True, (255, 120, 120))
+    surface.blit(ping_text, (fps_x - ping_text.get_width() - 8, const.NAVBAR_Y))
     
     # debug status
     debug_status = "True" if const.DEBUG else "False"
@@ -423,6 +435,74 @@ def draw_header(surface, font_big, font_small, title_str: str, fps: float, host_
         # Position after version text with some spacing
         version_width = version_text.get_width()
         surface.blit(host_text, (20 + version_width, const.NAVBAR_Y))
+
+def draw_scoreboard(surface, font_medium, font_small, my_car, remotes, ai_cars, my_ping=None):
+    """Semi-transparent scoreboard overlay shown while Tab is held."""
+    import pygame
+    ROW_H = 28
+    COLS = ["Player", "Ping", "PL"]
+    COL_W = [220, 80, 60]
+    PAD = 14
+    header_h = ROW_H + 6
+
+    # Build rows: local player first, then remotes, then AIs
+    rows = []
+    rows.append({"name": f"{my_car.name} (you)", "ping": my_ping, "pl": None, "color": (200, 255, 200)})
+    for pid, rd in remotes.items():
+        rows.append({"name": rd.get("name", pid), "ping": rd.get("ping"), "pl": rd.get("pl"), "color": (220, 220, 220)})
+    for ai in ai_cars:
+        rows.append({"name": ai.name, "ping": None, "pl": None, "color": (200, 200, 255)})
+
+    if not rows:
+        return
+
+    total_w = sum(COL_W) + PAD * 3
+    total_h = header_h + len(rows) * ROW_H + PAD * 2
+    sx = const.WINDOW_WIDTH // 2 - total_w // 2
+    sy = const.WINDOW_HEIGHT // 2 - total_h // 2
+
+    bg = pygame.Surface((total_w, total_h), pygame.SRCALPHA)
+    bg.fill((20, 20, 30, 200))
+    surface.blit(bg, (sx, sy))
+    pygame.draw.rect(surface, (180, 180, 200), (sx, sy, total_w, total_h), 1)
+
+    # Header row
+    x0 = sx + PAD
+    for i, col in enumerate(COLS):
+        lbl = font_small.render(col, True, (180, 180, 255))
+        surface.blit(lbl, (x0, sy + PAD))
+        x0 += COL_W[i]
+    pygame.draw.line(surface, (100, 100, 140),
+                     (sx + PAD, sy + header_h), (sx + total_w - PAD, sy + header_h), 1)
+
+    # Player rows
+    for idx, row in enumerate(rows):
+        ry = sy + header_h + PAD + idx * ROW_H
+        x0 = sx + PAD
+        # Name
+        name_surf = font_small.render(row["name"][:30], True, row["color"])
+        surface.blit(name_surf, (x0, ry))
+        x0 += COL_W[0]
+        # Ping
+        if row["ping"] is not None:
+            ping_v = round(row["ping"])
+            if ping_v < 60: pc = (120, 255, 120)
+            elif ping_v < 120: pc = (255, 255, 120)
+            else: pc = (255, 120, 120)
+            ping_surf = font_small.render(f"{ping_v} ms", True, pc)
+        else:
+            ping_surf = font_small.render("—", True, (140, 140, 140))
+        surface.blit(ping_surf, (x0, ry))
+        x0 += COL_W[1]
+        # PL (packet loss %)
+        if row["pl"] is not None:
+            pl_v = round(row["pl"])
+            pl_color = (120, 255, 120) if pl_v < 2 else (255, 255, 120) if pl_v < 10 else (255, 120, 120)
+            pl_surf = font_small.render(f"{pl_v}%", True, pl_color)
+        else:
+            pl_surf = font_small.render("—", True, (140, 140, 140))
+        surface.blit(pl_surf, (x0, ry))
+
 
 def draw_footer(surface: str, font_small, code=None):
     # footer background
@@ -442,7 +522,7 @@ def draw_footer(surface: str, font_small, code=None):
 
 def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size, checkpoints, buttons, 
                   error_msg, my_car, cam, gamepad, font_big, font_medium, font_small,
-                  ai_path_mode_controls, engine_state, fps, dt, is_host, host_name=None, car_sprites_cache=None, room_clients_count=1):
+                  ai_path_mode_controls, engine_state, fps, dt, is_host, host_name=None, car_sprites_cache=None, room_clients_count=1, ping_ms=None):
     """Draw UI elements based on current stage levels (stage1, stage2, stage3).
     
     Stage levels:
@@ -465,16 +545,16 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
             if stage3 == "controls":
                 controls_rects = draw_controls(ui_surf, font_small)
                 _controls_rects_cache = controls_rects
-                draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name)
+                draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name, ping_ms)
             else:
                 _controls_rects_cache = None
                 world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
-                draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
+                draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name, ping_ms)
         else:
             # Main menu with connection bar at the bottom
             menu_bar_rects = draw_menu_connection_bar(ui_surf, font_medium)
             _menu_bar_rects_cache = menu_bar_rects
-            draw_header(ui_surf, font_big, font_small, "Menu", fps, host_name)
+            draw_header(ui_surf, font_big, font_small, "Menu", fps, host_name, ping_ms)
         draw_footer(ui_surf, font_small)
 
     elif stage1 == "lobby":
@@ -483,11 +563,11 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
             if stage3 == "controls":
                 controls_rects = draw_controls(ui_surf, font_small)
                 _controls_rects_cache = controls_rects  # Cache for event handling
-                draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name)
+                draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name, ping_ms)
             else:
                 _controls_rects_cache = None  # Clear cache when not in controls
                 world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
-                draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
+                draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name, ping_ms)
             _game_options_rects_cache = None
         else:
             _controls_rects_cache = None  # Clear cache when not in settings
@@ -498,7 +578,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
                 ui_surf, font_big, font_medium, font_small, is_host,
                 car_sprites_cache, room_clients_count=room_clients_count, dt=dt)
             _game_options_rects_cache = game_options_rects
-            draw_header(ui_surf, font_big, font_small, "Waiting Room", fps, host_name)
+            draw_header(ui_surf, font_big, font_small, "Waiting Room", fps, host_name, ping_ms)
             draw_controls_hud(ui_surf, ai_path_mode_controls, gamepad, my_car, cam, font_small, dt, engine_state, 7000)
         draw_footer(ui_surf, font_small, code)
 
@@ -508,17 +588,17 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
             if stage3 == "controls":
                 controls_rects = draw_controls(ui_surf, font_small)
                 _controls_rects_cache = controls_rects  # Cache for event handling
-                draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name)
+                draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name, ping_ms)
             else:
                 _controls_rects_cache = None  # Clear cache when not in controls
                 world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
-                draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
+                draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name, ping_ms)
         else:
             _controls_rects_cache = None  # Clear cache when not in settings
             draw_mode1(ui_surf, font_big, font_medium, cam, checkpoints)
             palette_picker_rects = draw_color_palette_picker(ui_surf, font_small)
             _palette_picker_rects_cache = palette_picker_rects
-            draw_header(ui_surf, font_big, font_small, "Classic Race", fps, host_name)
+            draw_header(ui_surf, font_big, font_small, "Classic Race", fps, host_name, ping_ms)
             draw_controls_hud(ui_surf, ai_path_mode_controls, gamepad, my_car, cam, font_small, dt, engine_state, 7000)
         draw_footer(ui_surf, font_small, code)
 
@@ -528,23 +608,23 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
             if stage3 == "controls":
                 controls_rects = draw_controls(ui_surf, font_small)
                 _controls_rects_cache = controls_rects  # Cache for event handling
-                draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name)
+                draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name, ping_ms)
             else:
                 _controls_rects_cache = None  # Clear cache when not in controls
                 world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
-                draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name)
+                draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name, ping_ms)
         else:
             _controls_rects_cache = None  # Clear cache when not in settings
             draw_mode2(ui_surf, font_big, font_medium, cam, checkpoints)
             palette_picker_rects = draw_color_palette_picker(ui_surf, font_small)
             _palette_picker_rects_cache = palette_picker_rects
-            draw_header(ui_surf, font_big, font_small, "Mode 2", fps, host_name)
+            draw_header(ui_surf, font_big, font_small, "Mode 2", fps, host_name, ping_ms)
             draw_controls_hud(ui_surf, ai_path_mode_controls, gamepad, my_car, cam, font_small, dt, engine_state, 7000)
         draw_footer(ui_surf, font_small, code)
 
     elif stage1 == "error":
         _menu_bar_rects_cache = None  # Clear cache when in error
-        draw_header(ui_surf, font_big, font_small, "Error", fps)
+        draw_header(ui_surf, font_big, font_small, "Error", fps, ping_ms=ping_ms)
         draw_error(ui_surf, error_msg, font_small)
         draw_footer(ui_surf, font_small, code)
     
