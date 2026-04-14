@@ -20,7 +20,7 @@ def ai_algorithme(
     if ai_path_mode and const.DEBUG and surface is not None:
         surface.fill((0, 0, 0, 0))
         if path_poly:
-            pygame.draw.polygon(surface, (255, 0, 0), path_poly, 3)
+            pygame.draw.polygon(surface, (255, 0, 0), [(p[0], p[1]) for p in path_poly], 3)
 
     if path_poly:
         def _proj_point_on_segment(px, py, ax, ay, bx, by):
@@ -40,7 +40,8 @@ def ai_algorithme(
         best_t = 0.0
 
         for i in range(len(path_poly) - 1):
-            (ax, ay), (bx, by) = path_poly[i], path_poly[i + 1]
+            ax, ay = path_poly[i][0], path_poly[i][1]
+            bx, by = path_poly[i + 1][0], path_poly[i + 1][1]
             (cx, cy), t = _proj_point_on_segment(px, py, ax, ay, bx, by)
             dx, dy = px - cx, py - cy
             d2 = dx * dx + dy * dy
@@ -109,9 +110,14 @@ def ai_algorithme(
             my_car.target_angle = angle_to_point
 
             speed = math.hypot(my_car.vx, my_car.vy)
-            th = 1 - clamp(abs(angle_diff) * speed / 240, 0, 1) + 0.1
+            # Use track width at the current segment to scale speed.
+            # Narrower track → lower throttle cap and earlier braking.
+            seg_width = path_poly[best_idx][2] if len(path_poly[best_idx]) > 2 else 200.0
+            
+            width_scale = clamp(seg_width / 200.0, 0.4, 1.2)
+            th = (1 - clamp(abs(angle_diff) * speed / 240, 0, 1) + 0.1) * width_scale
             th = clamp(th, 0.0, 1.0)
-            br = clamp(abs(angle_diff) * speed / 240-0.2, 0, 1)
+            br = clamp(abs(angle_diff) * speed / 240 - 0.2 * width_scale, 0, 1)
             if ai_path_mode and surface is not None:
                 return {"th": th, "st": 0.0, "br": br}, surface
             return {"th": th, "st": 0.0, "br": br}
