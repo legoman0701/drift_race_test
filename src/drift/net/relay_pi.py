@@ -269,6 +269,8 @@ def loop():
                 "ts": msg.get("ts"),
                 # pass through self-reported ping so other clients can display it
                 "ps": msg.get("ps"),
+                # pass through self-reported packet loss
+                "pl": msg.get("pl"),
                 # pass through sequence number for client-side packet-loss detection
                 "sq": msg.get("sq"),
             }

@@ -836,7 +836,6 @@ def main():
     profiler = FrameProfiler()
     show_frame_analysis = False
     show_scoreboard = False
-    _my_ping_ms = None  # persists between frames; updated from relay RTT echo
 
     # Reusable UI surface (avoid per-frame allocation)
     ui_surf = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), pygame.SRCALPHA)
@@ -1107,9 +1106,7 @@ def main():
 
         profiler.begin("network")
         if sock:
-            net_result = handle_network_messages(sock, remotes, dt, my_id, I_AM_HOST, code)
-            if net_result.get("my_ping") is not None:
-                _my_ping_ms = net_result["my_ping"]
+            net_result = handle_network_messages(sock, remotes, dt, my_id, I_AM_HOST, code, my_car=my_car)
             if net_result.get("host_name") is not None:
                 host_name = net_result["host_name"] or None
             if net_result.get("host_id") is not None:
@@ -1168,7 +1165,7 @@ def main():
             now = time.time()
             if now - last_state_send >= 1.0 / const.SEND_HZ:
                 last_state_send = now
-                send_network_state(sock, code, my_id, my_car, palette=get_palette_colors(), my_ping=_my_ping_ms)
+                send_network_state(sock, code, my_id, my_car, palette=get_palette_colors())
                 if I_AM_HOST and ai_cars and stage1 != "lobby":
                     send_ai_states(sock, code, ai_cars)
             if now - last_ping >= 1.0 / const.PING_HZ:
@@ -1421,7 +1418,7 @@ def main():
         profiler.begin("ui")
         ui_surf.fill((0, 0, 0, 0))
         fps = clock.get_fps()
-        ping_ms = _my_ping_ms
+        ping_ms = my_car.ping_ms if my_car else None
         ui_checkpoints = renderer.checkpoints
         if game_mode is not None and stage1 in ["mode1", "leaderboard"]:
             ui_checkpoints = []
@@ -1452,7 +1449,7 @@ def main():
             draw_frame_analysis(ui_surf, profiler)
 
         if show_scoreboard:
-            draw_scoreboard(ui_surf, font_medium, font_small, my_car, remotes, ai_cars, my_ping=_my_ping_ms)
+            draw_scoreboard(ui_surf, font_medium, font_small, my_car, remotes, ai_cars)
 
         # Apply settings button results
         for res in button_results:

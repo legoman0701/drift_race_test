@@ -303,6 +303,10 @@ class Car:
 
         self.time_since_mouvement = 0
         
+        # Network stats (measured locally, sent to other players via relay)
+        self.ping_ms = None   # RTT/2 to relay server, in ms
+        self.pl_pct = None    # packet loss %, measured from sq gaps + spike detection
+        
         spec_path = normalize_asset_path("cars", self.car_type, "specs.json")
         with open(spec_path, "r", encoding="utf-8") as fh:
             self.specs = json.load(fh)
@@ -763,7 +767,7 @@ class Car:
         if collision_mesh:
             ca2, sa2 = math.cos(self.angle), math.sin(self.angle)
             inertia_z_corr = MASS * (CAR_LEN**2 + CAR_WID**2) / 12.0
-            RESTITUTION = 0.5  # 0 = no bounce, 1 = perfect bounce
+            RESTITUTION = 0.2  # 0 = no bounce, 1 = perfect bounce
             for _iter in range(4):
                 worst_depth = 0.0
                 total_push_x, total_push_y = 0.0, 0.0

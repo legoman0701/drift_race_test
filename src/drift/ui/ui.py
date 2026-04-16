@@ -436,7 +436,7 @@ def draw_header(surface, font_big, font_small, title_str: str, fps: float, host_
         version_width = version_text.get_width()
         surface.blit(host_text, (20 + version_width, const.NAVBAR_Y))
 
-def draw_scoreboard(surface, font_medium, font_small, my_car, remotes, ai_cars, my_ping=None):
+def draw_scoreboard(surface, font_medium, font_small, my_car, remotes, ai_cars):
     """Semi-transparent scoreboard overlay shown while Tab is held."""
     import pygame
     ROW_H = 28
@@ -447,7 +447,7 @@ def draw_scoreboard(surface, font_medium, font_small, my_car, remotes, ai_cars, 
 
     # Build rows: local player first, then remotes, then AIs
     rows = []
-    rows.append({"name": f"{my_car.name} (you)", "ping": my_ping, "pl": None, "color": (200, 255, 200)})
+    rows.append({"name": f"{my_car.name} (you)", "ping": my_car.ping_ms, "pl": my_car.pl_pct, "color": (200, 255, 200)})
     for pid, rd in remotes.items():
         rows.append({"name": rd.get("name", pid), "ping": rd.get("ping"), "pl": rd.get("pl"), "color": (220, 220, 220)})
     for ai in ai_cars:

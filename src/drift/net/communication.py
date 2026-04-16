@@ -7,17 +7,16 @@ import drift.config.const as const
 _SQRT2 = math.sqrt(2)  # must match car.py isometric compensation
 _SNAP_DIST_SQ = 400.0 ** 2  # teleport if error > 400 px (e.g. respawn)
 _CORRECTION_RATE = 8.0       # position error blended at this rate (units/s fraction)
-_PING_EWMA_ALPHA = 0.15      # smoothing factor for ping estimate
 _MAX_AGE = 0.5               # clamp packet age to 500 ms (guards against clock skew)
-_PL_WINDOW = 5.0             # seconds over which packet-loss % is computed
 
-# Module-level per-player recv stats (cleared on disconnect)
-_recv_stats: Dict[str, Dict] = {}
-# Track when we last sent a state packet so we can compute RTT from world echo
-_last_send_time: float = 0.0
-_my_ping_ewma: float | None = None
-# Monotonically-incrementing send sequence number for packet-loss detection
-_send_seq: int = 0
+# ── Self-ping / packet-loss state (one set per client) ──────────────────
+_PING_ALPHA = 0.15           # EWMA smoothing for ping
+_PL_WINDOW = 5.0             # sliding window (seconds) for PL%
+_send_seq: int = 0           # monotonic sequence number attached to every sent packet
+_last_send_time: float = 0.0 # time.time() when we last sent a state packet
+_ping_ewma: float | None = None
+_pl_last_sq: int | None = None
+_pl_events: deque = deque()  # (time, expected, received) tuples
 
 
 def recv_jsons(sock: socket.socket):
@@ -54,7 +53,7 @@ def connect_to_relay() -> socket.socket:
     return s
 
 
-def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str, is_host: bool, room_code: str | None = None):
+def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str, is_host: bool, room_code: str | None = None, my_car=None):
     result = {
         "error": None,
         "start_mode": None,
@@ -62,30 +61,20 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
         "host_name": None,
         "host_id": None,
         "race_results": None,
-        "my_ping": None,   # RTT/2 in ms measured via world echo of own state
     }
     players = {}
     now = time.time()
     for msg in recv_jsons(sock):
         msg_code = msg.get("code")
         t = msg.get("t")
-        if t not in ("world",):  # skip spammy world packets in debug log
-            print(f"[net] recv t={t!r} code={msg_code!r}")
         if room_code and isinstance(msg_code, str) and msg_code.upper() != str(room_code).upper():
-            # Ignore stale/wrong-room packets so stage transitions stay session-scoped.
             continue
 
         if t == "pong":
+            # Relay echoes our ping packet — measure RTT
             ts_sent = msg.get("ts")
-            print(f"[net] pong received, ts={ts_sent}, rtt={(time.time()-float(ts_sent))*1000:.1f}ms" if ts_sent else "[net] pong received but no ts")
             if ts_sent is not None:
-                rtt_ms = (now - float(ts_sent)) * 1000.0
-                if 0.0 < rtt_ms < 2000.0:
-                    prev = result["my_ping"]
-                    if prev is None:
-                        result["my_ping"] = rtt_ms / 2.0
-                    else:
-                        result["my_ping"] = prev + _PING_EWMA_ALPHA * (rtt_ms / 2.0 - prev)
+                _update_own_ping((now - float(ts_sent)) * 1000.0, my_car)
             continue
         if t == "join_ok":
             host_name = msg.get("host_name")
@@ -134,20 +123,12 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
             players = msg.get("players", {}) or {}
             for pid, d in players.items():
                 if pid == my_id:
-                    # Own echo in world → measure RTT from local send time
-                    global _my_ping_ewma
+                    # Own echo → measure ping (RTT/2) and PL from sq gaps
                     if _last_send_time > 0.0:
-                        rtt_ms = (now - _last_send_time) * 1000.0
-                        if 0.0 < rtt_ms < 2000.0:
-                            if _my_ping_ewma is None:
-                                _my_ping_ewma = rtt_ms / 2.0
-                            else:
-                                _my_ping_ewma = _my_ping_ewma + _PING_EWMA_ALPHA * (rtt_ms / 2.0 - _my_ping_ewma)
-                            result["my_ping"] = _my_ping_ewma
-                            print(f"[net] RTT={rtt_ms:.1f}ms  ping={_my_ping_ewma:.1f}ms")
+                        _update_own_ping((now - _last_send_time) * 1000.0, my_car)
+                    _update_own_pl(d, now, my_car)
                     continue
                 if is_host and isinstance(pid, str) and pid.startswith("AI-"):
-                    # host owns AI locally; skip echoed server AI
                     continue
                 tx, ty, ta = float(d["x"]), float(d["y"]), float(d["a"])
                 tvx, tvy = float(d.get("vx", 0.0)), float(d.get("vy", 0.0))
@@ -157,71 +138,35 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
                 raw_palette = d.get("palette")
                 palette = tuple(tuple(c) for c in raw_palette) if raw_palette and len(raw_palette) == 3 else None
 
-                # ── Per-player recv stats (ping + packet loss) ──────────────
-                if pid not in _recv_stats:
-                    _recv_stats[pid] = {"last_recv": now, "ping": 0.0, "last_sq": None, "pl_events": deque()}
-                st = _recv_stats[pid]
-                interval = now - st["last_recv"]
-                st["last_recv"] = now
-                # Running EWMA of inter-arrival interval → smoothed one-way delay proxy
-                prev_ping = st["ping"]
-                raw_interval_ms = interval * 1000.0
-                st["ping"] = prev_ping + _PING_EWMA_ALPHA * (raw_interval_ms - prev_ping)
-                # Sequence-number based packet loss: count gaps between received sq values
-                new_sq = int(d["sq"]) if d.get("sq") is not None else None
-                if new_sq is not None:
-                    if st["last_sq"] is not None:
-                        gap = max(1, new_sq - st["last_sq"])
-                        st["pl_events"].append((now, gap, 1))  # (time, expected, received)
-                    else:
-                        st["pl_events"].append((now, 1, 1))  # first packet, no gap yet
-                    st["last_sq"] = new_sq
-                # Large ping spike → treat as implicit packet loss even without sq gap
-                # A sudden ×1.5 jump in interval suggests a dropped packet caused queuing
-                if prev_ping > 0.0 and raw_interval_ms > prev_ping * 1.5:
-                    st["pl_events"].append((now, 2, 1))  # 2 expected, 1 received (1 implied drop)
-                # Trim events outside the window
-                while st["pl_events"] and now - st["pl_events"][0][0] > _PL_WINDOW:
-                    st["pl_events"].popleft()
-                # PL%: (expected - received) / expected
-                # Shows None only if sq never seen AND no spike events yet
-                if st["pl_events"]:
-                    total_exp = sum(e[1] for e in st["pl_events"])
-                    total_recv = sum(e[2] for e in st["pl_events"])
-                    pl_pct = max(0.0, 100.0 * (1.0 - total_recv / total_exp)) if total_exp > 0 else 0.0
-                else:
-                    pl_pct = None
-                # ────────────────────────────────────────────────────────────
-
-                # Pre-advance position by ts age (same-clock only, i.e. same host)
+                # Pre-advance position by ts age
                 ts = d.get("ts")
                 age = min(_MAX_AGE, max(0.0, now - float(ts))) if ts is not None else 0.0
                 tx += tvx * age
                 ty += tvy * age * _SQRT2
 
-                ping_to_server = float(d["ps"]) if d.get("ps") is not None else None
+                # Read the remote player's self-reported ping & PL
+                remote_ping = float(d["ps"]) if d.get("ps") is not None else None
+                remote_pl = float(d["pl"]) if d.get("pl") is not None else None
 
                 if pid not in remotes:
-                    # First sighting: place exactly at received position
                     remotes[pid] = {
                         "x": tx, "y": ty, "a": ta,
                         "vx": tvx, "vy": tvy,
                         "name": name, "has_grip": thg,
                         "car_type": car_type, "palette": palette,
-                        "ping": ping_to_server,
-                        "pl": pl_pct,
+                        "ping": remote_ping,
+                        "pl": remote_pl,
                     }
                 else:
                     cur = remotes[pid]
-                    if ping_to_server is not None:
-                        cur["ping"] = ping_to_server
-                    cur["pl"] = pl_pct
-                    # Teleport on large errors (respawn, new race start, etc.)
+                    if remote_ping is not None:
+                        cur["ping"] = remote_ping
+                    if remote_pl is not None:
+                        cur["pl"] = remote_pl
                     ex, ey = tx - cur["x"], ty - cur["y"]
                     if ex * ex + ey * ey > _SNAP_DIST_SQ:
                         cur["x"], cur["y"] = tx, ty
                     else:
-                        # Soft correction toward received truth
                         cur["x"] += ex * min(1.0, dt * _CORRECTION_RATE)
                         cur["y"] += ey * min(1.0, dt * _CORRECTION_RATE)
                     cur["vx"] = tvx
@@ -232,10 +177,6 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
                     cur["name"] = name
                     cur["car_type"] = car_type
                     cur["palette"] = palette
-            # Clean up disconnected players from recv stats
-            for pid in list(_recv_stats.keys()):
-                if pid not in players:
-                    _recv_stats.pop(pid, None)
             for pid in list(remotes.keys()):
                 if pid not in players:
                     remotes.pop(pid, None)
@@ -245,7 +186,50 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
     return result
 
 
-def send_network_state(sock, code: str, my_id: str, my_car, palette=None, my_ping=None):
+# ── Ping & PL helpers ───────────────────────────────────────────────────
+
+def _update_own_ping(rtt_ms: float, my_car):
+    """Update own ping (RTT/2) using EWMA. Stores result on my_car.ping_ms."""
+    global _ping_ewma
+    if not (0.0 < rtt_ms < 2000.0):
+        return
+    if _ping_ewma is None:
+        _ping_ewma = rtt_ms / 2.0
+    else:
+        _ping_ewma += _PING_ALPHA * (rtt_ms / 2.0 - _ping_ewma)
+    if my_car is not None:
+        my_car.ping_ms = _ping_ewma
+
+
+def _update_own_pl(d: dict, now: float, my_car):
+    """Update own packet-loss % from echoed sq gaps + spike detection.
+    Stores result on my_car.pl_pct."""
+    global _pl_last_sq
+    echo_sq = int(d["sq"]) if d.get("sq") is not None else None
+    # Only record a new event when sq actually advances (skip duplicate relay echoes)
+    if echo_sq is not None and echo_sq != _pl_last_sq:
+        if _pl_last_sq is not None:
+            gap = max(1, echo_sq - _pl_last_sq)
+            _pl_events.append((now, gap, 1))
+        else:
+            _pl_events.append((now, 1, 1))
+        _pl_last_sq = echo_sq
+        # Spike detection: if ping_ewma exists and current RTT is >1.5× the smoothed RTT
+        if _ping_ewma is not None and _last_send_time > 0.0:
+            rtt_ms = (now - _last_send_time) * 1000.0
+            if rtt_ms > _ping_ewma * 2 * 1.5:
+                _pl_events.append((now, 2, 1))
+    # Trim outside window
+    while _pl_events and now - _pl_events[0][0] > _PL_WINDOW:
+        _pl_events.popleft()
+    # Compute PL%
+    if _pl_events and my_car is not None:
+        total_exp = sum(e[1] for e in _pl_events)
+        total_recv = sum(e[2] for e in _pl_events)
+        my_car.pl_pct = max(0.0, 100.0 * (1.0 - total_recv / total_exp)) if total_exp > 0 else 0.0
+
+
+def send_network_state(sock, code: str, my_id: str, my_car, palette=None):
     global _last_send_time, _send_seq
     _last_send_time = time.time()
     _send_seq += 1
@@ -262,7 +246,8 @@ def send_network_state(sock, code: str, my_id: str, my_car, palette=None, my_pin
         "name": my_car.name,
         "car_type": getattr(my_car, "car_type", "ae86"),
         "ts": round(time.time(), 4),
-        "ps": round(my_ping, 1) if my_ping is not None else None,
+        "ps": round(my_car.ping_ms, 1) if my_car.ping_ms is not None else None,
+        "pl": round(my_car.pl_pct, 1) if my_car.pl_pct is not None else None,
         "sq": _send_seq,
     }
     if palette:
