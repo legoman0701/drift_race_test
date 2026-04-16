@@ -55,6 +55,11 @@ _game_options = {
     "ai_difficulty": "Random",
 }
 
+MODE_OPTIONS = [
+    ("Classic Race", "mode1"),
+    ("Drift Race", "mode3"),
+]
+
 # Map metadata cache
 _map_meta_cache = {}
 
@@ -583,7 +588,7 @@ def _draw_options_mode_page(ui_surf, font_big, font_medium, font_small,
     y = py + _CONTENT_PAD
 
     # Mode selector with decorative current car
-    mode_labels = ["Simple Race"]
+    mode_labels = [label for label, _ in MODE_OPTIONS]
     current_car = AVAILABLE_CARS[_game_options["selected_car_index"] % len(AVAILABLE_CARS)] if AVAILABLE_CARS else None
     y = _draw_item_selector(ui_surf, font_medium, font_small, car_sprites_cache,
                             "Mode", _game_options["selected_mode_index"],
@@ -752,11 +757,16 @@ def handle_game_options_click(click_pos, rects, is_host, room_clients_count=1):
 
         # Mode selection
         if name == "mode_up":
-            # Only 1 mode for now
-            pass
+            total = len(MODE_OPTIONS)
+            if total > 0:
+                _game_options["selected_mode_index"] = (_game_options["selected_mode_index"] - 1) % total
+                _game_setup["selected_mode"] = MODE_OPTIONS[_game_options["selected_mode_index"]][1]
             return "mode_prev"
         if name == "mode_down":
-            pass
+            total = len(MODE_OPTIONS)
+            if total > 0:
+                _game_options["selected_mode_index"] = (_game_options["selected_mode_index"] + 1) % total
+                _game_setup["selected_mode"] = MODE_OPTIONS[_game_options["selected_mode_index"]][1]
             return "mode_next"
 
         # Laps

@@ -669,3 +669,93 @@ class SimpleRace(BaseGameMode):
             result["return_btn_rect"] = btn_rect
 
         return result
+
+
+class DriftAngleRace(SimpleRace):
+    """Simple race variant with a top-of-screen drift angle HUD."""
+
+    def __init__(self, checkpoints, total_laps=3, start_grid=None, lines=None, local_player_id="local", path_poly=None):
+        super().__init__(checkpoints, total_laps=total_laps, start_grid=start_grid, lines=lines,
+                         local_player_id=local_player_id, path_poly=path_poly)
+        self.current_drift_angle_deg = 0.0
+        self.drift_score = 0.0
+        self.current_drift_multiplier = 1.0
+
+    def update(self, dt, players, my_car, is_host):
+        result = super().update(dt, players, my_car, is_host)
+        self.current_drift_angle_deg = float(getattr(my_car, "drift_angle_degrees", 0.0))
+        self.current_drift_multiplier = float(getattr(my_car, "drift_multiplier", 1.0))
+        if abs(self.current_drift_angle_deg) > 5.0:
+            self.drift_score += abs(self.current_drift_angle_deg) * self.current_drift_multiplier * dt
+        return result
+
+    def on_enter(self, players):
+        super().on_enter(players)
+        self.current_drift_angle_deg = 0.0
+        self.drift_score = 0.0
+        self.current_drift_multiplier = 1.0
+
+    def _draw_race_hud(self, ui_surf, font_medium, font_small):
+        self._draw_drift_angle_hud(ui_surf, font_medium, font_small)
+
+        mins = int(self.race_time) // 60
+        secs = self.race_time - mins * 60
+        time_str = f"{mins}:{secs:05.2f}"
+        time_surf = font_medium.render(time_str, True, const.WHITE_240)
+        ui_surf.blit(time_surf, (const.WINDOW_WIDTH // 2 - time_surf.get_width() // 2,
+                                  const.TOP_LINE_Y + 78))
+
+        y = const.TOP_LINE_Y + 40
+        local_ps = self.player_states.get(self.local_player_id)
+        if local_ps:
+            lap_str = f"Lap {min(local_ps.current_lap + 1, self.total_laps)}/{self.total_laps}"
+            cp_str = f"CP {local_ps.current_checkpoint}/{len(self._cp_rects)}"
+            lap_surf = font_small.render(lap_str, True, const.WHITE_240)
+            cp_surf = font_small.render(cp_str, True, const.GREY_200)
+            ui_surf.blit(lap_surf, (12, y))
+            ui_surf.blit(cp_surf, (12, y + 20))
+
+    def _draw_drift_angle_hud(self, ui_surf, font_medium, font_small):
+        max_angle = 90.0
+        angle = clamp(self.current_drift_angle_deg, -max_angle, max_angle)
+        ratio = (angle + max_angle) / (max_angle * 2.0)
+
+        bar_w = min(520, const.WINDOW_WIDTH - 120)
+        bar_h = 24
+        bar_x = const.WINDOW_WIDTH // 2 - bar_w // 2
+        bar_y = const.TOP_LINE_Y + 8
+        bar_rect = pygame.Rect(bar_x, bar_y, bar_w, bar_h)
+
+        bg = pygame.Surface((bar_w, bar_h), pygame.SRCALPHA)
+        bg.fill((18, 20, 28, 210))
+        ui_surf.blit(bg, bar_rect.topleft)
+
+        center_x = bar_rect.centerx
+        pygame.draw.rect(ui_surf, (235, 235, 235), bar_rect, 2, border_radius=12)
+        pygame.draw.line(ui_surf, (120, 120, 128), (center_x, bar_y + 3), (center_x, bar_y + bar_h - 3), 2)
+
+        fill_color = (80, 220, 140) if abs(angle) < 25.0 else (255, 205, 90) if abs(angle) < 50.0 else (255, 120, 90)
+        slider_x = bar_x + int(ratio * bar_w)
+        slider_x = max(bar_x + 10, min(bar_x + bar_w - 10, slider_x))
+        slider_rect = pygame.Rect(0, 0, 14, bar_h + 10)
+        slider_rect.center = (slider_x, bar_rect.centery)
+        pygame.draw.rect(ui_surf, fill_color, slider_rect, border_radius=7)
+        pygame.draw.rect(ui_surf, (255, 255, 255), slider_rect, 2, border_radius=7)
+
+        left_label = font_small.render(f"-{int(max_angle)}", True, const.GREY_200)
+        right_label = font_small.render(f"+{int(max_angle)}", True, const.GREY_200)
+        ui_surf.blit(left_label, (bar_x, bar_y - left_label.get_height() - 2))
+        ui_surf.blit(right_label, (bar_x + bar_w - right_label.get_width(), bar_y - right_label.get_height() - 2))
+
+        label_y = bar_y + bar_h + 8
+        angle_label = font_medium.render(f"{self.current_drift_angle_deg:+.1f}°", True, const.WHITE_240)
+        score_label = font_medium.render(f"{int(self.drift_score)}", True, (255, 220, 80))
+        mult_label = font_medium.render(f"x{self.current_drift_multiplier:.1f}", True, (255, 140, 60))
+        gap = 10
+        total_w = angle_label.get_width() + gap + score_label.get_width() + gap + mult_label.get_width()
+        cx = const.WINDOW_WIDTH // 2 - total_w // 2
+        ui_surf.blit(angle_label, (cx, label_y))
+        cx += angle_label.get_width() + gap
+        ui_surf.blit(score_label, (cx, label_y))
+        cx += score_label.get_width() + gap
+        ui_surf.blit(mult_label, (cx, label_y))

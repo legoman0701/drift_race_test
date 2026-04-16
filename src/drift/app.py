@@ -15,7 +15,7 @@ import drift.ui.button as btn
 import drift.ai.path_finder as path_finder
 from drift.render.renderer import WorldRenderer
 from drift.core.helpers import clamp, rand_name
-from drift.core.gamemode import SimpleRace
+from drift.core.gamemode import DriftAngleRace, SimpleRace
 from drift.ai.ai import ai_algorithme
 from drift.core.inputs import read_inputs
 from drift.net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, advance_remotes
@@ -475,7 +475,7 @@ def draw_engine_audio_debug(surface, engine_audio):
 
 def draw_minimap(surface, path_poly, world_size, my_car, remotes, ai_cars, stage1):
     """Bottom-left minimap: shows track path and car positions during gameplay."""
-    if not path_poly or stage1 not in ("game", "mode1", "mode2", "leaderboard"):
+    if not path_poly or (stage1 != "game" and not stage1.startswith("mode") and stage1 != "leaderboard"):
         return
     if world_size is None or world_size[0] <= 0 or world_size[1] <= 0:
         return
@@ -827,10 +827,10 @@ def main():
 
     settings_buttons = [ # todo : be able to use '*' like '*/settings' for key binds
     btn.Button("Quit Game", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["menu", "settings"]] ,lambda: quit_game()),
-    btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["leaderboard", "settings"]] ,lambda: leave_room(sock, code, my_id, remotes)),
-    btn.Button("Controls", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, [["menu", "settings"], ["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["leaderboard", "settings"]], handle_controls),
-    btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["mode1", "settings"], ["mode2", "settings"]], lambda: switch_cursor_follow_mode(stage1)),
-    btn.Button("AI Path Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.65, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["mode1", "settings"], ["mode2", "settings"]], lambda: switch_ai_path_mode(stage1)),
+    btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["mode3", "settings"], ["leaderboard", "settings"]] ,lambda: leave_room(sock, code, my_id, remotes)),
+    btn.Button("Controls", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, [["menu", "settings"], ["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["mode3", "settings"], ["leaderboard", "settings"]], handle_controls),
+    btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["mode1", "settings"], ["mode2", "settings"], ["mode3", "settings"]], lambda: switch_cursor_follow_mode(stage1)),
+    btn.Button("AI Path Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.65, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["mode1", "settings"], ["mode2", "settings"], ["mode3", "settings"]], lambda: switch_ai_path_mode(stage1)),
     ]
     
     profiler = FrameProfiler()
@@ -873,7 +873,7 @@ def main():
     # ── Helper: spawn AI car (shared by keyboard & gamepad) ──
     def _try_spawn_ai():
         _max_p = game_mode.max_players if game_mode else 6
-        if I_AM_HOST and stage1 in ["lobby", "mode1", "mode2"] and stage2 == "" and 1 + len(remotes) + len(ai_cars) < _max_p:
+        if I_AM_HOST and (stage1 == "lobby" or stage1.startswith("mode")) and stage2 == "" and 1 + len(remotes) + len(ai_cars) < _max_p:
             from drift.ui.draw_stage import set_game_option
             set_game_option("ai_amount", len(ai_cars) + 1)
 
@@ -1073,7 +1073,7 @@ def main():
         skip_physics = stage3 == "controls"
 
         # Sync AI car count with game options (lobby + active gameplay)
-        if stage1 in ("lobby", "mode1", "mode2"):
+        if stage1 == "lobby" or stage1.startswith("mode"):
             _sync_ai_count()
 
         controls = {"th": 0.0, "st": 0.0, "br": 0.0}
@@ -1112,7 +1112,7 @@ def main():
             if net_result.get("host_id") is not None:
                 I_AM_HOST = (net_result["host_id"] == my_id)
                 host_ref[0] = I_AM_HOST
-            if net_result.get("start_mode") and stage1 in ["lobby", "mode1", "mode2", "leaderboard"]:
+            if net_result.get("start_mode") and (stage1 == "lobby" or stage1.startswith("mode") or stage1 == "leaderboard"):
                 new_mode = net_result["start_mode"]
                 if new_mode.startswith("mode") and stage1 != "lobby":
                     new_mode = None
@@ -1184,7 +1184,7 @@ def main():
                 if stage1 != "leaderboard":
                     game_mode.on_exit(); game_mode = None
 
-            if stage1 == "mode1" and game_mode is None:
+            if stage1 in ("mode1", "mode3") and game_mode is None:
                 _start_grid = []; _lines = []; _collision_mesh = CollisionMesh([])
                 try:
                     meta_path = asset_path("track", f"map{const.MAP_NUM}", "map_meta.json")
@@ -1198,7 +1198,10 @@ def main():
                     pass
 
                 renderer.collision_mesh = _collision_mesh
-                game_mode = SimpleRace(renderer.checkpoints or [], total_laps=get_game_options()["laps"], start_grid=_start_grid, lines=_lines, local_player_id=my_id, path_poly=path_poly)
+                if stage1 == "mode3":
+                    game_mode = DriftAngleRace(renderer.checkpoints or [], total_laps=get_game_options()["laps"], start_grid=_start_grid, lines=_lines, local_player_id=my_id, path_poly=path_poly)
+                else:
+                    game_mode = SimpleRace(renderer.checkpoints or [], total_laps=get_game_options()["laps"], start_grid=_start_grid, lines=_lines, local_player_id=my_id, path_poly=path_poly)
                 _local_result_sent = False
                 _ai_results_sent = {}
                 _mode_players = {my_id: {"car_type": my_car.car_type, "name": my_car.name}}
@@ -1298,7 +1301,11 @@ def main():
         # PHASE 4 · UPDATE: PHYSICS
         # ────────────────────────────────────────────────────
 
-        world_size = renderer.get_world_size(stage1 if stage1 != "leaderboard" else "mode1")
+        gameplay_stage = stage1
+        if stage1 == "leaderboard":
+            gameplay_stage = "mode3" if isinstance(game_mode, DriftAngleRace) else "mode1"
+
+        world_size = renderer.get_world_size(gameplay_stage)
 
         profiler.begin("physics")
         if not skip_physics:
@@ -1368,7 +1375,7 @@ def main():
 
         profiler.begin("render_world")
         if not skip_physics:
-            render_stage = stage1 if stage1 != "leaderboard" else "mode1"
+            render_stage = gameplay_stage
             visible_ai = ai_cars if stage1 != "lobby" else []
             world_surf, resized, is_viewport = renderer.render_world(cam, render_stage, my_car, visible_ai, remotes, lights_on, car_sprites_cache)
             if resized and not is_viewport and _path_future is None:
@@ -1420,11 +1427,15 @@ def main():
         fps = clock.get_fps()
         ping_ms = my_car.ping_ms if my_car else None
         ui_checkpoints = renderer.checkpoints
-        if game_mode is not None and stage1 in ["mode1", "leaderboard"]:
+        if game_mode is not None and (stage1 in ["leaderboard"] or stage1 in ["mode1", "mode3"]):
             ui_checkpoints = []
 
+        ui_stage = stage1
+        if stage1 == "leaderboard":
+            ui_stage = "mode3" if isinstance(game_mode, DriftAngleRace) else "mode1"
+
         world_surf, button_results, menu_bar_rects, palette_picker_rects, game_options_rects = draw_stage_ui(
-            ui_surf, stage1 if stage1 != "leaderboard" else "mode1",
+            ui_surf, ui_stage,
             stage2, stage3, code, world_surf, world_size, ui_checkpoints,
             settings_buttons, error_msg, my_car, cam, gp, font_big, font_medium, font_small,
             controls, engine_state, fps, dt, I_AM_HOST, host_name, car_sprites_cache,

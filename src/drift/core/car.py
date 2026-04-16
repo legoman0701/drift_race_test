@@ -284,6 +284,9 @@ class Car:
         self.v_angle = 0.0
         self.name = name
         self.drift_ratio = 0.0
+        self.drift_multiplier = 1.0
+        self.drift_angle = 0.0
+        self.drift_angle_degrees = 0.0
         self.is_ai = is_ai
         self.car_type = car_type
         self.car_name = car_name
@@ -462,7 +465,16 @@ class Car:
         vel_dir_f = body_forward_speed / speed_norm
         vel_dir_r = body_lateral_speed / speed_norm
         drift_angle = ((math.atan2(vel_dir_f, vel_dir_r) - math.pi/2 + math.pi) % (2*math.pi) - math.pi)
+        self.drift_angle = drift_angle if speed_norm > 25.0 else 0.0
+        self.drift_angle_degrees = math.degrees(self.drift_angle)
         self.drift_ratio = clamp(abs(drift_angle) * clamp(abs(body_forward_speed) - 10.0, 0.0, 1.0), 0.0, 1.0)
+
+        # Drift multiplier: grows with angle magnitude and sustained time, resets below 5°
+        if abs(self.drift_angle_degrees) > 5.0:
+            angle_factor = clamp(abs(self.drift_angle_degrees) / 45.0, 0.0, 1.0)
+            self.drift_multiplier = min(self.drift_multiplier + angle_factor * dt * 2.0, 10.0)
+        else:
+            self.drift_multiplier = max(self.drift_multiplier - dt * 3.0, 1.0)
 
         # Wheel configuration (local positions in body frame) - compute from current car dimensions
         wheel_x_off = WHEELBASE * 0.5
