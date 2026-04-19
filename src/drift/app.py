@@ -342,6 +342,42 @@ class FrameProfiler:
         self._frame.clear()
 
 
+def _draw_ai_debug_hud(surface, ai_cars, font):
+    """Draw a compact AI state panel in the top-right corner of the screen."""
+    x0 = surface.get_width() - 280
+    y0 = 8
+    line_h = 14
+
+    for idx, ai in enumerate(ai_cars):
+        ctrl = getattr(ai, "_drift_ai", None)
+        if ctrl is None:
+            continue
+        d = ctrl.dbg
+        c = d["controls"]
+
+        _phase_cols = {
+            "grip": (0, 200, 0), "initiate": (255, 200, 0),
+            "drift": (255, 120, 0), "recover": (255, 60, 60),
+        }
+        col = _phase_cols.get(ctrl.phase, (200, 200, 200))
+
+        lines = [
+            (f"AI-{idx+1} [{ctrl._drivetrain or '?'}] {ctrl.phase}", col),
+            (f"  Slip={math.degrees(d['slip_angle']):+.1f}"
+             f"  Tgt={math.degrees(ctrl.active_drift_angle):.1f}"
+             f"  Yaw={d['angular_vel']:+.1f}", (220, 220, 220)),
+            (f"  Spd={d['speed']:.0f}  Lat={d['signed_perp_dist']:+.0f}"
+             f"  Curv={d['curvature']:.4f}", (200, 200, 200)),
+            (f"  TH={c['th']:+.2f}  ST={c['st']:+.2f}  HB={c['br']:.2f}"
+             + ("  *TAP*" if ctrl._hb_tap_active else ""), (180, 180, 180)),
+        ]
+
+        for li, (txt, tc) in enumerate(lines):
+            lbl = font.render(txt, True, tc)
+            surface.blit(lbl, (x0, y0 + li * line_h))
+        y0 += len(lines) * line_h + 4
+
+
 def draw_frame_analysis(surface: pygame.Surface, profiler: 'FrameProfiler'):
     """Draw a rolling stacked-bar frame-time graph at the bottom-right."""
     if not profiler.history:
@@ -987,6 +1023,8 @@ def main():
                     invalidate_ui_text_cache('debug')
                 elif ev.key == pygame.K_F4:
                     show_frame_analysis = not show_frame_analysis
+                elif ev.key == pygame.K_F6:
+                    const.AI_DEBUG = not const.AI_DEBUG
                 elif ev.key == pygame.K_TAB:
                     show_scoreboard = True
             if ev.type == pygame.KEYUP:
@@ -1088,7 +1126,7 @@ def main():
                     else:
                         _ai_debug_surf.fill((0, 0, 0, 0))
                     controls, ai_debug_surface = ai_algorithme(
-                        path_poly, my_car, ai_path_mode=True,
+                        path_poly, my_car, dt=dt, ai_path_mode=True,
                         surface=_ai_debug_surf,
                         font_small=font_small,
                     )
@@ -1354,7 +1392,19 @@ def main():
                         ai.v_angle = 0.0
                     else:
                         try:
-                            ai_controls = ai_algorithme(path_poly, ai)
+                            if const.AI_DEBUG and path_poly:
+                                _ai_surf_size = (track_image.get_width(), track_image.get_height())
+                                if _ai_debug_surf is None or _ai_debug_surf.get_size() != _ai_surf_size:
+                                    _ai_debug_surf = pygame.Surface(_ai_surf_size, pygame.SRCALPHA)
+                                else:
+                                    _ai_debug_surf.fill((0, 0, 0, 0))
+                                ai_controls, ai_debug_surface = ai_algorithme(
+                                    path_poly, ai, dt=dt,
+                                    surface=_ai_debug_surf,
+                                    font_small=font_small,
+                                )
+                            else:
+                                ai_controls = ai_algorithme(path_poly, ai, dt=dt)
                         except Exception:
                             ai_controls = {"th": 0.0, "st": 0.0, "br": 0.0}
                         ai.step(ai_controls, dt, remotes_with_ai_for_ais, world_size, compute_debug=const.DEBUG, collision_mesh=_collision_mesh)
@@ -1457,13 +1507,17 @@ def main():
                 stage1, stage2, sock, code, remotes = res
 
         # AI path debug overlay
-        if const.AI_PATH_FOLLOW and stage1 == "lobby" and ai_debug_surface is not None:
+        if (const.AI_PATH_FOLLOW or const.AI_DEBUG) and ai_debug_surface is not None:
             try:
                 top_left = cam.x - (const.WINDOW_WIDTH / 2) / cam.zoom, cam.y - (const.WINDOW_HEIGHT / 2) / cam.zoom
                 camera_rect = pygame.Rect(top_left[0], top_left[1], const.WINDOW_WIDTH / cam.zoom, const.WINDOW_HEIGHT / cam.zoom)
                 ui_surf.blit(ai_debug_surface.subsurface(camera_rect), (0, 0))
             except Exception:
                 pass
+
+        # AI debug HUD panel (screen-space)
+        if const.AI_DEBUG and ai_cars and font_small is not None:
+            _draw_ai_debug_hud(ui_surf, ai_cars, font_small)
 
         # ────────────────────────────────────────────────────
         # PHASE 7 · PRESENT

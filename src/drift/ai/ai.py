@@ -1,126 +1,164 @@
 import math, pygame
 from typing import List, Tuple, Optional, Dict
 from drift.core.helpers import clamp
+from drift.ai.drift_ai import DriftAI
 import drift.config.const as const
+
+# Phase -> colour mapping for debug visuals
+_PHASE_COLORS = {
+    "grip":     (0, 200, 0),
+    "initiate": (255, 200, 0),
+    "drift":    (255, 80, 0),
+    "recover":  (255, 0, 0),
+}
+
+
+def _ensure_drift_ai(car):
+    """Lazily attach a DriftAI controller to a car instance."""
+    ctrl = getattr(car, "_drift_ai", None)
+    if ctrl is None:
+        ctrl = DriftAI()
+        car._drift_ai = ctrl
+    return ctrl
 
 
 def ai_algorithme(
     path_poly: List[Tuple[float, float]],
     my_car,
+    dt: float = 1.0 / 60.0,
     ai_path_mode: bool = False,
     surface: Optional[pygame.Surface] = None,
     font_small: Optional[pygame.font.Font] = None,
 ) -> Dict[str, float] | tuple[Dict[str, float], pygame.Surface]:
     """
-    Compute basic steering/throttle/brake to follow a polyline path.
-    If ai_path_mode and surface are provided, also draw debug visuals and
-    return (controls, surface).
+    PID-based drift AI that outputs raw (th, st, br) controls through
+    the same pipeline as the player.  No direct target_angle writes.
     """
-    # Optional debug drawing when a surface is provided
-    if ai_path_mode and const.DEBUG and surface is not None:
+    draw_debug = (ai_path_mode or const.AI_DEBUG) and surface is not None
+    if draw_debug:
         surface.fill((0, 0, 0, 0))
-        if path_poly:
-            pygame.draw.polygon(surface, (255, 0, 0), [(p[0], p[1]) for p in path_poly], 3)
+        # Draw path polyline
+        if path_poly and len(path_poly) >= 2:
+            pts = [(int(p[0]), int(p[1])) for p in path_poly]
+            pygame.draw.lines(surface, (255, 0, 0, 120), True, pts, 2)
 
-    if path_poly:
-        def _proj_point_on_segment(px, py, ax, ay, bx, by):
-            vx, vy = bx - ax, by - ay
-            wx, wy = px - ax, py - ay
-            denom = vx * vx + vy * vy
-            if denom == 0:
-                return (ax, ay), 0.0
-            t = (wx * vx + wy * vy) / denom
-            t_clamped = max(0.0, min(1.0, t))
-            return (ax + vx * t_clamped, ay + vy * t_clamped), t_clamped
+    if path_poly and len(path_poly) >= 3:
+        ctrl = _ensure_drift_ai(my_car)
+        controls = ctrl.compute(path_poly, my_car, dt)
 
-        px, py = my_car.x, my_car.y
-        best_pt = None
-        best_d2 = float("inf")
-        best_idx = 0
-        best_t = 0.0
+        if draw_debug:
+            _draw_ai_debug(surface, my_car, ctrl, controls, font_small)
 
-        for i in range(len(path_poly) - 1):
-            ax, ay = path_poly[i][0], path_poly[i][1]
-            bx, by = path_poly[i + 1][0], path_poly[i + 1][1]
-            (cx, cy), t = _proj_point_on_segment(px, py, ax, ay, bx, by)
-            dx, dy = px - cx, py - cy
-            d2 = dx * dx + dy * dy
-            if d2 < best_d2:
-                best_d2 = d2
-                best_pt = (cx, cy)
-                best_idx = i
-                best_t = t
-
-        if best_pt is not None:
-            cx, cy = best_pt
-
-            # NUDGE forward along path
-            NUDGE_UNITS = 250.0
-
-            dist_to_path = math.sqrt(best_d2)
-            remaining = max(0.0, NUDGE_UNITS - dist_to_path * 1.2)
-            seg_idx = best_idx
-            t_on_seg = min(max(best_t, 0.0), 0.999999)
-
-            while remaining > 0:
-                if seg_idx >= len(path_poly) - 1:
-                    seg_idx = 0
-                    t_on_seg = 0.0
-                a = path_poly[seg_idx]
-                b = path_poly[seg_idx + 1]
-                vx, vy = b[0] - a[0], b[1] - a[1]
-                seg_len = math.hypot(vx, vy)
-                if seg_len == 0:
-                    seg_idx += 1
-                    t_on_seg = 0.0
-                    continue
-                dist_to_end = (1.0 - t_on_seg) * seg_len
-                if remaining <= dist_to_end + 1e-6:
-                    frac = (t_on_seg * seg_len + remaining) / seg_len
-                    cx = a[0] + vx * frac
-                    cy = a[1] + vy * frac
-                    remaining = 0.0
-                else:
-                    remaining -= dist_to_end
-                    seg_idx += 1
-                    t_on_seg = 0.0
-                    cx, cy = b[0], b[1]
-
-            vx, vy = cx - px, cy - py
-            angle_to_point = math.atan2(vy, vx)
-            car_angle = my_car.angle
-            angle_diff = ((angle_to_point - car_angle + math.pi) % (2 * math.pi)) - math.pi
-            angle_deg = math.degrees(angle_diff)
-
-            if ai_path_mode and const.DEBUG and surface is not None:
-                pygame.draw.circle(surface, (0, 255, 0), (int(cx), int(cy)), 6)
-                pygame.draw.line(surface, (0, 255, 0), (int(px), int(py)), (int(cx), int(cy)), 2)
-                hx, hy = px + math.cos(car_angle) * 40, py + math.sin(car_angle) * 40
-                pygame.draw.line(surface, (0, 0, 255), (int(px), int(py)), (int(hx), int(hy)), 2)
-                pygame.draw.line(surface, (0, 255, 0), (int(px), int(py)), (int(cx), int(cy)), 2)
-                if font_small is not None:
-                    lbl = font_small.render(f"{angle_deg:+.1f}°", True, (255, 255, 255))
-                    surface.blit(lbl, (int(px + 8), int(py - 22)))
-                # Mark the segment start
-                sa = path_poly[best_idx]
-                pygame.draw.circle(surface, (255, 255, 0), (int(sa[0]), int(sa[1])), 4)
-
-            # Set the car's target angle directly — bypasses the steering
-            # accumulation loop in car.step() entirely.
-            my_car.target_angle = angle_to_point
-
-            speed = math.hypot(my_car.vx, my_car.vy)
-            # Use track width at the current segment to scale speed.
-            # Narrower track → lower throttle cap and earlier braking.
-            seg_width = path_poly[best_idx][2] if len(path_poly[best_idx]) > 2 else 200.0
-            
-            width_scale = clamp(seg_width / 200.0, 0.4, 1.2)
-            th = (1 - clamp(abs(angle_diff) * speed / 240, 0, 1) + 0.1) * width_scale
-            th = clamp(th, 0.0, 1.0)
-            br = clamp(abs(angle_diff) * speed / 240 - 0.2 * width_scale, 0, 1)
-            if ai_path_mode and surface is not None:
-                return {"th": th, "st": 0.0, "br": br}, surface
-            return {"th": th, "st": 0.0, "br": br}
+        if (ai_path_mode or const.AI_DEBUG) and surface is not None:
+            return controls, surface
+        return controls
 
     # default gentle forward if no path
     return {"th": 0.1, "st": 0.0, "br": 0.0}
+
+
+# --------------------------------------------------------------------------
+#  Full AI debug overlay (toggled with F6 via const.AI_DEBUG)
+# --------------------------------------------------------------------------
+
+def _draw_ai_debug(surface, car, ctrl, controls, font_small):
+    """Draw comprehensive AI debug visualisations onto the world-space surface."""
+    d = ctrl.dbg
+    px, py = car.x, car.y
+    ipx, ipy = int(px), int(py)
+    angle = car.angle
+    phase_col = _PHASE_COLORS.get(ctrl.phase, (200, 200, 200))
+
+    # ---- 1. Heading arrow (blue) ----
+    hx = px + math.cos(angle) * 50
+    hy = py + math.sin(angle) * 50
+    pygame.draw.line(surface, (60, 120, 255), (ipx, ipy), (int(hx), int(hy)), 2)
+
+    # ---- 2. Velocity arrow (orange) ----
+    speed = d["speed"]
+    if speed > 1.0:
+        vscale = 50.0 / speed
+        vex = px + car.vx * vscale
+        vey = py + car.vy * vscale
+        pygame.draw.line(surface, (255, 160, 0), (ipx, ipy), (int(vex), int(vey)), 2)
+
+    # ---- 3. Path tangent arrow at lookahead (cyan) ----
+    ta = d["tan_angle"]
+    tax = d["la_x"] + math.cos(ta) * 30
+    tay = d["la_y"] + math.sin(ta) * 30
+    pygame.draw.line(surface, (0, 220, 220),
+                     (int(d["la_x"]), int(d["la_y"])),
+                     (int(tax), int(tay)), 2)
+
+    # ---- 4. Desired heading arrow from car (phase colour) ----
+    if ctrl.phase in ("drift", "initiate"):
+        dh = ta + ctrl.drift_direction * ctrl.active_drift_angle
+        dhx = px + math.cos(dh) * 45
+        dhy = py + math.sin(dh) * 45
+        pygame.draw.line(surface, phase_col, (ipx, ipy), (int(dhx), int(dhy)), 2)
+
+    # ---- 5. Nearest point on path (white cross) ----
+    nx, ny = int(d["near_x"]), int(d["near_y"])
+    pygame.draw.line(surface, (255, 255, 255), (nx - 4, ny), (nx + 4, ny), 1)
+    pygame.draw.line(surface, (255, 255, 255), (nx, ny - 4), (nx, ny + 4), 1)
+
+    # ---- 6. Lateral error line (car -> nearest, magenta) ----
+    pygame.draw.line(surface, (255, 0, 255), (ipx, ipy), (nx, ny), 1)
+
+    # ---- 7. Lookahead points ----
+    # Short (small white dot)
+    pygame.draw.circle(surface, (200, 200, 200),
+                       (int(d["la_short_x"]), int(d["la_short_y"])), 3)
+    # Primary (green dot)
+    pygame.draw.circle(surface, (0, 255, 0),
+                       (int(d["la_x"]), int(d["la_y"])), 5)
+    # Far / curvature (yellow dot)
+    pygame.draw.circle(surface, (255, 255, 0),
+                       (int(d["la_far_x"]), int(d["la_far_y"])), 4)
+
+    # Lines from car to lookahead targets
+    pygame.draw.line(surface, (0, 255, 0, 100), (ipx, ipy),
+                     (int(d["la_x"]), int(d["la_y"])), 1)
+    pygame.draw.line(surface, (255, 255, 0, 100), (ipx, ipy),
+                     (int(d["la_far_x"]), int(d["la_far_y"])), 1)
+
+    # ---- 8. Track width markers at nearest point ----
+    tw = d["seg_width"] * 0.5
+    perp_x = -math.sin(ta)
+    perp_y = math.cos(ta)
+    lx1 = d["near_x"] + perp_x * tw
+    ly1 = d["near_y"] + perp_y * tw
+    lx2 = d["near_x"] - perp_x * tw
+    ly2 = d["near_y"] - perp_y * tw
+    pygame.draw.line(surface, (100, 100, 100), (int(lx1), int(ly1)),
+                     (int(lx2), int(ly2)), 1)
+
+    # ---- 9. Phase ring around car ----
+    pygame.draw.circle(surface, phase_col, (ipx, ipy), 18, 2)
+
+    # ---- 10. Handbrake tap indicator (bright red flash) ----
+    if ctrl._hb_tap_active:
+        pygame.draw.circle(surface, (255, 0, 0), (ipx, ipy - 25), 5)
+
+    # ---- 11. Text HUD near car ----
+    if font_small is not None:
+        slip_deg = math.degrees(d["slip_angle"])
+        ada_deg = math.degrees(ctrl.active_drift_angle)
+        curv = d["curvature"]
+        lat_err = d["signed_perp_dist"]
+        c = controls
+
+        lines = [
+            f"Phase: {ctrl.phase}  dir={ctrl.drift_direction:+d}",
+            f"Slip: {slip_deg:+.1f}  target: {ada_deg:.1f}",
+            f"Yaw: {d['angular_vel']:+.2f} rad/s",
+            f"Curv: {curv:.5f}  Lat: {lat_err:+.0f}",
+            f"Speed: {speed:.0f}  DT: {ctrl._drivetrain or '?'}",
+            f"TH={c['th']:+.2f}  ST={c['st']:+.2f}  HB={c['br']:.2f}",
+        ]
+        if ctrl._hb_tap_active:
+            lines.append(f"** HB TAP ** t={ctrl._hb_tap_timer:.3f}")
+
+        for i, txt in enumerate(lines):
+            lbl = font_small.render(txt, True, (255, 255, 255))
+            surface.blit(lbl, (ipx + 22, ipy - 40 + i * 14))

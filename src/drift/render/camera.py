@@ -22,16 +22,19 @@ class Camera:
         # exponential smoothing: each frame the smoothed vector keeps 90% of the old value and adds 10% vel/4
         self.cam_vec_x = (target.vx / 4) * 0.1 + self.cam_vec_x * 0.9
         self.cam_vec_y = (target.vy / 4) * 0.1 + self.cam_vec_y * 0.9
+        # Clamp *after* adding velocity lead so the camera can't leave the map
+        half_w = self.width / 2 / self.zoom
+        half_h = self.height / 2 / self.zoom
         self.x = clamp(
-            target.x + self.offset[0], # target’s position + pan offset
-            self.width / 2 / self.zoom,
-            world_size[0] - self.width / 2 / self.zoom,
-        ) + self.cam_vec_x # add velocity lead
+            target.x + self.offset[0] + self.cam_vec_x,
+            half_w,
+            world_size[0] - half_w,
+        )
         self.y = clamp(
-            target.y + self.offset[1],
-            self.height / 2 / self.zoom,
-            world_size[1] - self.height / 2 / self.zoom,
-        ) + self.cam_vec_y
+            target.y + self.offset[1] + self.cam_vec_y,
+            half_h,
+            world_size[1] - half_h,
+        )
 
     def apply(self, world_surf):
         # actual screen size -> eg: if zoom=2, only the half of world's width is needed (bc we'll scale it up 2x later)
