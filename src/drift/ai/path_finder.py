@@ -8,7 +8,7 @@ from drift.tools.paths import normalize_asset_path
 # Background thread pool for non-blocking track discovery
 _executor = ThreadPoolExecutor(max_workers=1)
 
-def discover_track(map_path, start_pos=(220, 1700), start_angle=90, sample_rate=8, max_iterations=10000):
+def discover_track(map_path, start_pos=(220, 1700), start_angle=90, sample_rate=8, max_iterations=100000):
     """
     Discover track outline by following the track edges using PIL (no pygame).
     Args:
@@ -28,6 +28,7 @@ def discover_track(map_path, start_pos=(220, 1700), start_angle=90, sample_rate=
     finder_angle = float(start_angle)
     positions = []
     iterations = 0
+    warmup = 200  # skip the first N steps from output, then redefine start
 
     def raycast(pos, angle, length=800):
         x, y = pos
@@ -60,8 +61,12 @@ def discover_track(map_path, start_pos=(220, 1700), start_angle=90, sample_rate=
             finder_pos[1] + math.sin(math.radians(finder_angle)) * speed
         )
 
-        # Sample positions
-        if iterations % sample_rate == 0:
+        # After warmup, redefine the start position once
+        if iterations == warmup:
+            start_pos = (int(finder_pos[0]), int(finder_pos[1]))
+
+        # Only record positions after the warmup period
+        if iterations >= warmup and iterations % sample_rate == 0:
             positions.append((int(finder_pos[0]), int(finder_pos[1])))
 
         # Check if we've completed a loop (back near start)
