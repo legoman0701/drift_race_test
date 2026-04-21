@@ -721,11 +721,11 @@ class TrainingEnv:
         # --- reward ---
         fwd = c.vx * math.cos(c.angle) + c.vy * math.sin(c.angle)
         reward = 0.0
-        reward += seg_advance * 5.0
+        #reward += seg_advance * 5.0
         reward += fwd * 0.02
         
-        if c.drift_ratio > 0.3 and fwd > 80:
-            reward += c.drift_ratio * 0.5
+        #if c.drift_ratio > 0.3 and fwd > 80:
+        #    reward += c.drift_ratio * 0.5
 
         alive = True
         if not ib:
