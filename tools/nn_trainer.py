@@ -178,6 +178,30 @@ class GeneticAlgorithm:
         self.best_net = None
         self.mutation_scale = 1.0  # multiplied into all mutation rates/strengths
 
+    def reseed_population_from_best(self):
+        if self.best_net is None:
+            return False
+
+        # Checkpoints only persist the champion, so rebuild a fresh population
+        # around that network instead of silently starting from random weights.
+        new_pop = [self.best_net.copy()]
+        while len(new_pop) < self.pop_size:
+            idx = len(new_pop)
+            if idx >= self.pop_size - 4:
+                new_pop.append(NeuralNetwork())
+                continue
+
+            child = self.best_net.copy()
+            if idx < 6:
+                child.mutate(rate=0.03, strength=0.30)
+            else:
+                child.mutate(rate=0.01, strength=0.12)
+            new_pop.append(child)
+
+        self.population = new_pop
+        self.fitness = np.zeros(self.pop_size)
+        return True
+
     # -- selection / crossover / mutation ------------------------------------
     def _tournament(self, k=3):
         idxs = np.random.choice(self.pop_size, k, replace=False)
@@ -254,6 +278,7 @@ class GeneticAlgorithm:
             self.best_net = net
             self.best_fitness = d.get("fitness", 0.0)
             self.generation = d.get("generation", 0)
+            self.reseed_population_from_best()
             print(f"  [load] gen {self.generation}  fitness {self.best_fitness:.1f}  <- {path}")
             return True
         except Exception as e:
