@@ -667,7 +667,7 @@ class TrainingEnv:
         """
         c = self.cars[i]
         if not self.car_alive[i]:
-            return 0.0, np.zeros(INPUT_SIZE, dtype=np.float32), False, self.in_bounds[i], 0, self.car_prev_seg[i]
+            return -2.0, np.zeros(INPUT_SIZE, dtype=np.float32), False, self.in_bounds[i], 0, self.car_prev_seg[i]
 
         # Low-pass filter the raw NN output
         raw = np.array([float(np.clip(action[0], -1, 1)),
@@ -742,6 +742,9 @@ class TrainingEnv:
             alive = False
         if new_progress < -5:
             alive = False
+
+        if not alive:
+            reward -= 2.0
 
         # --- observation ---
         fwd_x, fwd_y = math.cos(c.angle), math.sin(c.angle)
