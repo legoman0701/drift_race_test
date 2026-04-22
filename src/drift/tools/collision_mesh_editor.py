@@ -14,6 +14,7 @@ Controls:
     S: Save collision mesh
     L: Load collision mesh
     C: Clear current shape
+    M: Toggle edit mode (collision mesh / drift zones)
     N: New shape
     TAB: Switch to next shape
     SHIFT+TAB: Switch to previous shape
@@ -69,11 +70,23 @@ class CollisionMeshEditor:
         # Arrow-key panning speed (world units per second)
         self.pan_key_speed = 500
         
-        # Collision mesh - multiple shapes (world coordinates)
-        self.shapes = [[]]  # List of shapes, each shape is a list of (x, y) tuples
-        self.current_shape = 0  # Index of currently active shape
-        self.selected_vertex = None  # Index of currently selected vertex
-        self.hover_vertex = None  # Index of vertex under mouse
+        # Two independent editable datasets in world coordinates.
+        # Mode values: "collision" and "drift_zones"
+        self.mode = "collision"
+        self.mode_data = {
+            "collision": {
+                "shapes": [[]],
+                "current_shape": 0,
+                "selected_vertex": None,
+                "hover_vertex": None,
+            },
+            "drift_zones": {
+                "shapes": [[]],
+                "current_shape": 0,
+                "selected_vertex": None,
+                "hover_vertex": None,
+            },
+        }
         
         # UI colors
         self.bg_color = (30, 30, 30)
@@ -84,6 +97,12 @@ class CollisionMeshEditor:
         self.line_color = (100, 200, 255)
         self.inactive_vertex_color = (120, 50, 50)
         self.inactive_line_color = (60, 100, 120)
+        self.drift_line_color = (255, 170, 70)
+        self.drift_vertex_color = (255, 120, 70)
+        self.drift_hover_color = (255, 210, 120)
+        self.drift_selected_color = (255, 240, 140)
+        self.drift_inactive_vertex_color = (120, 80, 50)
+        self.drift_inactive_line_color = (140, 100, 60)
         self.snap_indicator_color = (255, 255, 0)
         
         # UI state
@@ -132,46 +151,94 @@ class CollisionMeshEditor:
     
     def _get_vertex_at_position(self, world_x, world_y, threshold=10):
         """Find vertex near the given position in current shape (returns index or None)"""
-        if self.current_shape >= len(self.shapes):
+        state = self.mode_data[self.mode]
+        shapes = state["shapes"]
+        cur = state["current_shape"]
+        if cur >= len(shapes):
             return None
         
         threshold_world = threshold / self.zoom
-        vertices = self.shapes[self.current_shape]
+        vertices = shapes[cur]
         for i, (vx, vy) in enumerate(vertices):
             dist = math.sqrt((vx - world_x)**2 + (vy - world_y)**2)
             if dist < threshold_world:
                 return i
         return None
+
+    def _sanitize_mode_shapes(self):
+        """Ensure each edit mode has at least one shape and valid indices."""
+        for mode_key in ("collision", "drift_zones"):
+            state = self.mode_data[mode_key]
+            if not state["shapes"]:
+                state["shapes"] = [[]]
+            state["current_shape"] = min(state["current_shape"], len(state["shapes"]) - 1)
+            if state["current_shape"] < 0:
+                state["current_shape"] = 0
+            sel = state["selected_vertex"]
+            if sel is not None and sel >= len(state["shapes"][state["current_shape"]]):
+                state["selected_vertex"] = None
+
+    def _toggle_mode(self):
+        self.mode = "drift_zones" if self.mode == "collision" else "collision"
+        self._sanitize_mode_shapes()
+        print(f"Mode: {'Collision Mesh' if self.mode == 'collision' else 'Drift Zones'}")
+
+    def _active_colors(self):
+        if self.mode == "collision":
+            return {
+                "line": self.line_color,
+                "vertex": self.vertex_color,
+                "hover": self.vertex_hover_color,
+                "selected": self.vertex_selected_color,
+                "inactive_line": self.inactive_line_color,
+                "inactive_vertex": self.inactive_vertex_color,
+            }
+        return {
+            "line": self.drift_line_color,
+            "vertex": self.drift_vertex_color,
+            "hover": self.drift_hover_color,
+            "selected": self.drift_selected_color,
+            "inactive_line": self.drift_inactive_line_color,
+            "inactive_vertex": self.drift_inactive_vertex_color,
+        }
     
     def _load_collision_mesh(self):
-        """Load collision mesh from map_meta.json"""
+        """Load collision mesh and drift zones from map_meta.json"""
         try:
             meta_path = asset_path("track", f"map{self.map_num}", "map_meta.json")
             if os.path.exists(meta_path):
                 with open(meta_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    if "collision_mesh" in data:
-                        mesh_data = data["collision_mesh"]
+                    def parse_shapes(mesh_data):
                         # Support both old format (single shape) and new format (multiple shapes)
-                        if mesh_data and len(mesh_data) > 0:
-                            if isinstance(mesh_data[0][0], list):
-                                # New format: array of shapes
-                                self.shapes = [[tuple(v) for v in shape] for shape in mesh_data]
-                            else:
-                                # Old format: single shape (array of vertices)
-                                self.shapes = [[tuple(v) for v in mesh_data]]
-                        
-                        if not self.shapes:
-                            self.shapes = [[]]
-                        
-                        total_vertices = sum(len(shape) for shape in self.shapes)
-                        print(f"Loaded {len(self.shapes)} shape(s) with {total_vertices} total vertices")
+                        if not mesh_data:
+                            return [[]]
+                        if isinstance(mesh_data[0][0], list):
+                            return [[tuple(v) for v in shape] for shape in mesh_data]
+                        return [[tuple(v) for v in mesh_data]]
+
+                    if "collision_mesh" in data:
+                        self.mode_data["collision"]["shapes"] = parse_shapes(data["collision_mesh"])
+                    if "drift_zones" in data:
+                        self.mode_data["drift_zones"]["shapes"] = parse_shapes(data["drift_zones"])
+
+                    self._sanitize_mode_shapes()
+                    c_shapes = self.mode_data["collision"]["shapes"]
+                    d_shapes = self.mode_data["drift_zones"]["shapes"]
+                    c_vertices = sum(len(shape) for shape in c_shapes)
+                    d_vertices = sum(len(shape) for shape in d_shapes)
+                    print(
+                        f"Loaded collision={len(c_shapes)} shape(s), {c_vertices} vertices | "
+                        f"drift_zones={len(d_shapes)} shape(s), {d_vertices} vertices"
+                    )
         except Exception as e:
             print(f"Error loading collision mesh: {e}")
-            self.shapes = [[]]
+            self.mode_data["collision"]["shapes"] = [[]]
+            self.mode_data["drift_zones"]["shapes"] = [[]]
+            self._sanitize_mode_shapes()
     
     def _save_collision_mesh(self):
-        """Save collision mesh to map_meta.json"""
+        """Save collision mesh and drift zones to map_meta.json"""
         try:
             meta_path = asset_path("track", f"map{self.map_num}", "map_meta.json")
             
@@ -181,17 +248,23 @@ class CollisionMeshEditor:
                 with open(meta_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
             
-            # Update collision mesh - convert to list of shapes
-            # Filter out empty shapes
-            non_empty_shapes = [shape for shape in self.shapes if len(shape) > 0]
-            data["collision_mesh"] = [[[int(x), int(y)] for x, y in shape] for shape in non_empty_shapes]
+            # Update collision mesh and drift zones - convert to list of shapes
+            non_empty_collision = [shape for shape in self.mode_data["collision"]["shapes"] if len(shape) > 0]
+            non_empty_drift = [shape for shape in self.mode_data["drift_zones"]["shapes"] if len(shape) > 0]
+
+            data["collision_mesh"] = [[[int(x), int(y)] for x, y in shape] for shape in non_empty_collision]
+            data["drift_zones"] = [[[int(x), int(y)] for x, y in shape] for shape in non_empty_drift]
             
             # Save with custom formatting (compact objects in arrays)
             with open(meta_path, "w", encoding="utf-8") as f:
                 f.write(self._format_json(data))
             
-            total_vertices = sum(len(shape) for shape in non_empty_shapes)
-            print(f"Saved {len(non_empty_shapes)} shape(s) with {total_vertices} total vertices to {meta_path}")
+            c_vertices = sum(len(shape) for shape in non_empty_collision)
+            d_vertices = sum(len(shape) for shape in non_empty_drift)
+            print(
+                f"Saved collision={len(non_empty_collision)} shape(s), {c_vertices} vertices | "
+                f"drift_zones={len(non_empty_drift)} shape(s), {d_vertices} vertices -> {meta_path}"
+            )
             return True
         except Exception as e:
             print(f"Error saving collision mesh: {e}")
@@ -272,6 +345,7 @@ class CollisionMeshEditor:
                 self.running = False
             
             elif event.type == pygame.KEYDOWN:
+                state = self.mode_data[self.mode]
                 if event.key == pygame.K_ESCAPE:
                     self.running = False
                 elif event.key == pygame.K_g:
@@ -283,33 +357,36 @@ class CollisionMeshEditor:
                 elif event.key == pygame.K_l:
                     self._load_collision_mesh()
                     print("Collision mesh reloaded")
+                elif event.key == pygame.K_m:
+                    self._toggle_mode()
                 elif event.key == pygame.K_c:
-                    self.shapes[self.current_shape].clear()
-                    print(f"Cleared all vertices in shape {self.current_shape}")
+                    state["shapes"][state["current_shape"]].clear()
+                    state["selected_vertex"] = None
+                    print(f"Cleared all vertices in {self.mode} shape {state['current_shape']}")
                 elif event.key == pygame.K_n:
                     # Create new shape
-                    self.shapes.append([])
-                    self.current_shape = len(self.shapes) - 1
-                    self.selected_vertex = None
-                    print(f"Created new shape {self.current_shape}")
+                    state["shapes"].append([])
+                    state["current_shape"] = len(state["shapes"]) - 1
+                    state["selected_vertex"] = None
+                    print(f"Created new {self.mode} shape {state['current_shape']}")
                 elif event.key == pygame.K_TAB:
                     # Switch between shapes
                     if pygame.key.get_mods() & pygame.KMOD_SHIFT:
                         # Shift+Tab: previous shape
-                        self.current_shape = (self.current_shape - 1) % len(self.shapes)
+                        state["current_shape"] = (state["current_shape"] - 1) % len(state["shapes"])
                     else:
                         # Tab: next shape
-                        self.current_shape = (self.current_shape + 1) % len(self.shapes)
-                    self.selected_vertex = None
-                    print(f"Switched to shape {self.current_shape}")
+                        state["current_shape"] = (state["current_shape"] + 1) % len(state["shapes"])
+                    state["selected_vertex"] = None
+                    print(f"Switched to {self.mode} shape {state['current_shape']}")
                 elif event.key in (pygame.K_DELETE, pygame.K_BACKSPACE):
                     # Delete current shape
-                    if len(self.shapes) > 1:
-                        deleted_idx = self.current_shape
-                        self.shapes.pop(self.current_shape)
-                        self.current_shape = min(self.current_shape, len(self.shapes) - 1)
-                        self.selected_vertex = None
-                        print(f"Deleted shape {deleted_idx}, now on shape {self.current_shape}")
+                    if len(state["shapes"]) > 1:
+                        deleted_idx = state["current_shape"]
+                        state["shapes"].pop(state["current_shape"])
+                        state["current_shape"] = min(state["current_shape"], len(state["shapes"]) - 1)
+                        state["selected_vertex"] = None
+                        print(f"Deleted {self.mode} shape {deleted_idx}, now on shape {state['current_shape']}")
                     else:
                         print("Cannot delete the last shape")
             
@@ -325,28 +402,30 @@ class CollisionMeshEditor:
                 
                 # Left mouse button - place or select vertex
                 elif event.button == 1:
+                    state = self.mode_data[self.mode]
                     vertex_idx = self._get_vertex_at_position(world_x, world_y)
                     if vertex_idx is not None:
                         # Select and start dragging existing vertex
-                        self.selected_vertex = vertex_idx
+                        state["selected_vertex"] = vertex_idx
                         self.dragging_vertex = True
                     else:
                         # Place new vertex in current shape
                         snapped_x, snapped_y = self._snap_to_grid(world_x, world_y)
-                        self.shapes[self.current_shape].append((snapped_x, snapped_y))
-                        self.selected_vertex = len(self.shapes[self.current_shape]) - 1
-                        print(f"Placed vertex at ({snapped_x}, {snapped_y}) in shape {self.current_shape}")
+                        state["shapes"][state["current_shape"]].append((snapped_x, snapped_y))
+                        state["selected_vertex"] = len(state["shapes"][state["current_shape"]]) - 1
+                        print(f"Placed vertex at ({snapped_x}, {snapped_y}) in {self.mode} shape {state['current_shape']}")
                 
                 # Right mouse button - delete vertex
                 elif event.button == 3:
+                    state = self.mode_data[self.mode]
                     vertex_idx = self._get_vertex_at_position(world_x, world_y)
                     if vertex_idx is not None:
-                        self.shapes[self.current_shape].pop(vertex_idx)
-                        if self.selected_vertex == vertex_idx:
-                            self.selected_vertex = None
-                        elif self.selected_vertex is not None and self.selected_vertex > vertex_idx:
-                            self.selected_vertex -= 1
-                        print(f"Deleted vertex from shape {self.current_shape}")
+                        state["shapes"][state["current_shape"]].pop(vertex_idx)
+                        if state["selected_vertex"] == vertex_idx:
+                            state["selected_vertex"] = None
+                        elif state["selected_vertex"] is not None and state["selected_vertex"] > vertex_idx:
+                            state["selected_vertex"] -= 1
+                        print(f"Deleted vertex from {self.mode} shape {state['current_shape']}")
                 
                 # Mouse wheel - zoom
                 elif event.button == 4:  # Scroll up
@@ -373,15 +452,16 @@ class CollisionMeshEditor:
                     self.pan_start_y = mouse_y
                 
                 # Dragging vertex
-                elif self.dragging_vertex and self.selected_vertex is not None:
+                elif self.dragging_vertex and self.mode_data[self.mode]["selected_vertex"] is not None:
+                    state = self.mode_data[self.mode]
                     world_x, world_y = self._screen_to_world(mouse_x, mouse_y)
                     snapped_x, snapped_y = self._snap_to_grid(world_x, world_y)
-                    self.shapes[self.current_shape][self.selected_vertex] = (snapped_x, snapped_y)
+                    state["shapes"][state["current_shape"]][state["selected_vertex"]] = (snapped_x, snapped_y)
                 
                 # Update hover state
                 else:
                     world_x, world_y = self._screen_to_world(mouse_x, mouse_y)
-                    self.hover_vertex = self._get_vertex_at_position(world_x, world_y)
+                    self.mode_data[self.mode]["hover_vertex"] = self._get_vertex_at_position(world_x, world_y)
     
     def draw_grid(self):
         """Draw the background grid"""
@@ -454,73 +534,85 @@ class CollisionMeshEditor:
         self.screen.blit(scaled, (int(dest_x), int(dest_y)))
     
     def draw_collision_mesh(self):
-        """Draw the collision mesh vertices and lines"""
-        # Draw all shapes
-        for shape_idx, vertices in enumerate(self.shapes):
-            if len(vertices) == 0:
-                continue
-            
-            is_current = (shape_idx == self.current_shape)
-            
-            # Choose colors based on whether this is the active shape
-            if is_current:
-                line_color = self.line_color
-                vertex_color = self.vertex_color
-                vertex_hover_color = self.vertex_hover_color
-                vertex_selected_color = self.vertex_selected_color
-            else:
-                line_color = self.inactive_line_color
-                vertex_color = self.inactive_vertex_color
-                vertex_hover_color = self.inactive_vertex_color
-                vertex_selected_color = self.inactive_vertex_color
-            
-            # Draw lines connecting vertices
-            if len(vertices) > 1:
-                screen_points = []
-                for vx, vy in vertices:
+        """Draw vertices and lines for the active mode and muted inactive mode."""
+        active_state = self.mode_data[self.mode]
+        inactive_mode = "drift_zones" if self.mode == "collision" else "collision"
+        inactive_state = self.mode_data[inactive_mode]
+
+        active_colors = self._active_colors()
+        inactive_colors = {
+            "line": active_colors["inactive_line"],
+            "vertex": active_colors["inactive_vertex"],
+            "hover": active_colors["inactive_vertex"],
+            "selected": active_colors["inactive_vertex"],
+        }
+
+        def draw_set(state, colors, is_active):
+            shapes = state["shapes"]
+            current_shape = state["current_shape"]
+            selected_vertex = state["selected_vertex"]
+            hover_vertex = state["hover_vertex"]
+
+            for shape_idx, vertices in enumerate(shapes):
+                if len(vertices) == 0:
+                    continue
+
+                shape_is_current = is_active and (shape_idx == current_shape)
+
+                line_color = colors["line"] if shape_is_current else colors["line"]
+                vertex_color = colors["vertex"]
+                vertex_hover_color = colors["hover"]
+                vertex_selected_color = colors["selected"]
+
+                if len(vertices) > 1:
+                    screen_points = []
+                    for vx, vy in vertices:
+                        sx, sy = self._world_to_screen(vx, vy)
+                        screen_points.append((sx, sy))
+
+                    for i in range(len(screen_points)):
+                        p1 = screen_points[i]
+                        p2 = screen_points[(i + 1) % len(screen_points)]
+                        width = 2 if shape_is_current else 1
+                        pygame.draw.line(self.screen, line_color, p1, p2, width)
+
+                for i, (vx, vy) in enumerate(vertices):
                     sx, sy = self._world_to_screen(vx, vy)
-                    screen_points.append((sx, sy))
-                
-                # Draw lines
-                for i in range(len(screen_points)):
-                    p1 = screen_points[i]
-                    p2 = screen_points[(i + 1) % len(screen_points)]
-                    width = 2 if is_current else 1
-                    pygame.draw.line(self.screen, line_color, p1, p2, width)
-            
-            # Draw vertices
-            for i, (vx, vy) in enumerate(vertices):
-                sx, sy = self._world_to_screen(vx, vy)
-                
-                # Choose color based on state (only for current shape)
-                if is_current:
-                    if i == self.selected_vertex:
-                        color = vertex_selected_color
-                        radius = 8
-                    elif i == self.hover_vertex:
-                        color = vertex_hover_color
-                        radius = 7
+
+                    if shape_is_current:
+                        if i == selected_vertex:
+                            color = vertex_selected_color
+                            radius = 8
+                        elif i == hover_vertex:
+                            color = vertex_hover_color
+                            radius = 7
+                        else:
+                            color = vertex_color
+                            radius = 6
                     else:
                         color = vertex_color
-                        radius = 6
-                else:
-                    color = vertex_color
-                    radius = 4
-                
-                # Draw vertex
-                pygame.draw.circle(self.screen, color, (int(sx), int(sy)), radius)
-                if is_current:
-                    pygame.draw.circle(self.screen, (255, 255, 255), (int(sx), int(sy)), radius, 1)
-                
-                # Draw vertex number for current shape only
-                if is_current and self.zoom > 0.8:
-                    text = self.font.render(str(i), True, (255, 255, 255))
-                    self.screen.blit(text, (int(sx) + 10, int(sy) - 10))
+                        radius = 4
+
+                    pygame.draw.circle(self.screen, color, (int(sx), int(sy)), radius)
+                    if shape_is_current:
+                        pygame.draw.circle(self.screen, (255, 255, 255), (int(sx), int(sy)), radius, 1)
+
+                    if shape_is_current and self.zoom > 0.8:
+                        text = self.font.render(str(i), True, (255, 255, 255))
+                        self.screen.blit(text, (int(sx) + 10, int(sy) - 10))
+
+        draw_set(inactive_state, inactive_colors, is_active=False)
+        draw_set(active_state, active_colors, is_active=True)
     
     def draw_ui(self):
         """Draw UI overlay with controls and info"""
+        active_state = self.mode_data[self.mode]
+        collision_shapes = self.mode_data["collision"]["shapes"]
+        drift_shapes = self.mode_data["drift_zones"]["shapes"]
+        mode_name = "Collision Mesh" if self.mode == "collision" else "Drift Zones"
+
         # Semi-transparent background for text
-        ui_surface = pygame.Surface((400, 340), pygame.SRCALPHA)
+        ui_surface = pygame.Surface((430, 390), pygame.SRCALPHA)
         ui_surface.fill((0, 0, 0, 180))
         self.screen.blit(ui_surface, (10, 10))
         
@@ -540,18 +632,22 @@ class CollisionMeshEditor:
             "",
             "KEYBOARD:",
             "G: Toggle grid",
-            "S: Save mesh",
-            "L: Load mesh",
+            "S: Save map meta",
+            "L: Load map meta",
             "C: Clear current shape",
+            "M: Toggle mode (collision/drift)",
             "N: New shape",
             "TAB: Next shape",
             "SHIFT+TAB: Previous shape",
             "DELETE/BACKSPACE: Delete shape",
             "ESC: Exit",
             "",
-            f"Current Shape: {self.current_shape} / {len(self.shapes) - 1}",
-            f"Vertices in shape: {len(self.shapes[self.current_shape])}",
-            f"Total shapes: {len(self.shapes)}",
+            f"Edit Mode: {mode_name}",
+            f"Current Shape: {active_state['current_shape']} / {len(active_state['shapes']) - 1}",
+            f"Vertices in shape: {len(active_state['shapes'][active_state['current_shape']])}",
+            f"Total shapes (mode): {len(active_state['shapes'])}",
+            f"Collision shapes: {len(collision_shapes)}",
+            f"Drift zone shapes: {len(drift_shapes)}",
             f"Zoom: {self.zoom:.2f}x",
             f"Grid: {self.grid_size}px ({'ON' if self.show_grid else 'OFF'})",
         ]
@@ -567,7 +663,7 @@ class CollisionMeshEditor:
         snapped_x, snapped_y = self._snap_to_grid(world_x, world_y)
         snap_screen_x, snap_screen_y = self._world_to_screen(snapped_x, snapped_y)
         
-        if not self.panning and self.hover_vertex is None:
+        if not self.panning and self.mode_data[self.mode]["hover_vertex"] is None:
             pygame.draw.circle(self.screen, self.snap_indicator_color, 
                              (int(snap_screen_x), int(snap_screen_y)), 3, 1)
     
@@ -579,6 +675,7 @@ class CollisionMeshEditor:
         print("Use Left Click to place vertices")
         print("Use Right Click to delete vertices")
         print("Use Middle Click + Drag to pan")
+        print("Press M to switch between collision mesh and drift zone drawing")
         print("Press N to create new shape, TAB to switch shapes")
         print("Press S to save, L to load, C to clear, ESC to exit")
         print("="*60 + "\n")
