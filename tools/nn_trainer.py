@@ -54,7 +54,7 @@ import drift.core.car as car_module
 from drift.core.helpers import clamp
 
 # === constants ==============================================================
-POPULATION_SIZE   = 20
+POPULATION_SIZE   = 50
 HIDDEN_SIZES      = [24, 18]
 INPUT_SIZE        = 26
 OUTPUT_SIZE       = 3
@@ -67,10 +67,12 @@ MAX_RAY_DIST      = 500.0
 SPEED_NORM        = 1000.0             # normalisation constant for velocities
 SAVE_EVERY_GEN    = 5
 _SQRT2            = math.sqrt(2)       # undo isometric Y compensation from car.step()
-CHECKPOINT_REWARD = 50.0
-DRIFT_START_RATIO = 0.5
+CHECKPOINT_REWARD = 400.0
+DRIFT_START_RATIO = 0.2
 DRIFT_SIDE_MIN_LATERAL = 20.0
-DRIFT_REWARD_SCALE = 0.02
+DRIFT_REWARD_SCALE = 0.05
+WRONG_WAY_ANGLE_THRESHOLD = math.pi * 0.75
+WRONG_WAY_KILL_PENALTY = 4000.0
 
 # Available car types (folder names under assets/cars/)
 CAR_TYPES = ["911", "AE86", "barracuda", "mustang", "r34"]
@@ -186,7 +188,7 @@ class GeneticAlgorithm:
         # Fallback for old checkpoints that do not persist mutation_scale.
         # Keeps late-generation resumes from jumping back to 1.0 exploration.
         g = max(0, int(generation))
-        estimated = 0.8 ** (g / 10.0)
+        estimated = 0.95 ** (g / 10.0)
         return float(clamp(estimated, 0.2, 1.0))
 
     def reseed_population_from_best(self):
@@ -235,8 +237,15 @@ class GeneticAlgorithm:
             self.best_fitness = self.fitness[order[0]]
             self.best_net = self.population[order[0]].copy()
 
+        # Always keep one exact, unmutated champion as a safety anchor.
+        locked_champion = (self.best_net.copy()
+                           if self.best_net is not None
+                           else self.population[order[0]].copy())
+
         elite_n = max(1, self.pop_size // 10)
-        new_pop = [self.population[order[i]].copy() for i in range(elite_n)]
+        new_pop = [locked_champion]
+        for i in range(1, elite_n):
+            new_pop.append(self.population[order[i]].copy())
 
         ms = self.mutation_scale
         explorers = 0
@@ -798,6 +807,10 @@ class TrainingEnv:
 
         dist_from_path = _signed_distance(c.x, c.y, self.polyline, seg, t)
 
+        tang = _path_tangent_angle(self.polyline, seg)
+        angle_diff = ((c.angle - tang + math.pi) % (2 * math.pi)) - math.pi
+        abs_angle_diff = abs(angle_diff)
+
         # --- reward ---
         fwd_x, fwd_y = math.cos(c.angle), math.sin(c.angle)
         rgt_x, rgt_y = -fwd_y, fwd_x
@@ -806,17 +819,21 @@ class TrainingEnv:
         speed = math.hypot(c.vx, c.vy)
 
         reward = 0.0
+        wrong_way_kill = False
         #reward += seg_advance * 5.0
-        reward += fwd
+        reward += fwd if fwd > 0 else fwd * 7.0
         reward += checkpoint_reward
         reward -= abs(dist_from_path)
+        if abs_angle_diff > WRONG_WAY_ANGLE_THRESHOLD:
+            reward -= WRONG_WAY_KILL_PENALTY
+            wrong_way_kill = True
 
         drift_ratio = float(getattr(c, "drift_ratio", 0.0))
         side = 0
         if abs(lat) >= DRIFT_SIDE_MIN_LATERAL:
             side = 1 if lat > 0.0 else -1
 
-        if drift_ratio >= DRIFT_START_RATIO and speed > 20.0:
+        if drift_ratio >= DRIFT_START_RATIO and speed > 50.0:
             prev_side = self.car_drift_side[i]
             hold_frames = self.car_drift_hold_frames[i]
 
@@ -840,26 +857,24 @@ class TrainingEnv:
             self.car_drift_side[i] = 0
             self.car_drift_reward_frame[i] = 0.0
 
-        alive = True
+        alive = not wrong_way_kill
         if not ib:
             reward -= 50.0
             alive = False
         if fwd < 10:
-            reward -= 0.5
+            reward -= 50
         if speed < 5:
-            reward -= 2.0
+            reward -= 50
         if speed < 5 and self.step_count > 120:
             alive = False
         if new_progress < -5:
             alive = False
 
-        if not alive:
-            reward -= 2.0
+        if not alive and not wrong_way_kill:
+            reward -= 2000.0
 
         # --- observation ---
         dist_norm = clamp(dist_from_path / 150.0, -1.0, 1.0)
-        tang = _path_tangent_angle(self.polyline, seg)
-        angle_diff = ((c.angle - tang + math.pi) % (2 * math.pi)) - math.pi
         angle_norm = clamp(angle_diff / math.pi, -1.0, 1.0)
 
         spec_in = self.car_spec_cache[self.car_types[i]]
@@ -1282,7 +1297,7 @@ def main():
                     and best_fwd > 30):
                 MAX_EPISODE_STEPS += 500
                 MAX_EPISODE_STEPS = min(MAX_EPISODE_STEPS, 8000)
-                ga.mutation_scale *= 0.8
+                ga.mutation_scale *= 0.95
                 print(f"  >> Best AI still moving (fwd={best_fwd:.0f})  "
                       f"MAX_EPISODE_STEPS -> {MAX_EPISODE_STEPS}  "
                       f"mutation_scale -> {ga.mutation_scale:.3f}")
