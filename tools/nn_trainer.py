@@ -54,7 +54,7 @@ import drift.core.car as car_module
 from drift.core.helpers import clamp
 
 # === constants ==============================================================
-POPULATION_SIZE   = 40
+POPULATION_SIZE   = 20
 HIDDEN_SIZES      = [24, 18]
 INPUT_SIZE        = 26
 OUTPUT_SIZE       = 3
@@ -67,6 +67,10 @@ MAX_RAY_DIST      = 500.0
 SPEED_NORM        = 1000.0             # normalisation constant for velocities
 SAVE_EVERY_GEN    = 5
 _SQRT2            = math.sqrt(2)       # undo isometric Y compensation from car.step()
+CHECKPOINT_REWARD = 50.0
+DRIFT_START_RATIO = 0.5
+DRIFT_SIDE_MIN_LATERAL = 20.0
+DRIFT_REWARD_SCALE = 0.02
 
 # Available car types (folder names under assets/cars/)
 CAR_TYPES = ["911", "AE86", "barracuda", "mustang", "r34"]
@@ -178,6 +182,13 @@ class GeneticAlgorithm:
         self.best_net = None
         self.mutation_scale = 1.0  # multiplied into all mutation rates/strengths
 
+    def _estimate_mutation_scale_from_generation(self, generation):
+        # Fallback for old checkpoints that do not persist mutation_scale.
+        # Keeps late-generation resumes from jumping back to 1.0 exploration.
+        g = max(0, int(generation))
+        estimated = 0.8 ** (g / 10.0)
+        return float(clamp(estimated, 0.2, 1.0))
+
     def reseed_population_from_best(self):
         if self.best_net is None:
             return False
@@ -253,6 +264,7 @@ class GeneticAlgorithm:
                 "arch": {"in": INPUT_SIZE, "hidden": list(HIDDEN_SIZES), "out": OUTPUT_SIZE},
                 "generation": self.generation,
                 "fitness": float(self.best_fitness),
+                "mutation_scale": float(self.mutation_scale),
             }, f)
         print(f"  [save] gen {self.generation}  fitness {self.best_fitness:.1f}  -> {path}")
 
@@ -278,8 +290,13 @@ class GeneticAlgorithm:
             self.best_net = net
             self.best_fitness = d.get("fitness", 0.0)
             self.generation = d.get("generation", 0)
+            if "mutation_scale" in d:
+                self.mutation_scale = float(clamp(d["mutation_scale"], 0.2, 2.0))
+            else:
+                self.mutation_scale = self._estimate_mutation_scale_from_generation(self.generation)
             self.reseed_population_from_best()
-            print(f"  [load] gen {self.generation}  fitness {self.best_fitness:.1f}  <- {path}")
+            print(f"  [load] gen {self.generation}  fitness {self.best_fitness:.1f}  "
+                  f"ms {self.mutation_scale:.3f}  <- {path}")
             return True
         except Exception as e:
             print(f"  [load] error: {e}")
@@ -566,6 +583,14 @@ class TrainingEnv:
         self.meta = meta
         self.num_cars = num_cars
 
+        # Build evenly-spaced virtual checkpoints directly from the discovered path.
+        n_poly = max(1, len(polyline))
+        checkpoint_count = max(8, min(80, n_poly // 5))
+        step = max(1, n_poly // checkpoint_count)
+        self.poly_checkpoint_segments = list(range(0, n_poly, step))
+        if not self.poly_checkpoint_segments:
+            self.poly_checkpoint_segments = [0]
+
         # Pre-load all car specs so reset() can pick randomly
         self.all_specs = _load_all_car_specs()
         self.car_spec_cache = {}   # car_type -> 6-float tuple
@@ -607,6 +632,14 @@ class TrainingEnv:
         self.step_count = 0
         self.car_progress = []      # cumulative path-distance traveled
         self.car_prev_seg = []
+        self.car_next_checkpoint = []
+        self.car_checkpoint_hits = []
+        self.car_checkpoint_flash = []
+        self.car_last_checkpoint_gain = []
+        self.car_drift_hold_frames = []
+        self.car_drift_side = []
+        self.car_drift_score_total = []
+        self.car_drift_reward_frame = []
         self.car_alive = []
         self.smoothed_actions = []    # low-pass filtered inputs per car
         self.debug_car_idx = -1       # index of car that gets compute_debug=True
@@ -618,6 +651,14 @@ class TrainingEnv:
         self.step_count = 0
         self.car_progress = [0.0] * self.num_cars
         self.car_prev_seg = [0] * self.num_cars
+        self.car_next_checkpoint = [0] * self.num_cars
+        self.car_checkpoint_hits = [0] * self.num_cars
+        self.car_checkpoint_flash = [0] * self.num_cars
+        self.car_last_checkpoint_gain = [0] * self.num_cars
+        self.car_drift_hold_frames = [0] * self.num_cars
+        self.car_drift_side = [0] * self.num_cars
+        self.car_drift_score_total = [0.0] * self.num_cars
+        self.car_drift_reward_frame = [0.0] * self.num_cars
         self.car_alive = [True] * self.num_cars
         self.smoothed_actions = [np.array([0.0, 0.0, 0.0]) for _ in range(self.num_cars)]
 
@@ -628,6 +669,15 @@ class TrainingEnv:
 
         # Choose a single car type for the entire epoch
         epoch_car_type = CAR_TYPES[np.random.randint(len(CAR_TYPES))]
+
+        # Start each car from the first checkpoint ahead of the spawn segment.
+        spawn_mod = spawn_seg % len(self.polyline)
+        next_cp_idx = 0
+        for idx, cp_seg in enumerate(self.poly_checkpoint_segments):
+            if cp_seg > spawn_mod:
+                next_cp_idx = idx
+                break
+
         self.car_types = [epoch_car_type] * self.num_cars
         for i in range(self.num_cars):
             c = car_module.Car(self.spawn_x, self.spawn_y,
@@ -638,6 +688,7 @@ class TrainingEnv:
             c.vy = math.sin(c.angle) * 60
             self.cars.append(c)
             self.car_prev_seg[i] = spawn_seg
+            self.car_next_checkpoint[i] = next_cp_idx
 
         # Build initial observations (no-op action)
         obs = []
@@ -707,25 +758,87 @@ class TrainingEnv:
             seg_advance -= n_segs
         new_progress = self.car_progress[i] + seg_advance
 
-        # 7 raycasts (done ONCE, used for penalty + observation)
+        # Reward checkpoint crossings along the discovered center-line.
+        if seg_advance > 0 and self.poly_checkpoint_segments:
+            prev_seg_mod = hint % n_segs
+            curr_seg_mod = seg % n_segs
+            next_cp_idx = self.car_next_checkpoint[i]
+            checkpoint_reward = 0.0
+            crossed_count = 0
+
+            for _ in range(len(self.poly_checkpoint_segments)):
+                cp_seg = self.poly_checkpoint_segments[next_cp_idx]
+                if prev_seg_mod < curr_seg_mod:
+                    crossed = prev_seg_mod < cp_seg <= curr_seg_mod
+                else:
+                    crossed = cp_seg > prev_seg_mod or cp_seg <= curr_seg_mod
+
+                if not crossed:
+                    break
+
+                checkpoint_reward += CHECKPOINT_REWARD
+                next_cp_idx = (next_cp_idx + 1) % len(self.poly_checkpoint_segments)
+                crossed_count += 1
+
+            self.car_next_checkpoint[i] = next_cp_idx
+            if crossed_count > 0:
+                self.car_checkpoint_hits[i] += crossed_count
+                self.car_checkpoint_flash[i] = 24
+                self.car_last_checkpoint_gain[i] = crossed_count
+        else:
+            checkpoint_reward = 0.0
+
+        # 7 raycasts (done ONCE, used for observation)
         rays = []
-        min_ray = MAX_RAY_DIST
         for ra in self.ray_angles_rad:
             _, _, rd, hit = raycast_grid(
                 self.edge_grid, c.x, c.y, c.angle + ra, MAX_RAY_DIST)
             norm_rd = rd / MAX_RAY_DIST if hit else 1.0
             rays.append(norm_rd)
-            if hit and rd < min_ray:
-                min_ray = rd
+
+        dist_from_path = _signed_distance(c.x, c.y, self.polyline, seg, t)
 
         # --- reward ---
-        fwd = c.vx * math.cos(c.angle) + c.vy * math.sin(c.angle)
+        fwd_x, fwd_y = math.cos(c.angle), math.sin(c.angle)
+        rgt_x, rgt_y = -fwd_y, fwd_x
+        fwd = c.vx * fwd_x + c.vy * fwd_y
+        lat = c.vx * rgt_x + c.vy * rgt_y
+        speed = math.hypot(c.vx, c.vy)
+
         reward = 0.0
         #reward += seg_advance * 5.0
-        reward += fwd * 0.02
-        
-        #if c.drift_ratio > 0.3 and fwd > 80:
-        #    reward += c.drift_ratio * 0.5
+        reward += fwd
+        reward += checkpoint_reward
+        reward -= abs(dist_from_path)
+
+        drift_ratio = float(getattr(c, "drift_ratio", 0.0))
+        side = 0
+        if abs(lat) >= DRIFT_SIDE_MIN_LATERAL:
+            side = 1 if lat > 0.0 else -1
+
+        if drift_ratio >= DRIFT_START_RATIO and speed > 20.0:
+            prev_side = self.car_drift_side[i]
+            hold_frames = self.car_drift_hold_frames[i]
+
+            # Snap oversteer: if drift flips side, start a brand-new drift.
+            if prev_side != 0 and side != 0 and side != prev_side:
+                hold_frames = 0
+
+            hold_frames += 1
+            self.car_drift_hold_frames[i] = hold_frames
+
+            if side != 0:
+                self.car_drift_side[i] = side
+
+            hold_seconds = hold_frames * SIM_DT
+            drift_reward = DRIFT_REWARD_SCALE * drift_ratio * speed * hold_seconds
+            reward += drift_reward
+            self.car_drift_score_total[i] += drift_reward
+            self.car_drift_reward_frame[i] = drift_reward
+        else:
+            self.car_drift_hold_frames[i] = 0
+            self.car_drift_side[i] = 0
+            self.car_drift_reward_frame[i] = 0.0
 
         alive = True
         if not ib:
@@ -733,11 +846,8 @@ class TrainingEnv:
             alive = False
         if fwd < 10:
             reward -= 0.5
-        speed = math.hypot(c.vx, c.vy)
         if speed < 5:
             reward -= 2.0
-        if min_ray < 30:
-            reward -= 1.5
         if speed < 5 and self.step_count > 120:
             alive = False
         if new_progress < -5:
@@ -747,10 +857,6 @@ class TrainingEnv:
             reward -= 2.0
 
         # --- observation ---
-        fwd_x, fwd_y = math.cos(c.angle), math.sin(c.angle)
-        rgt_x, rgt_y = -fwd_y, fwd_x
-
-        dist_from_path = _signed_distance(c.x, c.y, self.polyline, seg, t)
         dist_norm = clamp(dist_from_path / 150.0, -1.0, 1.0)
         tang = _path_tangent_angle(self.polyline, seg)
         angle_diff = ((c.angle - tang + math.pi) % (2 * math.pi)) - math.pi
@@ -797,6 +903,11 @@ class TrainingEnv:
             if not alive:
                 self.car_alive[i] = False
 
+            if self.car_checkpoint_flash[i] > 0:
+                self.car_checkpoint_flash[i] -= 1
+                if self.car_checkpoint_flash[i] == 0:
+                    self.car_last_checkpoint_gain[i] = 0
+
         done = self.step_count >= MAX_EPISODE_STEPS or not any(self.car_alive)
         return observations, rewards, done
 
@@ -841,6 +952,25 @@ def draw_track_outline(surface, left_edge, right_edge, scale=0.5):
         pygame.draw.polygon(surface, (60, 60, 60), pts, 1)
 
 
+def draw_poly_checkpoints(surface, polyline, checkpoint_segments, scale=0.5):
+    if not polyline or not checkpoint_segments:
+        return
+
+    for cp_idx, seg_idx in enumerate(checkpoint_segments):
+        x, y = polyline[seg_idx]
+        sx = int(x * scale)
+        sy = int(y * scale)
+
+        # Outer ring + center dot so checkpoints stay visible over track lines.
+        pygame.draw.circle(surface, (255, 165, 0), (sx, sy), 5, 2)
+        pygame.draw.circle(surface, (255, 220, 120), (sx, sy), 2)
+
+        # Label every 5th checkpoint to reduce clutter on dense tracks.
+        if cp_idx % 5 == 0:
+            pygame.draw.circle(surface, (40, 40, 40), (sx + 9, sy - 9), 6)
+            pygame.draw.circle(surface, (240, 240, 240), (sx + 9, sy - 9), 6, 1)
+
+
 # === physics debug window ===================================================
 
 DEBUG_WIN_SIZE = 500         # square debug viewport in pixels
@@ -850,7 +980,12 @@ _debug_font = None
 
 
 def draw_debug_view(surface, car, edge_segments, ray_angles_rad, edge_grid,
-                    polyline, seg_hint, left_edge, right_edge):
+                    polyline, seg_hint, left_edge, right_edge,
+                    checkpoint_segments=None, next_checkpoint_idx=0,
+                    checkpoint_hits=0, checkpoint_flash=0,
+                    last_checkpoint_gain=0,
+                    drift_hold_frames=0, drift_side=0,
+                    drift_score_total=0.0, drift_reward_frame=0.0):
     """Render a zoomed, car-centered physics debug view onto *surface*.
 
     Reproduces the same debug overlays the game uses (wheel grip circles,
@@ -895,6 +1030,24 @@ def draw_debug_view(surface, car, edge_segments, ray_angles_rad, edge_grid,
         ax, ay = polyline[i]
         bx, by = polyline[j]
         pygame.draw.line(surface, (40, 50, 65), w2s(ax, ay), w2s(bx, by), 1)
+
+    # -- virtual checkpoints from polyline --
+    checkpoint_segments = checkpoint_segments or []
+    if checkpoint_segments:
+        next_cp_seg = checkpoint_segments[next_checkpoint_idx % len(checkpoint_segments)]
+        for cp_idx, cp_seg in enumerate(checkpoint_segments):
+            cpx, cpy = polyline[cp_seg]
+            if (cpx - cx_w) ** 2 + (cpy - cy_w) ** 2 > view_r2:
+                continue
+            pt = w2s(cpx, cpy)
+            is_next = (cp_seg == next_cp_seg)
+            ring_col = (80, 220, 255) if is_next else (255, 165, 0)
+            dot_col = (170, 245, 255) if is_next else (255, 220, 120)
+            pygame.draw.circle(surface, ring_col, pt, 6, 2)
+            pygame.draw.circle(surface, dot_col, pt, 3)
+            if cp_idx % 5 == 0:
+                pygame.draw.circle(surface, (18, 20, 24), (pt[0] + 8, pt[1] - 8), 6)
+                pygame.draw.circle(surface, (220, 220, 220), (pt[0] + 8, pt[1] - 8), 6, 1)
 
     # -- raycasts --
     for ra in ray_angles_rad:
@@ -982,11 +1135,17 @@ def draw_debug_view(surface, car, edge_segments, ray_angles_rad, edge_grid,
         surface.blit(ts, (sx + 6, sy - 8))
 
     # -- text HUD (bottom-left) --
+    _, _, dbg_seg, dbg_t, _ = _nearest_on_polyline(
+        car.x, car.y, polyline, hint_seg=seg_hint)
+    dbg_path_dist = _signed_distance(car.x, car.y, polyline, dbg_seg, dbg_t)
+
     fwd_speed = car.vx * ca_c + car.vy * sa_c
     lat_speed = car.vx * (-sa_c) + car.vy * ca_c
     speed = math.hypot(car.vx, car.vy)
     drift = getattr(car, "drift_ratio", 0.0)
     car_type = getattr(car, "car_type", "?")
+    drift_side_name = "R" if drift_side > 0 else ("L" if drift_side < 0 else "-")
+    drift_hold_sec = drift_hold_frames * SIM_DT
 
     info_lines = [
         f"Car: {car_type}",
@@ -994,12 +1153,22 @@ def draw_debug_view(surface, car, edge_segments, ray_angles_rad, edge_grid,
         f"Angle: {math.degrees(car.angle):.1f} deg   v_angle: {car.v_angle:.2f}",
         f"Grip: {' '.join(f'{g:.2f}' for g in grips)}",
         f"Drift ratio: {drift:.2f}",
+        f"Drift hold: {drift_hold_sec:.2f}s ({drift_hold_frames}f)  side: {drift_side_name}",
+        f"Drift score: {drift_score_total:.1f}   frame: +{drift_reward_frame:.2f}",
+        f"Path dist: {dbg_path_dist:+.1f}  abs: {abs(dbg_path_dist):.1f}",
+        f"Checkpoint hits: {checkpoint_hits}",
     ]
     y_off = H - len(info_lines) * 18 - 6
     for line in info_lines:
         ts = font.render(line, True, (200, 200, 200))
         surface.blit(ts, (6, y_off))
         y_off += 18
+
+    if checkpoint_flash > 0 and last_checkpoint_gain > 0:
+        msg = f"CHECKPOINT +{int(CHECKPOINT_REWARD * last_checkpoint_gain)}"
+        col = (255, 230, 120) if checkpoint_flash % 6 < 3 else (255, 180, 70)
+        ts = font.render(msg, True, col)
+        surface.blit(ts, (W // 2 - ts.get_width() // 2, 10))
 
 
 # === main ===================================================================
@@ -1132,6 +1301,8 @@ def main():
         if env.step_count % 2 == 0:
             screen.fill((25, 30, 35))
             draw_track_outline(screen, left_edge, right_edge, scale)
+            draw_poly_checkpoints(screen, env.polyline,
+                                  env.poly_checkpoint_segments, scale)
 
             # Rank cars by current fitness, pick top 20 alive for rendering
             TOP_N = 20
@@ -1200,7 +1371,16 @@ def main():
                     seg_h = env.car_prev_seg[best_alive_idx]
                     draw_debug_view(debug_surf, bc, env.edge_segments,
                                     env.ray_angles_rad, env.edge_grid,
-                                    polyline, seg_h, left_edge, right_edge)
+                                    polyline, seg_h, left_edge, right_edge,
+                                    checkpoint_segments=env.poly_checkpoint_segments,
+                                    next_checkpoint_idx=env.car_next_checkpoint[best_alive_idx],
+                                    checkpoint_hits=env.car_checkpoint_hits[best_alive_idx],
+                                    checkpoint_flash=env.car_checkpoint_flash[best_alive_idx],
+                                    last_checkpoint_gain=env.car_last_checkpoint_gain[best_alive_idx],
+                                    drift_hold_frames=env.car_drift_hold_frames[best_alive_idx],
+                                    drift_side=env.car_drift_side[best_alive_idx],
+                                    drift_score_total=env.car_drift_score_total[best_alive_idx],
+                                    drift_reward_frame=env.car_drift_reward_frame[best_alive_idx])
                 else:
                     debug_surf.fill((20, 22, 28))
                     msg = _debug_font or pygame.font.Font(None, 18)
