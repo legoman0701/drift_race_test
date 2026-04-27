@@ -7,11 +7,11 @@ hundreds of cars can be simulated in parallel.  Raycasts are performed
 against the track-outline polyline (same geometry the path-finder uses),
 NOT the collision mesh.
 
-Inputs (26):
-    0  forward_vel        body-frame forward speed, normalized
-    1  lateral_vel        body-frame lateral speed, normalized
-    2  angular_vel        yaw rate, normalized
-    3  abs_vel            world-frame speed magnitude, normalized
+Inputs (29):
+    0  forward_vel        body-frame forward speed (px/frame), normalized
+    1  lateral_vel        body-frame lateral speed (px/frame), normalized
+    2  angular_vel        yaw rate (deg/frame), normalized
+    3  abs_vel            world-frame speed magnitude (px/frame), normalized
     4  grip_FL            front-left wheel grip  [0..1]
     5  grip_FR            front-right wheel grip [0..1]
     6  grip_RL            rear-left  wheel grip  [0..1]
@@ -20,14 +20,17 @@ Inputs (26):
     9  angle_from_path    angle difference to path tangent, normalized
    10..16  7 raycasts     distances to track edge (polyline), normalized
    17 in_bounds           1.0 if on track, 0.0 if off track
-   18 car_mass            normalized mass of the car
-   19 car_hp              normalized horsepower
-   20 car_front_grip      front wheel grip from specs
-   21 car_rear_grip       rear wheel grip from specs
-   22 car_cornering       cornering stiffness from specs
-   23 car_stiffness       wheel stiffness factor from specs
-   24 car_drivetrain      -1.0 FWD, 0.0 AWD/AWDS, 1.0 RWD
-   25 dt                  simulation timestep (SIM_DT * 60, ~1.0 at 60 Hz)
+   18 in_drift_zone       1.0 if in a drift zone, 0.0 otherwise
+    19 tangent_300_ahead   angle diff to path tangent 300 px ahead, normalized
+    20 tangent_600_ahead   angle diff to path tangent 600 px ahead, normalized
+    21 tangent_900_ahead   angle diff to path tangent 900 px ahead, normalized
+    22 car_mass            normalized mass of the car
+    23 car_hp              normalized horsepower
+    24 car_front_grip      front wheel grip from specs
+    25 car_rear_grip       rear wheel grip from specs
+    26 car_cornering       cornering stiffness from specs
+    27 car_stiffness       wheel stiffness factor from specs
+    28 car_drivetrain      -1.0 FWD, 0.0 AWD/AWDS, 1.0 RWD
 
 Outputs (3):
     throttle  [-1..1]  (tanh)
@@ -55,8 +58,8 @@ from drift.core.helpers import clamp
 
 # === constants ==============================================================
 POPULATION_SIZE   = 50
-HIDDEN_SIZES      = [24, 18]
-INPUT_SIZE        = 26
+HIDDEN_SIZES      = [24, 18, 18]
+INPUT_SIZE        = 29
 OUTPUT_SIZE       = 3
 MAX_EPISODE_STEPS = 1500
 SIM_DT            = 1.0 / 60.0        # fixed physics timestep
@@ -65,14 +68,21 @@ INPUT_ALPHA       = SIM_DT / (INPUT_TAU + SIM_DT)  # EMA smoothing factor
 RAYCAST_ANGLES_DEG = [-90, -60, -30, 0, 30, 60, 90]  # 7 rays
 MAX_RAY_DIST      = 500.0
 SPEED_NORM        = 1000.0             # normalisation constant for velocities
+SPEED_NORM_FRAME  = SPEED_NORM * SIM_DT
+ANGVEL_NORM       = 20.0
+ANGVEL_NORM_FRAME = ANGVEL_NORM * SIM_DT
 SAVE_EVERY_GEN    = 5
 _SQRT2            = math.sqrt(2)       # undo isometric Y compensation from car.step()
-CHECKPOINT_REWARD = 400.0
-DRIFT_START_RATIO = 0.2
+CHECKPOINT_REWARD = 10.0
+DRIFT_START_RATIO = 0.5
 DRIFT_SIDE_MIN_LATERAL = 20.0
-DRIFT_REWARD_SCALE = 0.05
+DRIFT_REWARD_SCALE = 5
 WRONG_WAY_ANGLE_THRESHOLD = math.pi * 0.75
 WRONG_WAY_KILL_PENALTY = 4000.0
+LOOKAHEAD_DIST_1 = 300.0
+LOOKAHEAD_DIST_2 = 600.0
+LOOKAHEAD_DIST_3 = 900.0
+DEAD_FRAME_PENALTY = -200.0
 
 # Available car types (folder names under assets/cars/)
 CAR_TYPES = ["911", "AE86", "barracuda", "mustang", "r34"]
@@ -189,7 +199,7 @@ class GeneticAlgorithm:
         # Keeps late-generation resumes from jumping back to 1.0 exploration.
         g = max(0, int(generation))
         estimated = 0.95 ** (g / 10.0)
-        return float(clamp(estimated, 0.2, 1.0))
+        return float(clamp(estimated, 0.05, 1.0))
 
     def reseed_population_from_best(self):
         if self.best_net is None:
@@ -552,6 +562,48 @@ def _path_tangent_angle(poly, seg_idx):
     return math.atan2(by - ay, bx - ax)
 
 
+def _advance_along_polyline(poly, seg_idx, t, distance):
+    """Advance forward along a closed polyline by *distance* world units.
+
+    Returns (x, y, seg_idx, t) at the advanced point.
+    """
+    n = len(poly)
+    if n < 2:
+        ax, ay = poly[0]
+        return ax, ay, 0, 0.0
+
+    i = seg_idx % n
+    local_t = float(clamp(t, 0.0, 1.0))
+    remaining = max(0.0, float(distance))
+
+    while True:
+        ax, ay = poly[i]
+        bx, by = poly[(i + 1) % n]
+        dx, dy = bx - ax, by - ay
+        seg_len = math.hypot(dx, dy)
+        if seg_len < 1e-8:
+            i = (i + 1) % n
+            local_t = 0.0
+            continue
+
+        dist_left = seg_len * (1.0 - local_t)
+        if remaining <= dist_left:
+            new_t = local_t + (remaining / seg_len)
+            return ax + dx * new_t, ay + dy * new_t, i, new_t
+
+        remaining -= dist_left
+        i = (i + 1) % n
+        local_t = 0.0
+
+
+def _relative_angle_to_path_tangent(car_angle, poly, seg_idx, t, lookahead_distance):
+    """Return normalized angle diff to the path tangent lookahead_distance ahead."""
+    _, _, ahead_seg, _ = _advance_along_polyline(poly, seg_idx, t, lookahead_distance)
+    ahead_tangent = _path_tangent_angle(poly, ahead_seg)
+    ahead_angle_diff = ((car_angle - ahead_tangent + math.pi) % (2 * math.pi)) - math.pi
+    return clamp(ahead_angle_diff / math.pi, -1.0, 1.0), ahead_tangent, ahead_seg
+
+
 def _signed_distance(px, py, poly, seg_idx, t):
     """Signed distance: positive = left of path, negative = right."""
     n = len(poly)
@@ -580,6 +632,16 @@ def _point_in_closed_poly(px, py, poly):
             inside = not inside
         j = i
     return inside
+
+
+def _point_in_any_zone(px, py, zones):
+    """Check if point (px, py) is inside any of the zones (list of polygons)."""
+    if not zones:
+        return False
+    for zone in zones:
+        if _point_in_closed_poly(px, py, zone):
+            return True
+    return False
 
 
 # === training environment ===================================================
@@ -636,6 +698,9 @@ class TrainingEnv:
             cy = cp["y"] + cp["height"] / 2
             self.checkpoints.append((cx, cy))
 
+        # Load drift zones from metadata
+        self.drift_zones = meta.get("drift_zones", [])
+
         self.cars = []
         self.in_bounds = []
         self.step_count = 0
@@ -649,12 +714,14 @@ class TrainingEnv:
         self.car_drift_side = []
         self.car_drift_score_total = []
         self.car_drift_reward_frame = []
+        self.car_oob_frames = []
         self.car_alive = []
         self.smoothed_actions = []    # low-pass filtered inputs per car
         self.debug_car_idx = -1       # index of car that gets compute_debug=True
+        self.epoch_car_type = None
 
     # -- reset ---------------------------------------------------------------
-    def reset(self):
+    def reset(self, keep_car_type=False):
         self.cars = []
         self.in_bounds = [1.0] * self.num_cars
         self.step_count = 0
@@ -668,6 +735,7 @@ class TrainingEnv:
         self.car_drift_side = [0] * self.num_cars
         self.car_drift_score_total = [0.0] * self.num_cars
         self.car_drift_reward_frame = [0.0] * self.num_cars
+        self.car_oob_frames = [0] * self.num_cars
         self.car_alive = [True] * self.num_cars
         self.smoothed_actions = [np.array([0.0, 0.0, 0.0]) for _ in range(self.num_cars)]
 
@@ -676,8 +744,13 @@ class TrainingEnv:
             self.spawn_x, self.spawn_y, self.polyline,
             hint_seg=0, search_window=len(self.polyline) // 2)
 
-        # Choose a single car type for the entire epoch
-        epoch_car_type = CAR_TYPES[np.random.randint(len(CAR_TYPES))]
+        # Choose a single car type for the entire epoch.
+        # If the previous episode ended by full wipeout, keep the same model.
+        if keep_car_type and self.epoch_car_type in CAR_TYPES:
+            epoch_car_type = self.epoch_car_type
+        else:
+            epoch_car_type = CAR_TYPES[np.random.randint(len(CAR_TYPES))]
+        self.epoch_car_type = epoch_car_type
 
         # Start each car from the first checkpoint ahead of the spawn segment.
         spawn_mod = spawn_seg % len(self.polyline)
@@ -727,7 +800,7 @@ class TrainingEnv:
         """
         c = self.cars[i]
         if not self.car_alive[i]:
-            return -2.0, np.zeros(INPUT_SIZE, dtype=np.float32), False, self.in_bounds[i], 0, self.car_prev_seg[i]
+            return DEAD_FRAME_PENALTY, np.zeros(INPUT_SIZE, dtype=np.float32), False, self.in_bounds[i], 0, self.car_prev_seg[i]
 
         # Low-pass filter the raw NN output
         raw = np.array([float(np.clip(action[0], -1, 1)),
@@ -757,6 +830,10 @@ class TrainingEnv:
 
         ib = math.sqrt(d2) < 70.0
         ib_val = 1.0 if ib else 0.0
+        if ib:
+            self.car_oob_frames[i] = 0
+        else:
+            self.car_oob_frames[i] += 1
 
         # Progress along polyline
         seg_advance = seg - hint
@@ -768,7 +845,7 @@ class TrainingEnv:
         new_progress = self.car_progress[i] + seg_advance
 
         # Reward checkpoint crossings along the discovered center-line.
-        if seg_advance > 0 and self.poly_checkpoint_segments:
+        if ib and seg_advance > 0 and self.poly_checkpoint_segments:
             prev_seg_mod = hint % n_segs
             curr_seg_mod = seg % n_segs
             next_cp_idx = self.car_next_checkpoint[i]
@@ -829,11 +906,12 @@ class TrainingEnv:
             wrong_way_kill = True
 
         drift_ratio = float(getattr(c, "drift_ratio", 0.0))
+        in_drift_zone = _point_in_any_zone(c.x, c.y, self.drift_zones)
         side = 0
         if abs(lat) >= DRIFT_SIDE_MIN_LATERAL:
             side = 1 if lat > 0.0 else -1
 
-        if drift_ratio >= DRIFT_START_RATIO and speed > 50.0:
+        if ib and drift_ratio >= DRIFT_START_RATIO and speed > 50.0:
             prev_side = self.car_drift_side[i]
             hold_frames = self.car_drift_hold_frames[i]
 
@@ -848,19 +926,18 @@ class TrainingEnv:
                 self.car_drift_side[i] = side
 
             hold_seconds = hold_frames * SIM_DT
-            drift_reward = DRIFT_REWARD_SCALE * drift_ratio * speed * hold_seconds
-            reward += drift_reward
-            self.car_drift_score_total[i] += drift_reward
-            self.car_drift_reward_frame[i] = drift_reward
+            drift_angle = math.atan2(lat, fwd)
+            drift_reward = DRIFT_REWARD_SCALE * drift_ratio * speed * hold_seconds * ((abs(math.sin(drift_angle))*2) ** 2)
+            signed_drift_reward = drift_reward if in_drift_zone else -drift_reward*5
+            reward += signed_drift_reward
+            self.car_drift_score_total[i] += signed_drift_reward
+            self.car_drift_reward_frame[i] = signed_drift_reward
         else:
             self.car_drift_hold_frames[i] = 0
             self.car_drift_side[i] = 0
             self.car_drift_reward_frame[i] = 0.0
 
         alive = not wrong_way_kill
-        if not ib:
-            reward -= 50.0
-            alive = False
         if fwd < 10:
             reward -= 50
         if speed < 5:
@@ -869,28 +946,42 @@ class TrainingEnv:
             alive = False
         if new_progress < -5:
             alive = False
+        if self.car_oob_frames[i] > 120:
+            alive = False
 
         if not alive and not wrong_way_kill:
             reward -= 2000.0
 
+        if not ib and not wrong_way_kill:
+            reward = 0.0
+
         # --- observation ---
         dist_norm = clamp(dist_from_path / 150.0, -1.0, 1.0)
         angle_norm = clamp(angle_diff / math.pi, -1.0, 1.0)
+        tang_300_norm, _, _ = _relative_angle_to_path_tangent(
+            c.angle, self.polyline, seg, t, LOOKAHEAD_DIST_1)
+        tang_600_norm, _, _ = _relative_angle_to_path_tangent(
+            c.angle, self.polyline, seg, t, LOOKAHEAD_DIST_2)
+        tang_900_norm, _, _ = _relative_angle_to_path_tangent(
+            c.angle, self.polyline, seg, t, LOOKAHEAD_DIST_3)
 
         spec_in = self.car_spec_cache[self.car_types[i]]
         grip = c.has_grip
 
         obs = np.array([
-            (c.vx * fwd_x + c.vy * fwd_y) / SPEED_NORM,
-            (c.vx * rgt_x + c.vy * rgt_y) / SPEED_NORM,
-            clamp(c.v_angle / 20.0, -1.0, 1.0),
-            math.hypot(c.vx, c.vy) / SPEED_NORM,
+            (c.vx * fwd_x + c.vy * fwd_y) * SIM_DT / SPEED_NORM_FRAME,
+            (c.vx * rgt_x + c.vy * rgt_y) * SIM_DT / SPEED_NORM_FRAME,
+            clamp(c.v_angle * SIM_DT / ANGVEL_NORM_FRAME, -1.0, 1.0),
+            math.hypot(c.vx, c.vy) * SIM_DT / SPEED_NORM_FRAME,
             grip[0], grip[1], grip[2], grip[3],
             dist_norm, angle_norm,
             *rays,
             ib_val,
+            1.0 if in_drift_zone else 0.0,
+            tang_300_norm,
+            tang_600_norm,
+            tang_900_norm,
             *spec_in,
-            SIM_DT * 60.0,
         ], dtype=np.float32)
 
         return reward, obs, alive, ib_val, seg_advance, seg
@@ -989,7 +1080,7 @@ def draw_poly_checkpoints(surface, polyline, checkpoint_segments, scale=0.5):
 # === physics debug window ===================================================
 
 DEBUG_WIN_SIZE = 500         # square debug viewport in pixels
-DEBUG_WORLD_RADIUS = 200.0   # how many world-units around the car are visible
+DEBUG_WORLD_RADIUS = 550.0   # how many world-units around the car are visible
 
 _debug_font = None
 
@@ -1153,6 +1244,32 @@ def draw_debug_view(surface, car, edge_segments, ray_angles_rad, edge_grid,
     _, _, dbg_seg, dbg_t, _ = _nearest_on_polyline(
         car.x, car.y, polyline, hint_seg=seg_hint)
     dbg_path_dist = _signed_distance(car.x, car.y, polyline, dbg_seg, dbg_t)
+    tang_300_norm, tang_300_ahead, tang_300_seg = _relative_angle_to_path_tangent(
+        car.angle, polyline, dbg_seg, dbg_t, LOOKAHEAD_DIST_1)
+    tang_600_norm, tang_600_ahead, tang_600_seg = _relative_angle_to_path_tangent(
+        car.angle, polyline, dbg_seg, dbg_t, LOOKAHEAD_DIST_2)
+    tang_900_norm, tang_900_ahead, tang_900_seg = _relative_angle_to_path_tangent(
+        car.angle, polyline, dbg_seg, dbg_t, LOOKAHEAD_DIST_3)
+    look_300_x, look_300_y, _, _ = _advance_along_polyline(
+        polyline, dbg_seg, dbg_t, LOOKAHEAD_DIST_1)
+    look_600_x, look_600_y, _, _ = _advance_along_polyline(
+        polyline, dbg_seg, dbg_t, LOOKAHEAD_DIST_2)
+    look_900_x, look_900_y, _, _ = _advance_along_polyline(
+        polyline, dbg_seg, dbg_t, LOOKAHEAD_DIST_3)
+
+    for look_x, look_y, look_tangent, color in (
+        (look_300_x, look_300_y, tang_300_ahead, (120, 220, 255)),
+        (look_600_x, look_600_y, tang_600_ahead, (255, 170, 90)),
+        (look_900_x, look_900_y, tang_900_ahead, (255, 110, 210)),
+    ):
+        pt = w2s(look_x, look_y)
+        pygame.draw.circle(surface, color, pt, 5, 2)
+        tangent_len = 28.0 / zoom
+        tx0 = look_x - math.cos(look_tangent) * tangent_len * 0.5
+        ty0 = look_y - math.sin(look_tangent) * tangent_len * 0.5
+        tx1 = look_x + math.cos(look_tangent) * tangent_len * 0.5
+        ty1 = look_y + math.sin(look_tangent) * tangent_len * 0.5
+        pygame.draw.line(surface, color, w2s(tx0, ty0), w2s(tx1, ty1), 2)
 
     fwd_speed = car.vx * ca_c + car.vy * sa_c
     lat_speed = car.vx * (-sa_c) + car.vy * ca_c
@@ -1171,6 +1288,9 @@ def draw_debug_view(surface, car, edge_segments, ray_angles_rad, edge_grid,
         f"Drift hold: {drift_hold_sec:.2f}s ({drift_hold_frames}f)  side: {drift_side_name}",
         f"Drift score: {drift_score_total:.1f}   frame: +{drift_reward_frame:.2f}",
         f"Path dist: {dbg_path_dist:+.1f}  abs: {abs(dbg_path_dist):.1f}",
+        f"Tan +300: {tang_300_norm:+.2f} ({math.degrees(tang_300_ahead):.1f} deg)",
+        f"Tan +600: {tang_600_norm:+.2f} ({math.degrees(tang_600_ahead):.1f} deg)",
+        f"Tan +900: {tang_900_norm:+.2f} ({math.degrees(tang_900_ahead):.1f} deg)",
         f"Checkpoint hits: {checkpoint_hits}",
     ]
     y_off = H - len(info_lines) * 18 - 6
@@ -1309,7 +1429,8 @@ def main():
                                      f"generation_{ga.generation}.pkl"))
             ga.save(best_path)
 
-            observations = env.reset()
+            ended_by_all_dead = (alive_n == 0 and env.step_count < MAX_EPISODE_STEPS)
+            observations = env.reset(keep_car_type=ended_by_all_dead)
             _t_start = time.time()
 
         # -- render (lightweight, every 10 steps) ----------------------------
