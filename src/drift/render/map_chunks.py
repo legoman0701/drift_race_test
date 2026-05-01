@@ -26,6 +26,30 @@ def ensure_all_maps_sliced() -> None:
             pad_color=(28, 28, 28, 255),
             force=False,
         )
+        # Background layer (_bg): always rendered behind cars
+        bg_path = asset_path("track", f"map{map_num}", "main_bg.png")
+        if os.path.exists(bg_path):
+            slice_map(
+                input_path=bg_path,
+                outdir=asset_path("track", f"map{map_num}", "chunks_bg"),
+                tile=const.TILE_SIZE,
+                indexing="zero",
+                prefix="",
+                pad_color=(28, 28, 28, 255),
+                force=False,
+            )
+        # Foreground layer (_fg): depth-sorted against cars
+        fg_path = asset_path("track", f"map{map_num}", "main_fg.png")
+        if os.path.exists(fg_path):
+            slice_map(
+                input_path=fg_path,
+                outdir=asset_path("track", f"map{map_num}", "chunks_fg"),
+                tile=const.TILE_SIZE,
+                indexing="zero",
+                prefix="",
+                pad_color=(0, 0, 0, 0),
+                force=False,
+            )
     _maps_sliced = True
 
 
@@ -39,13 +63,15 @@ class ChunkedMap:
                  root: str = None,
                  tile_size: int = const.TILE_SIZE, # 512x512
                  default_color=(28, 28, 28),
-                 max_cached_chunks: int = 64) -> None:
+                 max_cached_chunks: int = 64,
+                 use_alpha: bool = False) -> None:
         
         if root is None: root = asset_path("track", f"map{const.MAP_NUM}", "chunks")
         self.root = root # map root
         self.tile_size = tile_size
         self.default_color = default_color
         self.max_cached_chunks = max_cached_chunks
+        self.use_alpha = use_alpha
         # O(1) LRU via OrderedDict: most-recently-used at the end
         self._cache: OrderedDict[Tuple[int, int], pygame.Surface] = OrderedDict()
         # Pre-built default tile (converted once)
@@ -115,17 +141,24 @@ class ChunkedMap:
     def _get_default_tile(self) -> pygame.Surface:
         """Return a shared default tile, created and .convert()-ed once."""
         if self._default_tile is None:
-            self._default_tile = pygame.Surface((self.tile_size, self.tile_size))
-            self._default_tile.fill(self.default_color)
-            try: self._default_tile = self._default_tile.convert()
-            except pygame.error: pass
+            if self.use_alpha:
+                self._default_tile = pygame.Surface((self.tile_size, self.tile_size), pygame.SRCALPHA)
+                self._default_tile.fill((0, 0, 0, 0))
+                try: self._default_tile = self._default_tile.convert_alpha()
+                except pygame.error: pass
+            else:
+                self._default_tile = pygame.Surface((self.tile_size, self.tile_size))
+                self._default_tile.fill(self.default_color)
+                try: self._default_tile = self._default_tile.convert()
+                except pygame.error: pass
         return self._default_tile
 
     def _load_tile(self, ix: int, iy: int) -> pygame.Surface:
         link = self.root / f"{ix}_{iy}.png" if hasattr(self.root, '__truediv__') else os.path.join(str(self.root), f"{ix}_{iy}.png")
         surf: Optional[pygame.Surface] = None
         if os.path.exists(link):
-            try: surf = pygame.image.load(link).convert()
+            try:
+                surf = pygame.image.load(link).convert_alpha() if self.use_alpha else pygame.image.load(link).convert()
             except Exception as e: print(f"Error loading tile {link}: {e}")
         if surf is None:
             surf = self._get_default_tile()
@@ -166,6 +199,20 @@ class ChunkedMap:
         for ix, iy in self.tiles_for_rect(camera_rect):
             tile = self.get_tile(ix, iy)
             dest.blit(tile, (ix * ts - offx, iy * ts - offy))
+
+    def get_visible_tile_items(self, camera_rect: pygame.Rect) -> Iterable[Tuple[float, int, int, pygame.Surface]]:
+        """Yield (world_bottom_y, dest_x, dest_y, surface) for each tile that has a real file on disk.
+        Used for depth-sorting _fg tiles against cars (painter's algorithm)."""
+        ts = self.tile_size
+        offx, offy = camera_rect.left, camera_rect.top
+        root_str = str(self.root)
+        for ix, iy in self.tiles_for_rect(camera_rect):
+            link = os.path.join(root_str, f"{ix}_{iy}.png")
+            if not os.path.exists(link):
+                continue
+            tile = self.get_tile(ix, iy)
+            world_bottom_y = (iy + 1) * ts
+            yield (world_bottom_y, ix * ts - offx, iy * ts - offy, tile)
 
 
 class TireMarkGrid:

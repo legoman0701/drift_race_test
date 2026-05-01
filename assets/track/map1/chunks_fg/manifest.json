@@ -1,0 +1,21 @@
+{
+  "input": "F:\\Documents\\python\\drift_race_test\\assets\\track\\map1\\main_fg.png",
+  "image_size": [
+    2944,
+    2496
+  ],
+  "tile": 512,
+  "tiles_x": 6,
+  "tiles_y": 5,
+  "indexing": "zero",
+  "ix_start": 0,
+  "iy_start": 0,
+  "prefix": "",
+  "pad_color": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "count_written": 30
+}

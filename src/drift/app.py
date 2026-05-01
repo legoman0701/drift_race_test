@@ -3,7 +3,7 @@
 # ======= IMPORTS =======
 
 # global imports
-import pygame, json, time, random, sys, math, uuid, argparse
+import pygame, json, time, random, sys, math, uuid, argparse, os
 from collections import deque
 # local imports
 from drift.tools.paths import asset_path, chdir_to_exe_folder_if_frozen, normalize_asset_path, get_available_sprite_layers
@@ -153,6 +153,10 @@ def load_assets_with_progress(screen, clock, engine_sound_id, gpu_display=None):
             ensure_all_maps_sliced()  # Slice all map chunks once at startup
             loaded_data["track_image"] = pygame.image.load(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
             loaded_data["chunk_map"] = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=const.TILE_SIZE)
+            _bg_root = normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks_bg")
+            loaded_data["chunk_map_bg"] = ChunkedMap(root=_bg_root, tile_size=const.TILE_SIZE) if os.path.isdir(_bg_root) else None
+            _fg_root = normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks_fg")
+            loaded_data["chunk_map_fg"] = ChunkedMap(root=_fg_root, tile_size=const.TILE_SIZE, use_alpha=True) if os.path.isdir(_fg_root) else None
             time.sleep(0.1)
             
         elif step_key == "systems":
@@ -668,6 +672,8 @@ def main():
     car_sprites_cache = loaded_assets["car_sprites_cache"]
     track_image = loaded_assets["track_image"]
     chunked_map = loaded_assets["chunk_map"]
+    chunked_map_bg = loaded_assets.get("chunk_map_bg")
+    chunked_map_fg = loaded_assets.get("chunk_map_fg")
     engine_audio = loaded_assets["engine_audio"]
     shift_sound = loaded_assets["shift_sound"]
 
@@ -762,7 +768,7 @@ def main():
             sock = None; code = "Offline"; stage1 = "lobby"; I_AM_HOST = False
     
     # Renderer handles track, cars, and drift marks
-    renderer = WorldRenderer(track_image, flags, chunked_map=chunked_map)
+    renderer = WorldRenderer(track_image, flags, chunked_map=chunked_map, chunked_map_bg=chunked_map_bg, chunked_map_fg=chunked_map_fg)
 
     # connect first available gamepad (if any)
     gp = Gamepad()
@@ -1056,7 +1062,12 @@ def main():
 
             # Sync renderer with any map changes from UI
             if renderer and track_image and renderer.track_image != track_image: renderer.track_image = track_image
-            if renderer and chunked_map and renderer.chunked_map != chunked_map: renderer.chunked_map = chunked_map
+            if renderer and chunked_map and renderer.chunked_map != chunked_map:
+                renderer.chunked_map = chunked_map
+                _bg_root = normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks_bg")
+                renderer.chunked_map_bg = ChunkedMap(root=_bg_root, tile_size=const.TILE_SIZE) if os.path.isdir(_bg_root) else None
+                _fg_root = normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks_fg")
+                renderer.chunked_map_fg = ChunkedMap(root=_fg_root, tile_size=const.TILE_SIZE, use_alpha=True) if os.path.isdir(_fg_root) else None
             if renderer and checkpoints: renderer.checkpoints = checkpoints
 
         # 1b. Gamepad buttons (outside event loop — polled)
@@ -1149,8 +1160,14 @@ def main():
                             const.MAP_NUM = new_map_num
                             track_image = pygame.image.load(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
                             chunked_map = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=const.TILE_SIZE)
+                            _bg_root = normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks_bg")
+                            chunked_map_bg = ChunkedMap(root=_bg_root, tile_size=const.TILE_SIZE) if os.path.isdir(_bg_root) else None
+                            _fg_root = normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks_fg")
+                            chunked_map_fg = ChunkedMap(root=_fg_root, tile_size=const.TILE_SIZE, use_alpha=True) if os.path.isdir(_fg_root) else None
                             renderer.track_image = track_image
                             renderer.chunked_map = chunked_map
+                            renderer.chunked_map_bg = chunked_map_bg
+                            renderer.chunked_map_fg = chunked_map_fg
             if game_mode is not None and net_result.get("race_results"):
                 game_mode.apply_network_results(net_result["race_results"])
             err = net_result.get("error")
