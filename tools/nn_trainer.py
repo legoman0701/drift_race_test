@@ -7,7 +7,7 @@ hundreds of cars can be simulated in parallel.  Raycasts are performed
 against the track-outline polyline (same geometry the path-finder uses),
 NOT the collision mesh.
 
-Inputs (29):
+Inputs (28):
     0  forward_vel        body-frame forward speed (px/frame), normalized
     1  lateral_vel        body-frame lateral speed (px/frame), normalized
     2  angular_vel        yaw rate (deg/frame), normalized
@@ -20,17 +20,16 @@ Inputs (29):
     9  angle_from_path    angle difference to path tangent, normalized
    10..16  7 raycasts     distances to track edge (polyline), normalized
    17 in_bounds           1.0 if on track, 0.0 if off track
-   18 in_drift_zone       1.0 if in a drift zone, 0.0 otherwise
-    19 tangent_300_ahead   angle diff to path tangent 300 px ahead, normalized
-    20 tangent_600_ahead   angle diff to path tangent 600 px ahead, normalized
-    21 tangent_900_ahead   angle diff to path tangent 900 px ahead, normalized
-    22 car_mass            normalized mass of the car
-    23 car_hp              normalized horsepower
-    24 car_front_grip      front wheel grip from specs
-    25 car_rear_grip       rear wheel grip from specs
-    26 car_cornering       cornering stiffness from specs
-    27 car_stiffness       wheel stiffness factor from specs
-    28 car_drivetrain      -1.0 FWD, 0.0 AWD/AWDS, 1.0 RWD
+    18 tangent_300_ahead   angle diff to path tangent 300 px ahead, normalized
+    19 tangent_600_ahead   angle diff to path tangent 600 px ahead, normalized
+    20 tangent_900_ahead   angle diff to path tangent 900 px ahead, normalized
+    21 car_mass            normalized mass of the car
+    22 car_hp              normalized horsepower
+    23 car_front_grip      front wheel grip from specs
+    24 car_rear_grip       rear wheel grip from specs
+    25 car_cornering       cornering stiffness from specs
+    26 car_stiffness       wheel stiffness factor from specs
+    27 car_drivetrain      -1.0 FWD, 0.0 AWD/AWDS, 1.0 RWD
 
 Outputs (3):
     throttle  [-1..1]  (tanh)
@@ -56,10 +55,11 @@ import drift.config.const as const
 import drift.core.car as car_module
 from drift.core.helpers import clamp
 
+
 # === constants ==============================================================
-POPULATION_SIZE   = 50
+POPULATION_SIZE   = 40
 HIDDEN_SIZES      = [24, 18, 18]
-INPUT_SIZE        = 29
+INPUT_SIZE        = 28
 OUTPUT_SIZE       = 3
 MAX_EPISODE_STEPS = 1500
 SIM_DT            = 1.0 / 60.0        # fixed physics timestep
@@ -73,16 +73,18 @@ ANGVEL_NORM       = 20.0
 ANGVEL_NORM_FRAME = ANGVEL_NORM * SIM_DT
 SAVE_EVERY_GEN    = 5
 _SQRT2            = math.sqrt(2)       # undo isometric Y compensation from car.step()
-CHECKPOINT_REWARD = 10.0
-DRIFT_START_RATIO = 0.5
-DRIFT_SIDE_MIN_LATERAL = 20.0
-DRIFT_REWARD_SCALE = 5
+
+# === GLOBAL REWARD SCALING ===
+REWARD_SCALE = 1.0 / 1000.0
+
+CHECKPOINT_REWARD = 20.0 * REWARD_SCALE
+## Drift reward/penalty removed
 WRONG_WAY_ANGLE_THRESHOLD = math.pi * 0.75
-WRONG_WAY_KILL_PENALTY = 4000.0
+WRONG_WAY_KILL_PENALTY = 4000.0 * REWARD_SCALE
 LOOKAHEAD_DIST_1 = 300.0
 LOOKAHEAD_DIST_2 = 600.0
 LOOKAHEAD_DIST_3 = 900.0
-DEAD_FRAME_PENALTY = -200.0
+DEAD_FRAME_PENALTY = -200.0 * REWARD_SCALE
 
 # Available car types (folder names under assets/cars/)
 CAR_TYPES = ["911", "AE86", "barracuda", "mustang", "r34"]
@@ -698,8 +700,7 @@ class TrainingEnv:
             cy = cp["y"] + cp["height"] / 2
             self.checkpoints.append((cx, cy))
 
-        # Load drift zones from metadata
-        self.drift_zones = meta.get("drift_zones", [])
+        # Drift zones removed
 
         self.cars = []
         self.in_bounds = []
@@ -710,10 +711,7 @@ class TrainingEnv:
         self.car_checkpoint_hits = []
         self.car_checkpoint_flash = []
         self.car_last_checkpoint_gain = []
-        self.car_drift_hold_frames = []
-        self.car_drift_side = []
-        self.car_drift_score_total = []
-        self.car_drift_reward_frame = []
+        # Drift state removed
         self.car_oob_frames = []
         self.car_alive = []
         self.smoothed_actions = []    # low-pass filtered inputs per car
@@ -731,10 +729,7 @@ class TrainingEnv:
         self.car_checkpoint_hits = [0] * self.num_cars
         self.car_checkpoint_flash = [0] * self.num_cars
         self.car_last_checkpoint_gain = [0] * self.num_cars
-        self.car_drift_hold_frames = [0] * self.num_cars
-        self.car_drift_side = [0] * self.num_cars
-        self.car_drift_score_total = [0.0] * self.num_cars
-        self.car_drift_reward_frame = [0.0] * self.num_cars
+        # Drift state removed
         self.car_oob_frames = [0] * self.num_cars
         self.car_alive = [True] * self.num_cars
         self.smoothed_actions = [np.array([0.0, 0.0, 0.0]) for _ in range(self.num_cars)]
@@ -897,51 +892,23 @@ class TrainingEnv:
 
         reward = 0.0
         wrong_way_kill = False
-        #reward += seg_advance * 5.0
-        reward += fwd if fwd > 0 else fwd * 7.0
+        #reward += seg_advance * 5.0 * REWARD_SCALE
+        reward += (fwd*3.0 if fwd > 0 else fwd * 7.0) * REWARD_SCALE
         reward += checkpoint_reward
-        reward -= abs(dist_from_path)
+        reward -= abs(dist_from_path) * REWARD_SCALE
         if abs_angle_diff > WRONG_WAY_ANGLE_THRESHOLD:
             reward -= WRONG_WAY_KILL_PENALTY
             wrong_way_kill = True
 
-        drift_ratio = float(getattr(c, "drift_ratio", 0.0))
-        in_drift_zone = _point_in_any_zone(c.x, c.y, self.drift_zones)
-        side = 0
-        if abs(lat) >= DRIFT_SIDE_MIN_LATERAL:
-            side = 1 if lat > 0.0 else -1
 
-        if ib and drift_ratio >= DRIFT_START_RATIO and speed > 50.0:
-            prev_side = self.car_drift_side[i]
-            hold_frames = self.car_drift_hold_frames[i]
-
-            # Snap oversteer: if drift flips side, start a brand-new drift.
-            if prev_side != 0 and side != 0 and side != prev_side:
-                hold_frames = 0
-
-            hold_frames += 1
-            self.car_drift_hold_frames[i] = hold_frames
-
-            if side != 0:
-                self.car_drift_side[i] = side
-
-            hold_seconds = hold_frames * SIM_DT
-            drift_angle = math.atan2(lat, fwd)
-            drift_reward = DRIFT_REWARD_SCALE * drift_ratio * speed * hold_seconds * ((abs(math.sin(drift_angle))*2) ** 2)
-            signed_drift_reward = drift_reward if in_drift_zone else -drift_reward*5
-            reward += signed_drift_reward
-            self.car_drift_score_total[i] += signed_drift_reward
-            self.car_drift_reward_frame[i] = signed_drift_reward
-        else:
-            self.car_drift_hold_frames[i] = 0
-            self.car_drift_side[i] = 0
-            self.car_drift_reward_frame[i] = 0.0
+        # Drift reward/penalty logic removed
 
         alive = not wrong_way_kill
+
         if fwd < 10:
-            reward -= 50
+            reward -= 50 * REWARD_SCALE
         if speed < 5:
-            reward -= 50
+            reward -= 50 * REWARD_SCALE
         if speed < 5 and self.step_count > 120:
             alive = False
         if new_progress < -5:
@@ -950,7 +917,7 @@ class TrainingEnv:
             alive = False
 
         if not alive and not wrong_way_kill:
-            reward -= 2000.0
+            reward -= 2000.0 * REWARD_SCALE
 
         if not ib and not wrong_way_kill:
             reward = 0.0
@@ -977,7 +944,6 @@ class TrainingEnv:
             dist_norm, angle_norm,
             *rays,
             ib_val,
-            1.0 if in_drift_zone else 0.0,
             tang_300_norm,
             tang_600_norm,
             tang_900_norm,
@@ -1085,13 +1051,12 @@ DEBUG_WORLD_RADIUS = 550.0   # how many world-units around the car are visible
 _debug_font = None
 
 
+
 def draw_debug_view(surface, car, edge_segments, ray_angles_rad, edge_grid,
-                    polyline, seg_hint, left_edge, right_edge,
-                    checkpoint_segments=None, next_checkpoint_idx=0,
-                    checkpoint_hits=0, checkpoint_flash=0,
-                    last_checkpoint_gain=0,
-                    drift_hold_frames=0, drift_side=0,
-                    drift_score_total=0.0, drift_reward_frame=0.0):
+                   polyline, seg_hint, left_edge, right_edge,
+                   checkpoint_segments=None, next_checkpoint_idx=0,
+                   checkpoint_hits=0, checkpoint_flash=0,
+                   last_checkpoint_gain=0):
     """Render a zoomed, car-centered physics debug view onto *surface*.
 
     Reproduces the same debug overlays the game uses (wheel grip circles,
@@ -1274,19 +1239,13 @@ def draw_debug_view(surface, car, edge_segments, ray_angles_rad, edge_grid,
     fwd_speed = car.vx * ca_c + car.vy * sa_c
     lat_speed = car.vx * (-sa_c) + car.vy * ca_c
     speed = math.hypot(car.vx, car.vy)
-    drift = getattr(car, "drift_ratio", 0.0)
     car_type = getattr(car, "car_type", "?")
-    drift_side_name = "R" if drift_side > 0 else ("L" if drift_side < 0 else "-")
-    drift_hold_sec = drift_hold_frames * SIM_DT
 
     info_lines = [
         f"Car: {car_type}",
         f"Speed: {speed:.0f}   fwd: {fwd_speed:.0f}   lat: {lat_speed:.0f}",
         f"Angle: {math.degrees(car.angle):.1f} deg   v_angle: {car.v_angle:.2f}",
         f"Grip: {' '.join(f'{g:.2f}' for g in grips)}",
-        f"Drift ratio: {drift:.2f}",
-        f"Drift hold: {drift_hold_sec:.2f}s ({drift_hold_frames}f)  side: {drift_side_name}",
-        f"Drift score: {drift_score_total:.1f}   frame: +{drift_reward_frame:.2f}",
         f"Path dist: {dbg_path_dist:+.1f}  abs: {abs(dbg_path_dist):.1f}",
         f"Tan +300: {tang_300_norm:+.2f} ({math.degrees(tang_300_ahead):.1f} deg)",
         f"Tan +600: {tang_600_norm:+.2f} ({math.degrees(tang_600_ahead):.1f} deg)",
@@ -1412,11 +1371,14 @@ def main():
             best_car = env.cars[best_idx]
             best_fwd = (best_car.vx * math.cos(best_car.angle)
                         + best_car.vy * math.sin(best_car.angle))
-            if (env.car_alive[best_idx]
-                    and env.step_count >= MAX_EPISODE_STEPS
-                    and best_fwd > 30):
+            extend_max_steps = (
+                env.car_alive[best_idx]
+                and env.step_count >= MAX_EPISODE_STEPS
+                and best_fwd > 30
+            )
+            if extend_max_steps:
                 MAX_EPISODE_STEPS += 500
-                MAX_EPISODE_STEPS = min(MAX_EPISODE_STEPS, 8000)
+                MAX_EPISODE_STEPS = min(MAX_EPISODE_STEPS, 5000)
                 ga.mutation_scale *= 0.95
                 print(f"  >> Best AI still moving (fwd={best_fwd:.0f})  "
                       f"MAX_EPISODE_STEPS -> {MAX_EPISODE_STEPS}  "
@@ -1429,8 +1391,16 @@ def main():
                                      f"generation_{ga.generation}.pkl"))
             ga.save(best_path)
 
-            ended_by_all_dead = (alive_n == 0 and env.step_count < MAX_EPISODE_STEPS)
-            observations = env.reset(keep_car_type=ended_by_all_dead)
+            # Switch epoch car type only when a sufficient fraction of AIs survive
+            # at the end of the episode. If >=50% survive, pick a new car next
+            # epoch; otherwise keep the same car so agents can continue learning.
+            alive_frac = float(alive_n) / float(env.num_cars) if env.num_cars > 0 else 0.0
+            keep_car_type = (alive_frac < 0.5)
+            if alive_frac >= 0.5:
+                print(f"  Majority survived ({alive_n}/{env.num_cars} -> {alive_frac:.2f}); switching car next epoch")
+            else:
+                print(f"  Too few survivors ({alive_n}/{env.num_cars} -> {alive_frac:.2f}); keeping car next epoch")
+            observations = env.reset(keep_car_type=keep_car_type)
             _t_start = time.time()
 
         # -- render (lightweight, every 10 steps) ----------------------------
@@ -1512,11 +1482,7 @@ def main():
                                     next_checkpoint_idx=env.car_next_checkpoint[best_alive_idx],
                                     checkpoint_hits=env.car_checkpoint_hits[best_alive_idx],
                                     checkpoint_flash=env.car_checkpoint_flash[best_alive_idx],
-                                    last_checkpoint_gain=env.car_last_checkpoint_gain[best_alive_idx],
-                                    drift_hold_frames=env.car_drift_hold_frames[best_alive_idx],
-                                    drift_side=env.car_drift_side[best_alive_idx],
-                                    drift_score_total=env.car_drift_score_total[best_alive_idx],
-                                    drift_reward_frame=env.car_drift_reward_frame[best_alive_idx])
+                                    last_checkpoint_gain=env.car_last_checkpoint_gain[best_alive_idx])
                 else:
                     debug_surf.fill((20, 22, 28))
                     msg = _debug_font or pygame.font.Font(None, 18)

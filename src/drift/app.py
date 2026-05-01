@@ -614,6 +614,8 @@ def main():
         pass
     # Local player's engine state (avoid mutating Car which may use __slots__)
     engine_state = {"gear": 0, "last_rpm": None}
+    # Debug counter for AI control diagnostics
+    ai_dbg_counter = 0
 
     # controller cooldowns
     ctlr_btn2_time = 0.0 # i'll store last time.time() the X button was pressed (change car)
@@ -685,6 +687,10 @@ def main():
         ai_cars.clear()
         const.AI_PATH_FOLLOW = False
         const.CURSOR_FOLLOW = False
+        try:
+            my_car.is_ai = False
+        except Exception:
+            pass
         host_name = None
         host_ref[0] = False
         if game_mode is not None:
@@ -712,7 +718,19 @@ def main():
 
     def switch_ai_path_mode(stage1):
         const.AI_PATH_FOLLOW = not const.AI_PATH_FOLLOW
-        if const.AI_PATH_FOLLOW: const.CURSOR_FOLLOW = False
+        if const.AI_PATH_FOLLOW:
+            const.CURSOR_FOLLOW = False
+            try:
+                my_car.is_ai = True
+                my_car.target_angle = my_car.angle
+            except Exception:
+                pass
+        else:
+            try:
+                my_car.is_ai = False
+                my_car.target_angle = my_car.angle
+            except Exception:
+                pass
         # stage, substage sock, code, remotes
         try: return stage1, "", sock, code, remotes
         except Exception: return stage1, "", None, None, {}
@@ -934,6 +952,15 @@ def main():
                     ai_controls_ok = True
                 except Exception:
                     pass
+            # Periodic diagnostics: print controls & player velocity when AI controls are active
+            if ai_controls_ok and const.AI_PATH_FOLLOW:
+                ai_dbg_counter += 1
+                if ai_dbg_counter % 60 == 0:
+                    try:
+                        vx, vy = my_car.vx, my_car.vy
+                        print(f"[AI_DBG] controls={controls} is_ai={getattr(my_car,'is_ai',False)} vel=({vx:.2f},{vy:.2f})")
+                    except Exception:
+                        pass
             if not ai_controls_ok:
                 controls = read_inputs(gp, my_car, cam, const.CURSOR_FOLLOW, const.AI_PATH_FOLLOW)
 
@@ -1098,7 +1125,11 @@ def main():
                 my_car.vx, my_car.vy = 0.0, 0.0
                 my_car.v_angle = 0.0
             else:
-                my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG, cursor_follow=const.CURSOR_FOLLOW, cam=cam, collision_mesh=_collision_mesh)
+                my_car.step(
+                    controls, dt, remotes_with_ai_for_player, world_size,
+                    compute_debug=(const.DEBUG or const.AI_PATH_FOLLOW),
+                    cursor_follow=const.CURSOR_FOLLOW, cam=cam, collision_mesh=_collision_mesh
+                )
 
             # Engine audio (single RPM computation, shared with UI HUD)
             try:

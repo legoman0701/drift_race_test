@@ -458,17 +458,22 @@ class Car:
             ( -wheel_x_off, -wheel_y_off),  # Rear Right (RR)
         ]
 
-        wheel_steer_angle = 0
+        # Determine wheel steer angle.
+        # Compute steer assist (applies understeer/oversteer compensation) for all cars.
         steer_bias = 0.0
         if TRANSMITION_SETUP == "RWD":
-            steer_bias = const.STEER_BIAS 
-        if TRANSMITION_SETUP in ["AWD", "AWDS", "FWD"]:
-            steer_bias = const.STEER_BIAS*0.1
+            steer_bias = const.STEER_BIAS
+        elif TRANSMITION_SETUP in ["AWD", "AWDS", "FWD"]:
+            steer_bias = const.STEER_BIAS * 0.1
 
-        if vel_dir_f > 0:
-            wheel_steer_angle = -drift_angle*0.8* steer_bias
+        assist = -drift_angle * 0.8 * steer_bias if vel_dir_f > 0 else 0.0
 
-        wheel_steer_angle += steering_input * MAX_STEER_ANGLE * self.steering_multiplier
+        if getattr(self, "is_ai", False):
+            # AI: use raw steering command but keep assists (under/oversteer)
+            wheel_steer_angle = raw_steering_input * MAX_STEER_ANGLE * self.steering_multiplier + assist
+        else:
+            # Human/keyboard: use target-angle controller plus assists
+            wheel_steer_angle = assist + steering_input * MAX_STEER_ANGLE * self.steering_multiplier
 
         fl_steer = fr_steer = wheel_steer_angle
         if TRANSMITION_SETUP == "AWDS":
