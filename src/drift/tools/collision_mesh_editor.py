@@ -26,12 +26,11 @@ import sys
 import json
 import os
 import math
-from pathlib import Path
 
 # Import from drift module
 try:
     import drift.config.const as const
-    from drift.tools.paths import asset_path, normalize_asset_path
+    from drift.tools.paths import asset_path, get_track_base_image_path
 except ImportError:
     print("Error: Could not import drift modules. Make sure you're running from the project root.")
     sys.exit(1)
@@ -97,11 +96,53 @@ class CollisionMeshEditor:
         # Font for UI
         self.font = pygame.font.SysFont("Arial", 14)
         self.font_large = pygame.font.SysFont("Arial", 18)
+
+    def _switch_map(self, delta):
+        """Switch to previous/next map number and reload image + mesh."""
+        total_maps = max(1, int(getattr(const, "TOTAL_MAPS", 1)))
+        next_map = ((self.map_num - 1 + delta) % total_maps) + 1
+        if next_map == self.map_num:
+            return
+
+        self.map_num = next_map
+        pygame.display.set_caption(f"Collision Mesh Editor - Map {self.map_num}")
+        self.map_image = self._load_map_image()
+        self._load_collision_mesh()
+        self.selected_vertex = None
+        self.hover_vertex = None
+        self.dragging_vertex = False
+        print(f"Switched to map {self.map_num}/{total_maps}")
         
     def _load_map_image(self):
-        """Load the track map image"""
+        """Load and compose track layers for editing (bg + fg when available)."""
         try:
-            map_path = normalize_asset_path("track", f"map{self.map_num}", "main.png")
+            map_key = f"map{self.map_num}"
+            bg_path = asset_path("track", map_key, "main_bg.png")
+            fg_path = asset_path("track", map_key, "main_fg.png")
+
+            bg_img = pygame.image.load(bg_path).convert_alpha() if os.path.exists(bg_path) else None
+            fg_img = pygame.image.load(fg_path).convert_alpha() if os.path.exists(fg_path) else None
+
+            if bg_img is not None or fg_img is not None:
+                # Compose visible layers into one preview image.
+                ref = bg_img if bg_img is not None else fg_img
+                width, height = ref.get_width(), ref.get_height()
+                image = pygame.Surface((width, height), pygame.SRCALPHA)
+                if bg_img is not None:
+                    image.blit(bg_img, (0, 0))
+                if fg_img is not None:
+                    image.blit(fg_img, (0, 0))
+                image = image.convert_alpha()
+                loaded_layers = []
+                if bg_img is not None:
+                    loaded_layers.append("main_bg.png")
+                if fg_img is not None:
+                    loaded_layers.append("main_fg.png")
+                print(f"Loaded map layers: {', '.join(loaded_layers)} ({width}x{height})")
+                return image
+
+            # Fallback to main image when layered files are absent.
+            map_path = get_track_base_image_path(map_key)
             image = pygame.image.load(map_path).convert()
             print(f"Loaded map: {map_path} ({image.get_width()}x{image.get_height()})")
             return image
@@ -145,6 +186,11 @@ class CollisionMeshEditor:
     
     def _load_collision_mesh(self):
         """Load collision mesh from map_meta.json"""
+        # Reset first so maps without collision_mesh do not keep previous data
+        self.shapes = [[]]
+        self.current_shape = 0
+        self.selected_vertex = None
+
         try:
             meta_path = asset_path("track", f"map{self.map_num}", "map_meta.json")
             if os.path.exists(meta_path):
@@ -274,6 +320,10 @@ class CollisionMeshEditor:
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     self.running = False
+                elif event.key == pygame.K_PAGEUP:
+                    self._switch_map(-1)
+                elif event.key == pygame.K_PAGEDOWN:
+                    self._switch_map(1)
                 elif event.key == pygame.K_g:
                     self.show_grid = not self.show_grid
                     print(f"Grid: {'ON' if self.show_grid else 'OFF'}")
@@ -547,11 +597,14 @@ class CollisionMeshEditor:
             "TAB: Next shape",
             "SHIFT+TAB: Previous shape",
             "DELETE/BACKSPACE: Delete shape",
+            "PageUp: Previous map",
+            "PageDown: Next map",
             "ESC: Exit",
             "",
             f"Current Shape: {self.current_shape} / {len(self.shapes) - 1}",
             f"Vertices in shape: {len(self.shapes[self.current_shape])}",
             f"Total shapes: {len(self.shapes)}",
+            f"Map: {self.map_num} / {max(1, int(getattr(const, 'TOTAL_MAPS', 1)))}",
             f"Zoom: {self.zoom:.2f}x",
             f"Grid: {self.grid_size}px ({'ON' if self.show_grid else 'OFF'})",
         ]
@@ -579,6 +632,7 @@ class CollisionMeshEditor:
         print("Use Left Click to place vertices")
         print("Use Right Click to delete vertices")
         print("Use Middle Click + Drag to pan")
+        print("Use PageUp/PageDown to switch maps")
         print("Press N to create new shape, TAB to switch shapes")
         print("Press S to save, L to load, C to clear, ESC to exit")
         print("="*60 + "\n")

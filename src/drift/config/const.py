@@ -1,5 +1,5 @@
 import pygame, string, math
-from drift.tools.paths import get_available_cars
+from drift.tools.paths import get_available_cars, get_track_folders
 
 # ======= APPLICATION INFO =======
 VERSION = "0.7.1"
@@ -60,7 +60,7 @@ TIRE_MARK_GROUND = (220, 220, 220, 220)    # marks on ground
 
 # ======= MAP & TRACK =======
 MAP_NUM = 1
-TOTAL_MAPS = 2 # new map flag
+TOTAL_MAPS = max(1, len(get_track_folders()))  # Numbered tracks map to map_index order
 TILE_SIZE = 512  # Tile size for map chunks
 TRACK_MARGIN = 40
 TRACK_BORDER_WIDTH = 4

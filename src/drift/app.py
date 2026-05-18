@@ -6,7 +6,7 @@
 import pygame, json, time, random, sys, math, uuid, argparse, os
 from collections import deque
 # local imports
-from drift.tools.paths import asset_path, chdir_to_exe_folder_if_frozen, normalize_asset_path, get_available_sprite_layers
+from drift.tools.paths import asset_path, chdir_to_exe_folder_if_frozen, normalize_asset_path, get_available_sprite_layers, get_track_base_image_path
 import drift.config.const as const
 import drift.render.camera as camera
 import drift.core.car as car
@@ -151,7 +151,7 @@ def load_assets_with_progress(screen, clock, engine_sound_id, gpu_display=None):
             
         elif step_key == "track":
             ensure_all_maps_sliced()  # Slice all map chunks once at startup
-            loaded_data["track_image"] = pygame.image.load(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
+            loaded_data["track_image"] = pygame.image.load(get_track_base_image_path(f"map{const.MAP_NUM}")).convert()
             loaded_data["chunk_map"] = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=const.TILE_SIZE)
             _bg_root = normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks_bg")
             loaded_data["chunk_map_bg"] = ChunkedMap(root=_bg_root, tile_size=const.TILE_SIZE) if os.path.isdir(_bg_root) else None
@@ -1158,7 +1158,7 @@ def main():
                             new_map_num = const.MAP_NUM
                         if new_map_num != const.MAP_NUM:
                             const.MAP_NUM = new_map_num
-                            track_image = pygame.image.load(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
+                            track_image = pygame.image.load(get_track_base_image_path(f"map{const.MAP_NUM}")).convert()
                             chunked_map = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=const.TILE_SIZE)
                             _bg_root = normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks_bg")
                             chunked_map_bg = ChunkedMap(root=_bg_root, tile_size=const.TILE_SIZE) if os.path.isdir(_bg_root) else None
@@ -1404,7 +1404,7 @@ def main():
                 except Exception:
                     pass
                 _path_future = path_finder.discover_track_async(
-                    normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png"),
+                    get_track_base_image_path(f"map{const.MAP_NUM}"),
                     start_pos=_disc_start_pos, start_angle=_disc_start_angle,
                 )
 

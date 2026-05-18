@@ -7,7 +7,7 @@ from drift.core.helpers import rand_code
 from drift.net.communication import connect_to_relay, recv_jsons
 from drift.ui.slider import Slider
 from drift.config.settings import settings_manager
-from drift.tools.paths import asset_path, normalize_asset_path
+from drift.tools.paths import asset_path, normalize_asset_path, get_track_base_image_path
 
 AVAILABLE_CARS = const.AVAILABLE_CARS
 
@@ -90,7 +90,7 @@ def _get_map_thumbnail(map_index, thumb_w=100, thumb_h=70):
     if key in _map_thumb_cache:
         return _map_thumb_cache[key]
     try:
-        img = pygame.image.load(normalize_asset_path("track", key, "main.png")).convert()
+        img = pygame.image.load(get_track_base_image_path(key)).convert()
         thumb = pygame.transform.smoothscale(img, (thumb_w, thumb_h))
         _map_thumb_cache[key] = thumb
         return thumb
@@ -1188,7 +1188,7 @@ def _finalize_connection(my_name, code, sock, is_host, host_name, error, is_host
     """Load track assets and return the final result tuple."""
     try: const.MAP_NUM = int(_game_setup["selected_track"][5:])
     except Exception: pass
-    track_image = pygame.image.load(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
+    track_image = pygame.image.load(get_track_base_image_path(f"map{const.MAP_NUM}")).convert()
     chunked_map = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=const.TILE_SIZE)
 
     _cp_rects = []
