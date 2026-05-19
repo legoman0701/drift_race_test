@@ -7,7 +7,7 @@ if __name__ == "__main__":
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
 
 from drift.config import const
-from drift.tools.paths import normalize_asset_path
+from drift.tools.paths import normalize_asset_path, get_track_base_image_path
 
 # Background thread pool for non-blocking track discovery
 _executor = ThreadPoolExecutor(max_workers=1)
@@ -218,5 +218,5 @@ def discover_track_async(map_path, start_pos=(220, 1700), start_angle=90, sample
 
 
 if __name__ == "__main__":
-    polygon = discover_track_visual("track/map1/main.png")
+    polygon = discover_track_visual(get_track_base_image_path(f"map{const.MAP_NUM}"))
     print(f"Discovered track polygon with {len(polygon)} points")

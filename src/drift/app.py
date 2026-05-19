@@ -688,6 +688,7 @@ def main():
     game_mode = None           # active BaseGameMode instance (SimpleRace, etc.)
     _collision_mesh = CollisionMesh([])  # collision polygons from map_meta.json (with spatial hash)
     _path_future = None        # Future for async track discovery
+    _path_future_map_num = None
 
     _ai_debug_surf = None      # Cached surface for AI path debug overlay
     _skip_surf = None          # Cached surface for skip-physics (menu) background
@@ -726,6 +727,31 @@ def main():
         pass
     # Local player's engine state (avoid mutating Car which may use __slots__)
     engine_state = {"gear": 0, "last_rpm": None}
+
+    def _start_path_discovery_for_current_map():
+        """Launch async polygon discovery for the currently selected map."""
+        nonlocal _path_future, _path_future_map_num, path_poly
+        _disc_start_pos, _disc_start_angle = (220, 1700), 90
+        try:
+            import json as _json
+            with open(asset_path("track", f"map{const.MAP_NUM}", "map_meta.json"), "r", encoding="utf-8") as _mf:
+                _meta_disc = _json.load(_mf)
+            _starts = _meta_disc.get("start", []) or []
+            if _starts:
+                _disc_start_pos = (
+                    sum(s["x"] for s in _starts) / len(_starts),
+                    sum(s["y"] for s in _starts) / len(_starts),
+                )
+                _disc_start_angle = math.degrees(sum(s["a"] for s in _starts) / len(_starts))
+        except Exception:
+            pass
+
+        _path_future_map_num = const.MAP_NUM
+        path_poly = []
+        _path_future = path_finder.discover_track_async(
+            get_track_base_image_path(f"map{const.MAP_NUM}"),
+            start_pos=_disc_start_pos, start_angle=_disc_start_angle,
+        )
 
     # controller cooldowns
     ctlr_btn2_time = 0.0 # i'll store last time.time() the X button was pressed (change car)
@@ -1168,6 +1194,9 @@ def main():
                             renderer.chunked_map = chunked_map
                             renderer.chunked_map_bg = chunked_map_bg
                             renderer.chunked_map_fg = chunked_map_fg
+                            _path_future = None
+                            _path_future_map_num = None
+                            path_poly = []
             if game_mode is not None and net_result.get("race_results"):
                 game_mode.apply_network_results(net_result["race_results"])
             err = net_result.get("error")
@@ -1389,32 +1418,17 @@ def main():
             visible_ai = ai_cars if stage1 != "lobby" else []
             world_surf, resized, is_viewport = renderer.render_world(cam, render_stage, my_car, visible_ai, remotes, lights_on, car_sprites_cache)
             if resized and not is_viewport and _path_future is None:
-                _disc_start_pos, _disc_start_angle = (220, 1700), 90
-                try:
-                    import json as _json
-                    with open(asset_path("track", f"map{const.MAP_NUM}", "map_meta.json"), "r", encoding="utf-8") as _mf:
-                        _meta_disc = _json.load(_mf)
-                    _starts = _meta_disc.get("start", []) or []
-                    if _starts:
-                        _disc_start_pos = (
-                            sum(s["x"] for s in _starts) / len(_starts),
-                            sum(s["y"] for s in _starts) / len(_starts),
-                        )
-                        _disc_start_angle = math.degrees(sum(s["a"] for s in _starts) / len(_starts))
-                except Exception:
-                    pass
-                _path_future = path_finder.discover_track_async(
-                    get_track_base_image_path(f"map{const.MAP_NUM}"),
-                    start_pos=_disc_start_pos, start_angle=_disc_start_angle,
-                )
+                _start_path_discovery_for_current_map()
 
             # Poll for async path discovery result
             if _path_future is not None and _path_future.done():
                 try:
-                    path_poly = _path_future.result()
+                    if _path_future_map_num == const.MAP_NUM:
+                        path_poly = _path_future.result()
                 except Exception:
                     path_poly = []
                 _path_future = None
+                _path_future_map_num = None
 
             if gpu_display is not None:
                 final_surf = world_surf if is_viewport else cam.apply_no_scale(world_surf)

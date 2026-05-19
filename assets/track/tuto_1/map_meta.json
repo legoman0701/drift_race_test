@@ -1,7 +1,7 @@
 {
     "map_name": "Acres Fields",
-    "width": "4000",
-    "height": "3000",
+    "width": "2000",
+    "height": "1500",
     "checkpoints": [
         {"id": 0, "name": "middle left", "x": 127, "y": 1867, "width": 255, "height": 118},
         {"id": 1, "name": "middle bottom", "x": 1069, "y": 2175, "width": 144, "height": 191},
