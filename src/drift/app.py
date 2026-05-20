@@ -15,7 +15,8 @@ import drift.ui.button as btn
 import drift.ai.path_finder as path_finder
 from drift.render.renderer import WorldRenderer
 from drift.core.helpers import clamp, rand_name
-from drift.core.gamemode import SimpleRace
+from drift.gamemodes.classicrace import ClassicRace
+from drift.gamemodes.bestlap import BestLap
 from drift.ai.ai import ai_algorithme
 from drift.core.inputs import read_inputs
 from drift.net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, advance_remotes
@@ -639,12 +640,12 @@ def main():
         try:
             from drift.render.gpu_display import GPUDisplay
             gpu_display = GPUDisplay((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), f"drift_race_v{const.VERSION}")
-            print("✓ GPU display initialized via pygame._sdl2")
+            print("GPU display initialized via pygame._sdl2")
             # With the SDL2 Renderer pipeline the window is owned by GPUDisplay.
             # We still need a scratch Surface for loading screens / fallback blits.
             screen = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
         except Exception as e:
-            print(f"✗ GPU display initialization failed: {e}")
+            print(f"GPU display initialization failed: {e}")
             print("  Using software rendering fallback")
             gpu_display = None
     
@@ -685,7 +686,7 @@ def main():
     ai_cars = []
     path_poly = []
     checkpoints = []
-    game_mode = None           # active BaseGameMode instance (SimpleRace, etc.)
+    game_mode = None           # active BaseGameMode instance (ClassicRace, etc.)
     _collision_mesh = CollisionMesh([])  # collision polygons from map_meta.json (with spatial hash)
     _path_future = None        # Future for async track discovery
 
@@ -923,7 +924,7 @@ def main():
     # ══════════════════════════════════════════════════════════
     #  MAIN LOOP  —  strict  Input → Update → Draw  ordering
     # ══════════════════════════════════════════════════════════
-
+    
     while True:
         dt = clock.tick(const.FPS) / 1000.0
 
@@ -1212,7 +1213,7 @@ def main():
                 if stage1 != "leaderboard":
                     game_mode.on_exit(); game_mode = None
 
-            if stage1 == "mode1" and game_mode is None:
+            if stage1.startswith("mode") and game_mode is None:
                 _start_grid = []; _lines = []; _collision_mesh = CollisionMesh([])
                 try:
                     meta_path = asset_path("track", f"map{const.MAP_NUM}", "map_meta.json")
@@ -1226,7 +1227,12 @@ def main():
                     pass
 
                 renderer.collision_mesh = _collision_mesh
-                game_mode = SimpleRace(renderer.checkpoints or [], total_laps=get_game_options()["laps"], start_grid=_start_grid, lines=_lines, local_player_id=my_id, path_poly=path_poly)
+                mode_classes = {0: ClassicRace, 1: BestLap}
+                game_mode = mode_classes.get(const.MODE_INDEX)
+                if game_mode:
+                    game_mode = game_mode(renderer.checkpoints or [], total_laps=get_game_options()["laps"], 
+                                           start_grid=_start_grid, lines=_lines, local_player_id=my_id, path_poly=path_poly)
+
                 _local_result_sent = False
                 _ai_results_sent = {}
                 _mode_players = {my_id: {"car_type": my_car.car_type, "name": my_car.name}}
@@ -1273,7 +1279,7 @@ def main():
             _mode_players_update = dict(remotes)
             for i, ai in enumerate(ai_cars, start=1):
                 _mode_players_update[f"AI-{i}"] = ai
-            mode_result = game_mode.update(dt, _mode_players_update, my_car, I_AM_HOST)
+            mode_result = game_mode.update(dt, _mode_players_update, my_car)
             local_finish_time = game_mode.get_local_finish_time()
             if local_finish_time is not None and not _local_result_sent and sock and code and code != "Offline":
                 try:

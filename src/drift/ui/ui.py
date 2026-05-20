@@ -8,7 +8,7 @@ from drift.core.car import CAR_LEN, CAR_WID
 from drift.core.helpers import clamp
 from drift.ui.ui_helpers import get_cached_text, invalidate_ui_text_cache
 from drift.ui.draw_stage import (
-    draw_mode1, draw_mode2, draw_menu_connection_bar, draw_settings, draw_error,
+    draw_mode, draw_menu_connection_bar, draw_settings, draw_error,
     handle_menu_bar_click, handle_menu_bar_keypress, host_new_game, draw_controls,
     handle_controls_click, handle_controls_keypress, join_new_game,
     get_game_setup, draw_audio_sliders, set_error_message, clear_error_message,
@@ -588,7 +588,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
             draw_controls_hud(ui_surf, ai_path_mode_controls, gamepad, my_car, cam, font_small, dt, engine_state, 7000)
         draw_footer(ui_surf, font_small, code)
 
-    elif stage1 == "mode1":
+    elif stage1.startswith("mode"):
         _menu_bar_rects_cache = None  # Clear cache when in game
         if stage2 == "settings":
             if stage3 == "controls":
@@ -604,33 +604,10 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
                 draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name, ping_ms)
         else:
             _controls_rects_cache = None  # Clear cache when not in settings
-            draw_mode1(ui_surf, font_big, font_medium, cam, checkpoints)
+            draw_mode(ui_surf, font_big, font_medium, cam, checkpoints)
             palette_picker_rects = draw_color_palette_picker(ui_surf, font_small)
             _palette_picker_rects_cache = palette_picker_rects
-            draw_header(ui_surf, font_big, font_small, "Classic Race", fps, host_name, ping_ms)
-            draw_controls_hud(ui_surf, ai_path_mode_controls, gamepad, my_car, cam, font_small, dt, engine_state, 7000)
-        draw_footer(ui_surf, font_small, code)
-
-    elif stage1 == "mode2":
-        _menu_bar_rects_cache = None  # Clear cache when in game
-        if stage2 == "settings": 
-            if stage3 == "controls":
-                controls_rects = draw_controls(ui_surf, font_small)
-                _controls_rects_cache = controls_rects  # Cache for event handling
-                draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name, ping_ms)
-            elif stage3 == "audio":
-                draw_audio_sliders(ui_surf, font_small)
-                draw_header(ui_surf, font_big, font_small, "Audio", fps, host_name, ping_ms)
-            else:
-                _controls_rects_cache = None  # Clear cache when not in controls
-                world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
-                draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name, ping_ms)
-        else:
-            _controls_rects_cache = None  # Clear cache when not in settings
-            draw_mode2(ui_surf, font_big, font_medium, cam, checkpoints)
-            palette_picker_rects = draw_color_palette_picker(ui_surf, font_small)
-            _palette_picker_rects_cache = palette_picker_rects
-            draw_header(ui_surf, font_big, font_small, "Mode 2", fps, host_name, ping_ms)
+            draw_header(ui_surf, font_big, font_small, const.MODES_NAMES[const.MODE_INDEX], fps, host_name, ping_ms)
             draw_controls_hud(ui_surf, ai_path_mode_controls, gamepad, my_car, cam, font_small, dt, engine_state, 7000)
         draw_footer(ui_surf, font_small, code)
 
