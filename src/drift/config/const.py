@@ -68,7 +68,10 @@ TRACK_BORDER_WIDTH = 4
 # ======= CAR PHYSICS =======
 CAR_LEN = 38.0
 CAR_WID = 20.0
-STEER_BIAS = 1.0  # how much the car automatically steers into the drift
+# physics_controls = {
+#     'steer_bias': 1.0
+# }
+# STEER_BIAS = 1.0  # how much the car automatically steers into the drift
 VIEW_ANGLE = 70 * math.pi / 180.0  # radians
 
 # ======= CAR SPRITES =======
@@ -110,6 +113,16 @@ AI_KEY = pygame.K_n                     # add AI car
 DEBUG_TOGGLE_KEY = pygame.K_F3          # toggle debug mode
 # FULLSCREEN_KEY = pygame.K_f             # toggle fullscreen mode
 FULLSCREEN_KEY = []                     # disabled
+
+# audio coefficients
+# VOLUME = {
+#     "master": 1.0,
+#     "music": 1.0,
+#     "sfx": 1.0
+# }
+# MASTER_VOLUME = 1
+# MUSIC_VOLUME = 1
+# SFX_VOLUME = 1
 
 # ======= USERNAME & ROOM CODE =======
 ROOM_ALPHABET = string.ascii_uppercase + string.digits

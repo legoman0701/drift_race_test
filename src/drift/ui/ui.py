@@ -11,13 +11,13 @@ from drift.ui.draw_stage import (
     draw_mode1, draw_mode2, draw_menu_connection_bar, draw_settings, draw_error,
     handle_menu_bar_click, handle_menu_bar_keypress, host_new_game, draw_controls,
     handle_controls_click, handle_controls_keypress, join_new_game,
-    get_game_setup, reset_game_setup, set_error_message, clear_error_message,
+    get_game_setup, draw_audio_sliders, set_error_message, clear_error_message,
     handle_palette_picker_click, handle_palette_picker_keypress,
     draw_color_palette_picker, poll_connection, draw_menu,
     draw_game_options_panel, handle_game_options_click, get_game_options,
-    set_palette_colors_from_car,
+    set_palette_colors_from_car, handle_audio_keypress,
 )
-from drift.config.settings import settings_manager
+from drift.config.settings import physics_controls, audio_volumes
 
 _car_name_font_cache = {} # car name cache
 _palette_cache = {} # palette color sprite cache
@@ -546,6 +546,9 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
                 controls_rects = draw_controls(ui_surf, font_small)
                 _controls_rects_cache = controls_rects
                 draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name, ping_ms)
+            elif stage3 == "audio":
+                draw_audio_sliders(ui_surf, font_small)
+                draw_header(ui_surf, font_big, font_small, "Audio", fps, host_name, ping_ms)
             else:
                 _controls_rects_cache = None
                 world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
@@ -564,6 +567,9 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
                 controls_rects = draw_controls(ui_surf, font_small)
                 _controls_rects_cache = controls_rects  # Cache for event handling
                 draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name, ping_ms)
+            elif stage3 == "audio":
+                draw_audio_sliders(ui_surf, font_small)
+                draw_header(ui_surf, font_big, font_small, "Audio", fps, host_name, ping_ms)
             else:
                 _controls_rects_cache = None  # Clear cache when not in controls
                 world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
@@ -589,6 +595,9 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
                 controls_rects = draw_controls(ui_surf, font_small)
                 _controls_rects_cache = controls_rects  # Cache for event handling
                 draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name, ping_ms)
+            elif stage3 == "audio":
+                draw_audio_sliders(ui_surf, font_small)
+                draw_header(ui_surf, font_big, font_small, "Audio", fps, host_name, ping_ms)
             else:
                 _controls_rects_cache = None  # Clear cache when not in controls
                 world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
@@ -609,6 +618,9 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
                 controls_rects = draw_controls(ui_surf, font_small)
                 _controls_rects_cache = controls_rects  # Cache for event handling
                 draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name, ping_ms)
+            elif stage3 == "audio":
+                draw_audio_sliders(ui_surf, font_small)
+                draw_header(ui_surf, font_big, font_small, "Audio", fps, host_name, ping_ms)
             else:
                 _controls_rects_cache = None  # Clear cache when not in controls
                 world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
@@ -661,6 +673,12 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                         invalidate_ui_text_cache('all')
                     elif result == "back":
                         stage3 = ""
+                elif stage3 == "audio":
+                    result = handle_audio_keypress(ev)
+                    if result == "saved":
+                        invalidate_ui_text_cache('all')
+                    elif result == "back":
+                        stage3 = ""
                 elif stage3 == "" and ev.key == const.ESCAPE_KEY:
                     stage2 = ""
         elif stage1 in ["lobby", "mode1", "mode2", "leaderboard"]: # in game
@@ -671,6 +689,12 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                     result = handle_controls_keypress(ev)
                     if result == "saved":
                         invalidate_ui_text_cache('all')  # Refresh cached text after save
+                    elif result == "back":
+                        stage3 = ""  # Go back to settings menu
+                elif stage3 == "audio":
+                    result = handle_audio_keypress(ev)
+                    if result == "saved":
+                        invalidate_ui_text_cache('all')
                     elif result == "back":
                         stage3 = ""  # Go back to settings menu
                 elif stage3 == "" and ev.key == const.ESCAPE_KEY:
@@ -777,9 +801,9 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                         stage2 = ""
     
     # Handle slider events in settings menu (all event types)
-    if ((stage1 in ["lobby", "mode1", "mode2", "leaderboard"] and stage2 == "settings" and stage3 == "") or 
-        (stage1 == "menu" and stage2 == "settings" and stage3 == "")):
-        settings_manager.handle_slider_events(ev)
+    if (stage2 == "settings" and stage3 in ["", "audio"]):
+        physics_controls.handle_slider_events(ev)
+        audio_volumes.handle_slider_events(ev)
 
     return ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map, checkpoints
 

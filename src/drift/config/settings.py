@@ -7,25 +7,17 @@ import drift.config.const as const
 class SettingsManager:
     """Manages game settings including sliders and toggles."""
     
-    def __init__(self):
+    def __init__(self, settings):
         # Settings state - these will sync with const values
-        self.settings = {
-            'steer_bias': const.STEER_BIAS,
-        }
+        self.settings = settings
         self.sliders = {}
         
-    def get_setting(self, key):
-        """Get current value of a setting."""
+    def get_value(self, key):
         return self.settings.get(key, None)
     
-    def set_setting(self, key, value):
-        """Set a setting value and update the corresponding const."""
+    def set_value(self, key, value): # update value from key
         self.settings[key] = value
-        
-        # Update the corresponding constant
-        if key == 'steer_bias':
-            const.STEER_BIAS = value
-            
+
     def add_slider(self, key, slider):
         """Register a slider with the settings manager."""
         self.sliders[key] = slider
@@ -44,12 +36,21 @@ class SettingsManager:
             
             # If value changed, update settings
             if new_value != old_value:
-                self.set_setting(key, new_value)
+                self.set_value(key, new_value)
                 
     def draw_sliders(self, surface):
         """Draw all managed sliders."""
         for slider in self.sliders.values():
             slider.draw(surface)
 
-# Global settings manager instance
-settings_manager = SettingsManager()
+controls = {
+    'steer_bias': 1.0
+}
+physics_controls = SettingsManager(controls)
+
+volumes = {
+    'master_volume': 1.0,
+    'music_volume': 1.0,
+    'sfx_volume': 1.0
+}
+audio_volumes = SettingsManager(volumes)
