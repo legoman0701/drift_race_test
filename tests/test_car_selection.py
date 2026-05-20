@@ -15,10 +15,10 @@ pygame.init()
 try:
     ae86_model = _load_car_specs("ae86")
     barracuda_model = _load_car_specs("barracuda")
-    print(f"✓ ae86: {ae86_model}")
-    print(f"✓ barracuda: {barracuda_model}")
+    print(f"ae86: {ae86_model}")
+    print(f"barracuda: {barracuda_model}")
 except Exception as e:
-    print(f"✗ Car specs loading error: {e}")
+    print(f"Car specs loading error: {e}")
     sys.exit(1)
 
-print("✓ All tests passed! Car selection modifications should work.")
+print("All tests passed! Car selection modifications should work.")

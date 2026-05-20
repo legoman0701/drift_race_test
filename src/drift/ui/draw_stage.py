@@ -583,12 +583,12 @@ def _draw_options_mode_page(ui_surf, font_big, font_medium, font_small,
     y = py + _CONTENT_PAD
 
     # Mode selector with decorative current car
-    mode_labels = ["Simple Race"]
+    # mode_labels = ["Simple Race"]
     current_car = AVAILABLE_CARS[_game_options["selected_car_index"] % len(AVAILABLE_CARS)] if AVAILABLE_CARS else None
     y = _draw_item_selector(ui_surf, font_medium, font_small, car_sprites_cache,
                             "Mode", _game_options["selected_mode_index"],
-                            mode_labels, px, y, rects, "mode",
-                            show_car=True, car_id_override=current_car)
+                            const.MODES_NAMES, px, y, rects, "mode",
+                            show_car=False, car_id_override=current_car)
 
     # Laps section
     y += 5
@@ -751,12 +751,15 @@ def handle_game_options_click(click_pos, rects, is_host, room_clients_count=1):
             return "map_next"
 
         # Mode selection
-        if name == "mode_up":
-            # Only 1 mode for now
-            pass
+        if name == "mode_up" and is_host:
+            total = len(const.MODES_NAMES)
+            _game_options["selected_mode_index"] = (_game_options["selected_mode_index"] - 1) % total
+            const.MODE_INDEX = _game_options["selected_mode_index"]
             return "mode_prev"
-        if name == "mode_down":
-            pass
+        if name == "mode_down" and is_host:
+            total = len(const.MODES_NAMES)
+            _game_options["selected_mode_index"] = (_game_options["selected_mode_index"] + 1) % total
+            const.MODE_INDEX = _game_options["selected_mode_index"]
             return "mode_next"
 
         # Laps
@@ -785,7 +788,7 @@ def handle_game_options_click(click_pos, rects, is_host, room_clients_count=1):
     return None
 
 
-def draw_mode1(ui_surf, font_big, font_medium, cam, cp_rects=[]):
+def draw_mode(ui_surf, font_big, font_medium, cam, cp_rects=[]):
     # screen dimensions for culling
     if not cp_rects:
         return {}
@@ -793,12 +796,7 @@ def draw_mode1(ui_surf, font_big, font_medium, cam, cp_rects=[]):
     screen_rect = ui_surf.get_rect()
     
     # draw checkpoints
-    for rect in cp_rects:
-        # Transform world coordinates to screen coordinates
-        # using the camera's offset and zoom
-        # The camera center is at cam.x, cam.y
-        # Screen center is at const.WINDOW_WIDTH // 2, const.WINDOW_HEIGHT // 2
-        
+    for rect in cp_rects:        
         # Calculate position relative to camera center
         rel_x = rect.x - cam.x
         rel_y = rect.y - cam.y
@@ -815,47 +813,6 @@ def draw_mode1(ui_surf, font_big, font_medium, cam, cp_rects=[]):
         # Draw only if visible on screen (culling)
         if screen_rect.colliderect(draw_rect):
             pygame.draw.rect(ui_surf, (0, 255, 0), draw_rect, 2)
-            
-            # Optional: Draw label ID
-            # label = font_medium.render(str(cp_rects.index(rect)), True, const.WHITE_240)
-            # ui_surf.blit(label, draw_rect.center)
-
-    return {}
-
-def draw_mode2(ui_surf, font_big, font_medium, cam, cp_rects=[]):
-    # screen dimensions for culling
-    if not cp_rects:
-        return {}
-    
-    screen_rect = ui_surf.get_rect()
-    
-    # draw checkpoints
-    for rect in cp_rects:
-        # Transform world coordinates to screen coordinates
-        # using the camera's offset and zoom
-        # The camera center is at cam.x, cam.y
-        # Screen center is at const.WINDOW_WIDTH // 2, const.WINDOW_HEIGHT // 2
-        
-        # Calculate position relative to camera center
-        rel_x = rect.x - cam.x
-        rel_y = rect.y - cam.y
-        
-        # Scale by zoom and offset by screen center
-        screen_x = int(rel_x * cam.zoom + const.WINDOW_WIDTH / 2)
-        screen_y = int(rel_y * cam.zoom + const.WINDOW_HEIGHT / 2)
-        
-        width = int(rect.width * cam.zoom)
-        height = int(rect.height * cam.zoom)
-        
-        draw_rect = pygame.Rect(screen_x, screen_y, width, height)
-        
-        # Draw only if visible on screen (culling)
-        if screen_rect.colliderect(draw_rect):
-            pygame.draw.rect(ui_surf, (0, 255, 0), draw_rect, 2)
-            
-            # Optional: Draw label ID
-            # label = font_medium.render(str(cp_rects.index(rect)), True, const.WHITE_240)
-            # ui_surf.blit(label, draw_rect.center)
 
     return {}
 

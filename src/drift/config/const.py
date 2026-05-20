@@ -2,7 +2,7 @@ import pygame, string, math
 from drift.tools.paths import get_available_cars
 
 # ======= APPLICATION INFO =======
-VERSION = "0.7.1"
+VERSION = "0.7.2"
 
 # ======= NETWORK =======
 RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
@@ -57,6 +57,10 @@ TRACK_BORDER_COLOR = (80, 90, 100)
 # Tire mark colors
 TIRE_MARK_SMOKE = (255, 255, 255, 100)     # smoke while drifting
 TIRE_MARK_GROUND = (220, 220, 220, 220)    # marks on ground
+
+# ======= MODES =======
+MODE_INDEX = 1
+MODES_NAMES = ["ClassicRace", "BestLap"] # new mode flag
 
 # ======= MAP & TRACK =======
 MAP_NUM = 1
@@ -114,23 +118,13 @@ DEBUG_TOGGLE_KEY = pygame.K_F3          # toggle debug mode
 # FULLSCREEN_KEY = pygame.K_f             # toggle fullscreen mode
 FULLSCREEN_KEY = []                     # disabled
 
-# audio coefficients
-# VOLUME = {
-#     "master": 1.0,
-#     "music": 1.0,
-#     "sfx": 1.0
-# }
-# MASTER_VOLUME = 1
-# MUSIC_VOLUME = 1
-# SFX_VOLUME = 1
-
 # ======= USERNAME & ROOM CODE =======
 ROOM_ALPHABET = string.ascii_uppercase + string.digits
 JOIN_CODE_LEN = 4
 MAX_CODE_LENGTH = 12
 MIN_NAME_LENGTH = 3
 MAX_NAME_LENGTH = 12
-PROFANITY_SET = {"cerise", "fraise"} # unused
+PROFANITY_SET = {"cerise", "orange"} # unused
 
 # Keyboard input settings
 KEY_REPEAT_DELAY = 250

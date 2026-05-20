@@ -754,7 +754,6 @@ class Car:
         inertia_z = MASS * (CAR_LEN**2 + CAR_WID**2) / 12.0
         angular_accel = total_torque_z / max(1e-4, inertia_z)
         self.v_angle += angular_accel * dt
-        # print(angular_accel * dt)
         
         # Apply deadzone to angular velocity to prevent drift from numerical errors
         # When rotating very slowly, snap to zero
