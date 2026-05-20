@@ -6,6 +6,7 @@ Provides rough, aggressive gear shift sounds for drift racing.
 import pygame, time, threading
 from typing import List
 from drift.tools.paths import asset_path
+from drift.config.settings import audio_volumes
 
 
 class GearShiftSound:
@@ -222,7 +223,8 @@ class GearShiftSound:
             
             # Play the selected shift sound
             selected_sound = self.shift_sounds[sound_index]
-            selected_sound.set_volume(volume*0.02)
+            coef = audio_volumes.get_value("master_volume") * audio_volumes.get_value("sfx_volume")
+            selected_sound.set_volume(volume*0.02 * coef)
             selected_sound.play()
             
             # print(f"Gear shift: {old_gear} -> {new_gear}, RPM: {rpm:.0f}, Volume: {volume:.2f}")
@@ -250,7 +252,8 @@ class GearShiftSound:
             drift_factor = 1.0 + (drift_ratio * 0.5)
             
             # Calculate final volume
-            final_volume = base_volume * throttle_factor * rpm_factor * drift_factor
+            coef = audio_volumes.get_value("master_volume") * audio_volumes.get_value("sfx_volume")
+            final_volume = base_volume * throttle_factor * rpm_factor * drift_factor * coef
             final_volume = max(0.0, min(1.0, final_volume))  # Ensure audible but not too loud
             
             # Play short BOV burst
@@ -292,8 +295,9 @@ class GearShiftSound:
                 volume = min(volume, self.shift_up_volume)
             
             try:
+                coef = audio_volumes.get_value("master_volume") * audio_volumes.get_value("sfx_volume")
                 selected_sound = self.shift_sounds[sound_index]
-                selected_sound.set_volume(volume)
+                selected_sound.set_volume(volume * coef)
                 selected_sound.play()
                 self.last_shift_time = current_time
             except Exception as e:

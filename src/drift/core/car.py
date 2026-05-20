@@ -1,6 +1,6 @@
 import json, math, time
 import drift.config.const as const
-import drift.config.settings as settings
+from drift.config.settings import physics_controls
 from drift.tools.paths import normalize_asset_path
 from drift.core.rpm import RpmParams
 
@@ -478,9 +478,9 @@ class Car:
         wheel_steer_angle = 0
         steer_bias = 0.0
         if TRANSMITION_SETUP == "RWD":
-            steer_bias = settings.physics_controls.get_value('steer_bias')
+            steer_bias = physics_controls.get_value('steer_bias')
         elif TRANSMITION_SETUP in ["AWD", "AWDS", "FWD"]:
-            steer_bias = settings.physics_controls.get_value('steer_bias') * 0.1
+            steer_bias = physics_controls.get_value('steer_bias') * 0.1
 
         if vel_dir_f > 0:
             wheel_steer_angle = -drift_angle*0.8* steer_bias

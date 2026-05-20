@@ -69,11 +69,11 @@ def apply_driver_assists(inputs: Dict[str, float], car, dt: float) -> Dict[str, 
     snap into a spin from excessive front input.
     """
     import math
-    import drift.config.settings as settings
+    from drift.config.settings import physics_controls
 
     drivetrain = car.specs.get("specs", {}).get("drivetrain",
                     car.specs.get("drivetrain", "RWD"))
-    steer_bias_base = settings.physics_controls.get_value('steer_bias') if settings.physics_controls else 0.0
+    steer_bias_base = physics_controls.get_value('steer_bias') if physics_controls else 0.0
     steer_bias = steer_bias_base if drivetrain == "RWD" else steer_bias_base * 0.1
 
     user_st = float(inputs.get("st", 0.0))
