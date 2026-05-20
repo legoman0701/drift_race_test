@@ -1,6 +1,5 @@
 import pygame, json, time, math, random
 import drift.config.const as const
-import drift.config.settings as settings
 from drift.render.map_chunks import ChunkedMap
 from drift.ui.ui_helpers import invalidate_ui_text_cache, get_cached_text
 from drift.ui.button import Button
@@ -1245,7 +1244,7 @@ def draw_settings(ui_surf, world_surf, world_size, buttons, stage_path, font_sma
             slider_y = const.WINDOW_HEIGHT * 0.75  # Position below buttons
             slider = Slider(
                 x=slider_x, y=slider_y, width=200, height=30,
-                min_val=0.5, max_val=1.5, current_val=settings.physics_controls.get_value("steer_bias"),
+                min_val=0.5, max_val=1.5, current_val=physics_controls.get_value("steer_bias"),
                 label="Steer Bias:", font=font_small
             )
             physics_controls.add_slider('steer_bias', slider)
@@ -1409,22 +1408,22 @@ def draw_audio_sliders(ui_surf, font_small):
     # (self, x, y, width, height, min_val, max_val, current_val, label, font)
     if 'master_volume' not in audio_volumes.sliders:
         master_slider = Slider(
-            x=const.WINDOW_WIDTH // 2 - 100, y=int(const.WINDOW_HEIGHT * 0.3),
-            width=200, height=30, min_val=0.0, max_val=1.0, current_val=settings.audio_volumes.get_value("master_volume"),
+            x=const.WINDOW_WIDTH // 2 - 100, y=int(const.WINDOW_HEIGHT * 0.4),
+            width=200, height=30, min_val=0.0, max_val=1.0, current_val=audio_volumes.get_value("master_volume"),
             label="Master Volume:", font=font_small
         )
         audio_volumes.add_slider('master_volume', master_slider)
     if 'music_volume' not in audio_volumes.sliders:
         music_slider = Slider(
-            x=const.WINDOW_WIDTH // 2 - 100, y=int(const.WINDOW_HEIGHT * 0.4),
-            width=200, height=30, min_val=0.0, max_val=1.0, current_val=settings.audio_volumes.get_value("music_volume"),
+            x=const.WINDOW_WIDTH // 2 - 100, y=int(const.WINDOW_HEIGHT * 0.5),
+            width=200, height=30, min_val=0.0, max_val=1.0, current_val=audio_volumes.get_value("music_volume"),
             label="Music Volume:", font=font_small
         )
         audio_volumes.add_slider('music_volume', music_slider)
     if 'sfx_volume' not in audio_volumes.sliders:
         sfx_slider = Slider(
-            x=const.WINDOW_WIDTH // 2 - 100, y=int(const.WINDOW_HEIGHT * 0.5),
-            width=200, height=30, min_val=0.0, max_val=1.0, current_val=settings.audio_volumes.get_value("sfx_volume"),
+            x=const.WINDOW_WIDTH // 2 - 100, y=int(const.WINDOW_HEIGHT * 0.6),
+            width=200, height=30, min_val=0.0, max_val=1.0, current_val=audio_volumes.get_value("sfx_volume"),
             label="SFX Volume:", font=font_small
         )
         audio_volumes.add_slider('sfx_volume', sfx_slider)

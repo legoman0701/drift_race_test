@@ -8,7 +8,6 @@ from collections import deque
 # local imports
 from drift.tools.paths import asset_path, chdir_to_exe_folder_if_frozen, normalize_asset_path, get_available_sprite_layers
 import drift.config.const as const
-import drift.config.settings as settings
 import drift.render.camera as camera
 import drift.core.car as car
 from drift.core.car import get_car_engine_sound_id, CollisionMesh
@@ -1497,8 +1496,6 @@ def main():
         # ────────────────────────────────────────────────────
         # PHASE 7 · PRESENT
         # ────────────────────────────────────────────────────
-
-        # print(f"MASTER_VOLUME: {settings.audio_volumes.get_value('master_volume')}, MUSIC_VOLUME: {settings.audio_volumes.get_value('music_volume')}, SFX_VOLUME: {settings.audio_volumes.get_value('sfx_volume')}, STEER_BIAS: {settings.physics_controls.get_value('steer_bias')}")
 
         profiler.begin("present")
         if gpu_display is not None:
