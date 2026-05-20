@@ -1,12 +1,13 @@
 import pygame, json, time, math, random
 import drift.config.const as const
+import drift.config.settings as settings
 from drift.render.map_chunks import ChunkedMap
 from drift.ui.ui_helpers import invalidate_ui_text_cache, get_cached_text
 from drift.ui.button import Button
 from drift.core.helpers import rand_code
 from drift.net.communication import connect_to_relay, recv_jsons
 from drift.ui.slider import Slider
-from drift.config.settings import settings_manager
+from drift.config.settings import physics_controls, audio_volumes
 from drift.tools.paths import asset_path, normalize_asset_path
 
 AVAILABLE_CARS = const.AVAILABLE_CARS
@@ -1239,18 +1240,18 @@ def draw_settings(ui_surf, world_surf, world_size, buttons, stage_path, font_sma
     # Draw STEER_BIAS slider
     if font_small is not None:
         # Initialize slider if not already done
-        if 'steer_bias' not in settings_manager.sliders:
+        if 'steer_bias' not in physics_controls.sliders:
             slider_x = const.WINDOW_WIDTH // 2 - 100
             slider_y = const.WINDOW_HEIGHT * 0.75  # Position below buttons
             slider = Slider(
                 x=slider_x, y=slider_y, width=200, height=30,
-                min_val=0.5, max_val=1.5, current_val=const.STEER_BIAS,
+                min_val=0.5, max_val=1.5, current_val=settings.physics_controls.get_value("steer_bias"),
                 label="Steer Bias:", font=font_small
             )
-            settings_manager.add_slider('steer_bias', slider)
+            physics_controls.add_slider('steer_bias', slider)
         
         # Draw the slider
-        settings_manager.draw_sliders(ui_surf)
+        physics_controls.draw_sliders(ui_surf)
 
     return world_surf, button_results
 
@@ -1404,6 +1405,32 @@ def draw_controls(ui_surf, font_small):
     
     return {**bind_rects, **gp_rects}
 
+def draw_audio_sliders(ui_surf, font_small):
+    # (self, x, y, width, height, min_val, max_val, current_val, label, font)
+    if 'master_volume' not in audio_volumes.sliders:
+        master_slider = Slider(
+            x=const.WINDOW_WIDTH // 2 - 100, y=int(const.WINDOW_HEIGHT * 0.3),
+            width=200, height=30, min_val=0.0, max_val=1.0, current_val=settings.audio_volumes.get_value("master_volume"),
+            label="Master Volume:", font=font_small
+        )
+        audio_volumes.add_slider('master_volume', master_slider)
+    if 'music_volume' not in audio_volumes.sliders:
+        music_slider = Slider(
+            x=const.WINDOW_WIDTH // 2 - 100, y=int(const.WINDOW_HEIGHT * 0.4),
+            width=200, height=30, min_val=0.0, max_val=1.0, current_val=settings.audio_volumes.get_value("music_volume"),
+            label="Music Volume:", font=font_small
+        )
+        audio_volumes.add_slider('music_volume', music_slider)
+    if 'sfx_volume' not in audio_volumes.sliders:
+        sfx_slider = Slider(
+            x=const.WINDOW_WIDTH // 2 - 100, y=int(const.WINDOW_HEIGHT * 0.5),
+            width=200, height=30, min_val=0.0, max_val=1.0, current_val=settings.audio_volumes.get_value("sfx_volume"),
+            label="SFX Volume:", font=font_small
+        )
+        audio_volumes.add_slider('sfx_volume', sfx_slider)
+    
+    audio_volumes.draw_sliders(ui_surf)
+
 def handle_controls_click(click_pos, all_rects, gamepad):
     """Handle mouse clicks on key bind rectangles and gamepad rows.
     
@@ -1476,4 +1503,8 @@ def handle_controls_keypress(event):
     if event.key == pygame.K_ESCAPE:
         return "back"
     
+    return None
+
+def handle_audio_keypress(event):
+    if event.key == pygame.K_ESCAPE: return "back"
     return None
