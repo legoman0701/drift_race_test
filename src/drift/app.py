@@ -612,66 +612,6 @@ def draw_tutorial_overlay(surface, font_small, frame_state):
     surface.blit(panel, (x, y))
 
 
-def _world_to_screen(cam, wx: float, wy: float) -> tuple[int, int]:
-    sx = int((wx - cam.x) * cam.zoom + const.WINDOW_WIDTH * 0.5)
-    sy = int((wy - cam.y) * cam.zoom + const.WINDOW_HEIGHT * 0.5)
-    return sx, sy
-
-
-def draw_tutorial_end_marker(surface, font_small, cam, tutorial_ctrl, tutorial_end_zone=None):
-    if tutorial_ctrl is None:
-        return
-
-    zone = None
-    if isinstance(tutorial_end_zone, pygame.Rect):
-        zone = tutorial_end_zone
-    elif isinstance(tutorial_end_zone, dict):
-        try:
-            zone = pygame.Rect(
-                int(tutorial_end_zone.get("x", 0)),
-                int(tutorial_end_zone.get("y", 0)),
-                max(1, int(tutorial_end_zone.get("width", 1))),
-                max(1, int(tutorial_end_zone.get("height", 1))),
-            )
-        except Exception:
-            zone = None
-
-    if zone is None:
-        if not getattr(tutorial_ctrl, "has_steps", False):
-            return
-        try:
-            end_step = tutorial_ctrl.steps[-1]
-            zone = end_step.zone
-        except Exception:
-            return
-
-    zx, zy = float(zone.x), float(zone.y)
-    zw, zh = float(zone.width), float(zone.height)
-    left_top = _world_to_screen(cam, zx, zy)
-    rect_w = max(2, int(zw * cam.zoom))
-    rect_h = max(2, int(zh * cam.zoom))
-    rect = pygame.Rect(left_top[0], left_top[1], rect_w, rect_h)
-
-    done = bool(getattr(tutorial_ctrl, "is_done", False))
-    border = (90, 220, 140) if done else (245, 210, 90)
-    fill = (36, 64, 44, 70) if done else (80, 68, 24, 70)
-
-    if rect.colliderect(surface.get_rect()):
-        marker = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
-        marker.fill(fill)
-        surface.blit(marker, rect.topleft)
-        pygame.draw.rect(surface, border, rect, 2)
-
-    cx, cy = _world_to_screen(cam, zx + zw * 0.5, zy + zh * 0.5)
-    pygame.draw.circle(surface, border, (cx, cy), 10, 2)
-    pygame.draw.line(surface, border, (cx - 7, cy), (cx + 7, cy), 2)
-    pygame.draw.line(surface, border, (cx, cy - 7), (cx, cy + 7), 2)
-
-    label = "END" if not done else "DONE"
-    text = font_small.render(label, True, border)
-    surface.blit(text, (cx - text.get_width() // 2, cy - 24))
-
-
 def _tutorial_bootstrap_ai_controls(my_car, tutorial_ctrl):
     """Fallback AI while path discovery is pending in tutorial mode."""
     controls = {"th": 1.0, "st": 0.0, "br": 0.0}
@@ -1697,6 +1637,24 @@ def main():
                     rewind_playback_active = True
                     renderer.clear_tire_marks()
 
+            # End-zone completion: leave tutorial as soon as player reaches it.
+            if stage1 == "mode_tutorial" and tutorial_end_zone is not None:
+                try:
+                    if tutorial_end_zone.collidepoint(my_car.x, my_car.y):
+                        stage1 = "menu"
+                        stage2 = ""
+                        stage3 = ""
+                        tutorial_ctrl = None
+                        tutorial_frame_state = None
+                        tutorial_end_zone = None
+                        rewind_playback = []
+                        rewind_playback_idx = 0
+                        rewind_playback_active = False
+                        rewind_history.clear()
+                        time_scale = 1.0
+                except Exception:
+                    pass
+
             # Engine audio (single RPM computation, shared with UI HUD)
             try:
                 if audio_initialized and (engine_audio is not None or shift_sound is not None):
@@ -1813,7 +1771,6 @@ def main():
         draw_chunk_minimap(ui_surf, renderer)
         draw_minimap(ui_surf, path_poly, world_size, my_car, remotes, ai_cars, stage1)
         if stage1 == "mode_tutorial":
-            draw_tutorial_end_marker(ui_surf, font_small, cam, tutorial_ctrl, tutorial_end_zone)
             draw_tutorial_overlay(ui_surf, font_small, tutorial_frame_state)
         profiler.end("ui")
 

@@ -204,18 +204,36 @@ class TutorialController:
         requires_accelerate = "accelerate" in step.actions
         requires_straighten = any(a in step.actions for a in ("straighten_out", "straighten", "straight"))
 
+        # Non-requested controls must stay mostly inactive while holding a step.
+        steer_idle_max = const.TUTORIAL_STEER_INPUT_THRESHOLD * 0.35
+        accel_idle_max = const.TUTORIAL_ACCEL_INPUT_THRESHOLD * 0.35
+        brake_idle_max = const.TUTORIAL_BRAKE_INPUT_THRESHOLD * 0.35
+        steer_straight_max = const.TUTORIAL_STEER_INPUT_THRESHOLD * 0.5
+
         input_ok = True
+        # Guard against conflicting step definitions.
+        if (requires_turn_right and requires_turn_left) or (requires_straighten and (requires_turn_right or requires_turn_left)):
+            input_ok = False
+
         if requires_turn_right:
             input_ok = input_ok and (st >= const.TUTORIAL_STEER_INPUT_THRESHOLD)
-        if requires_turn_left:
+        elif requires_turn_left:
             input_ok = input_ok and (st <= -const.TUTORIAL_STEER_INPUT_THRESHOLD)
+        elif requires_straighten:
+            # Require near-neutral steering while holding the combo.
+            input_ok = input_ok and (abs(st) <= steer_straight_max)
+        else:
+            input_ok = input_ok and (abs(st) <= steer_idle_max)
+
         if requires_brake:
             input_ok = input_ok and (br >= const.TUTORIAL_BRAKE_INPUT_THRESHOLD)
+        else:
+            input_ok = input_ok and (br <= brake_idle_max)
+
         if requires_accelerate:
             input_ok = input_ok and (th >= const.TUTORIAL_ACCEL_INPUT_THRESHOLD)
-        if requires_straighten:
-            # Require near-neutral steering while holding the combo.
-            input_ok = input_ok and (abs(st) <= const.TUTORIAL_STEER_INPUT_THRESHOLD * 0.5)
+        else:
+            input_ok = input_ok and (th <= accel_idle_max)
 
         # Tutorial progression is purely based on holding the requested controls
         # long enough, independent of vehicle motion/heading changes.
