@@ -61,7 +61,8 @@ _map_thumb_cache = {}
 _illustration_cache = {}
 
 _MODE_OPTIONS = [
-    ("mode1", "Simple Race"),
+    ("mode1", "ClassicRace"),
+    ("mode2", "BestLap"),
 ]
 
 
@@ -90,7 +91,7 @@ def set_game_option(key, value):
     _game_options[key] = value
 
 def _get_map_names():
-    """Return list of (track_key, display_name) for all maps."""
+    """Return list of (track_key, display_name) for non-tutorial maps."""
     maps = []
     for i in range(1, const.TOTAL_MAPS + 1):
         key = f"track{i}"
@@ -101,6 +102,12 @@ def _get_map_names():
                     _map_meta_cache[key] = json.load(fh)
             except Exception:
                 _map_meta_cache[key] = {"map_name": f"Map {i}"}
+        meta = _map_meta_cache.get(key) or {}
+        tutorial = meta.get("tutorial") if isinstance(meta, dict) else None
+        tutorial_steps = tutorial.get("steps") if isinstance(tutorial, dict) else None
+        # Keep tutorial map out of the regular map selection screen.
+        if isinstance(tutorial_steps, list) and len(tutorial_steps) > 0:
+            continue
         maps.append((key, _map_meta_cache[key].get("map_name", f"Map {i}")))
     return maps
 
@@ -501,6 +508,11 @@ def _draw_options_main_page(ui_surf, font_big, font_medium, font_small,
     if is_host:
         # ── Map section ──
         maps = _get_map_names()
+        if maps:
+            # Clamp selection to non-tutorial map list and keep setup in sync.
+            safe_idx = _game_options["selected_map_index"] % len(maps)
+            _game_options["selected_map_index"] = safe_idx
+            _game_setup["selected_track"] = maps[safe_idx][0]
         map_labels = [m[1] for m in maps]
         y = _draw_item_selector(ui_surf, font_medium, font_small, None,
                                 "Map", _game_options["selected_map_index"],
