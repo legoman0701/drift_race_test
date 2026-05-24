@@ -3,7 +3,7 @@ from collections import OrderedDict
 from typing import Tuple, Optional, Iterable
 import os, drift.config.const as const
 import json
-from drift.tools.paths import asset_path
+from drift.tools.paths import asset_path, get_track_base_image_path
 
 # Module-level flag: True once ensure_all_maps_sliced() has run
 _maps_sliced = False
@@ -17,21 +17,24 @@ def ensure_all_maps_sliced() -> None:
     # Import here to avoid circular import at module load
     from drift.tools.slice_map import slice_map
     for map_num in range(1, const.TOTAL_MAPS + 1):
-        slice_map(
-            input_path=asset_path("track", f"map{map_num}", "main.png"),
-            outdir=asset_path("track", f"map{map_num}", "chunks"),
-            tile=const.TILE_SIZE,
-            indexing="zero",
-            prefix="",
-            pad_color=(28, 28, 28, 255),
-            force=False,
-        )
+        map_key = f"map{map_num}"
+        base_path = get_track_base_image_path(map_key)
+        if os.path.exists(base_path):
+            slice_map(
+                input_path=base_path,
+                outdir=asset_path("track", map_key, "chunks"),
+                tile=const.TILE_SIZE,
+                indexing="zero",
+                prefix="",
+                pad_color=(28, 28, 28, 255),
+                force=False,
+            )
         # Background layer (_bg): always rendered behind cars
-        bg_path = asset_path("track", f"map{map_num}", "main_bg.png")
+        bg_path = asset_path("track", map_key, "main_bg.png")
         if os.path.exists(bg_path):
             slice_map(
                 input_path=bg_path,
-                outdir=asset_path("track", f"map{map_num}", "chunks_bg"),
+                outdir=asset_path("track", map_key, "chunks_bg"),
                 tile=const.TILE_SIZE,
                 indexing="zero",
                 prefix="",
@@ -39,11 +42,11 @@ def ensure_all_maps_sliced() -> None:
                 force=False,
             )
         # Foreground layer (_fg): depth-sorted against cars
-        fg_path = asset_path("track", f"map{map_num}", "main_fg.png")
+        fg_path = asset_path("track", map_key, "main_fg.png")
         if os.path.exists(fg_path):
             slice_map(
                 input_path=fg_path,
-                outdir=asset_path("track", f"map{map_num}", "chunks_fg"),
+                outdir=asset_path("track", map_key, "chunks_fg"),
                 tile=const.TILE_SIZE,
                 indexing="zero",
                 prefix="",
@@ -106,11 +109,16 @@ class ChunkedMap:
         return None
 
     def _read_world_size_from_main_png(self) -> Optional[Tuple[int, int]]:
-        """Read world size directly from map main.png file."""
+        """Read world size from base track image (main -> bg -> fg)."""
         map_dir = os.path.dirname(str(self.root))
-        main_png_path = os.path.join(map_dir, "main.png")
+        main_png_path = None
+        for filename in ("main.png", "main_bg.png", "main_fg.png"):
+            candidate = os.path.join(map_dir, filename)
+            if os.path.exists(candidate):
+                main_png_path = candidate
+                break
         try:
-            if not os.path.exists(main_png_path): return None
+            if not main_png_path: return None
             main_surf = pygame.image.load(main_png_path)
             return main_surf.get_width(), main_surf.get_height()
         except Exception as e: print(f"Error reading main.png size: {e}"); return None

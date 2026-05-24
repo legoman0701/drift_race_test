@@ -384,6 +384,7 @@ class Car:
         TRANSMITION_SETUP = specs_vals["DRIVETRAIN"]
         FRONT_GRIP = specs_vals["FRONT_GRIP"]
         REAR_GRIP  = specs_vals["REAR_GRIP"]
+        max_impact_speed = 0.0
 
         # Support both normalized (0..1+) and tiny legacy values (e.g. 0.009 intended as 0.9).
         hb_force = HANDBRAKE_FORCE if HANDBRAKE_FORCE >= 0.05 else HANDBRAKE_FORCE * 100.0
@@ -803,6 +804,7 @@ class Car:
                 # Reflect velocity off the wall (bounce)
                 v_into = self.vx * nx + self.vy * ny
                 if v_into < 0:
+                    max_impact_speed = max(max_impact_speed, -v_into)
                     impulse_x = -(1.0 + RESTITUTION) * v_into * nx
                     impulse_y = -(1.0 + RESTITUTION) * v_into * ny
                     self.vx += impulse_x
@@ -842,6 +844,7 @@ class Car:
                     self.y += push_ny * pen
                     v_into = self.vx * push_nx + self.vy * push_ny
                     if v_into < 0:
+                        max_impact_speed = max(max_impact_speed, -v_into)
                         imp_x = -(1.0 + EDGE_REST) * v_into * push_nx
                         imp_y = -(1.0 + EDGE_REST) * v_into * push_ny
                         self.vx += imp_x
@@ -894,6 +897,7 @@ class Car:
                         # doesn't receive a huge impulse from its own forward motion.
                         v_into = (self.vx - ovx) * nx + (self.vy - ovy) * ny
                         if v_into < 0:
+                            max_impact_speed = max(max_impact_speed, -v_into)
                             imp_x = -(1.0 + P2P_REST) * v_into * nx * 0.5
                             imp_y = -(1.0 + P2P_REST) * v_into * ny * 0.5
                             self.vx += imp_x
@@ -928,6 +932,8 @@ class Car:
             rx = wx_local * ca - wy_local * sa
             ry = wx_local * sa + wy_local * ca
             wheel_world_points.append((int(self.x + rx), int(self.y + ry)))
+
+        return max_impact_speed
 
         self.drift_points_old = self.drift_points
         self.drift_points = tuple(wheel_world_points)

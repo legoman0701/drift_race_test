@@ -6,7 +6,7 @@
 import pygame, json, time, random, sys, math, uuid, argparse, os
 from collections import deque
 # local imports
-from drift.tools.paths import asset_path, chdir_to_exe_folder_if_frozen, normalize_asset_path, get_available_sprite_layers
+from drift.tools.paths import asset_path, chdir_to_exe_folder_if_frozen, normalize_asset_path, get_available_sprite_layers, get_track_base_image_path
 import drift.config.const as const
 import drift.render.camera as camera
 from drift.render.renderer import WorldRenderer
@@ -14,6 +14,10 @@ from drift.render.map_chunks import ChunkedMap, ensure_all_maps_sliced
 import drift.core.car as car
 from drift.core.car import get_car_engine_sound_id, CollisionMesh
 from drift.core.helpers import clamp, rand_name
+from drift.core.gamemode import SimpleRace
+from drift.core.path_utils import is_path_closed
+from drift.core.tutorial_controller import TutorialController, load_tutorial_steps_for_map
+from drift.ai.ai import ai_algorithme
 from drift.core.inputs import read_inputs
 from drift.core.rpm import calc_engine_rpm
 from drift.core.gamepad import Gamepad
@@ -152,7 +156,7 @@ def load_assets_with_progress(screen, clock, engine_sound_id, gpu_display=None):
             
         elif step_key == "track":
             ensure_all_maps_sliced()  # Slice all map chunks once at startup
-            loaded_data["track_image"] = pygame.image.load(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
+            loaded_data["track_image"] = pygame.image.load(get_track_base_image_path(f"map{const.MAP_NUM}")).convert()
             loaded_data["chunk_map"] = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=const.TILE_SIZE)
             _bg_root = normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks_bg")
             loaded_data["chunk_map_bg"] = ChunkedMap(root=_bg_root, tile_size=const.TILE_SIZE) if os.path.isdir(_bg_root) else None
@@ -480,7 +484,7 @@ def draw_engine_audio_debug(surface, engine_audio):
 
 def draw_minimap(surface, path_poly, world_size, my_car, remotes, ai_cars, stage1):
     """Bottom-left minimap: shows track path and car positions during gameplay."""
-    if not path_poly or stage1 not in ("game", "mode1", "mode2", "leaderboard"):
+    if not path_poly or stage1 not in ("game", "mode1", "mode2", "mode_tutorial", "leaderboard"):
         return
     if world_size is None or world_size[0] <= 0 or world_size[1] <= 0:
         return
@@ -506,7 +510,8 @@ def draw_minimap(surface, path_poly, world_size, my_car, remotes, ai_cars, stage
         return (PAD + off_x + wx * scale, PAD + off_y + wy * scale)
 
     # Rebuild static track layer only when path_poly changes
-    poly_key = (id(path_poly), len(path_poly), world_size)
+    poly_closed = is_path_closed(path_poly)
+    poly_key = (id(path_poly), len(path_poly), world_size, poly_closed)
     if draw_minimap._track_surf is None or draw_minimap._track_key != poly_key:
         track_surf = pygame.Surface((MAP_W + PAD * 2, MAP_H + PAD * 2))
         track_surf.fill((8, 10, 16))
@@ -517,13 +522,25 @@ def draw_minimap(surface, path_poly, world_size, my_car, remotes, ai_cars, stage
             perps = []
             for i in range(n):
                 ax, ay, _ = path_poly[i]
-                bx, by, _ = path_poly[(i + 1) % n]
+                if poly_closed:
+                    nb = (i + 1) % n
+                else:
+                    nb = min(i + 1, n - 1)
+                bx, by, _ = path_poly[nb]
                 dx, dy = bx - ax, by - ay
                 seg_len = math.hypot(dx, dy)
                 if seg_len < 1e-4:
-                    perps.append((0.0, 0.0))
+                    if not poly_closed and i > 0:
+                        perps.append(perps[-1])
+                    else:
+                        perps.append((0.0, 0.0))
                 else:
                     perps.append((-dy / seg_len, dx / seg_len))
+
+            if not poly_closed and len(perps) >= 2:
+                # Keep stable end caps for open paths.
+                perps[0] = perps[1]
+                perps[-1] = perps[-2]
 
             outer = []
             inner = []
@@ -534,11 +551,11 @@ def draw_minimap(surface, path_poly, world_size, my_car, remotes, ai_cars, stage
                 outer.append((int(mx2 + px_u * hw), int(my2 + py_u * hw)))
                 inner.append((int(mx2 - px_u * hw), int(my2 - py_u * hw)))
 
-            # Fill road area: outer ring forward + inner ring backward = closed polygon
+            # Fill road area: open paths are end-capped by reversed inner edge.
             road_poly = outer + inner[::-1]
             pygame.draw.polygon(track_surf, (40, 55, 85), road_poly)
-            pygame.draw.lines(track_surf, (60, 80, 110), True, outer, 1)
-            pygame.draw.lines(track_surf, (60, 80, 110), True, inner, 1)
+            pygame.draw.lines(track_surf, (60, 80, 110), poly_closed, outer, 1)
+            pygame.draw.lines(track_surf, (60, 80, 110), poly_closed, inner, 1)
 
         draw_minimap._track_surf = track_surf
         draw_minimap._track_key = poly_key
@@ -562,6 +579,138 @@ def draw_minimap(surface, path_poly, world_size, my_car, remotes, ai_cars, stage
 draw_minimap._panel = None
 draw_minimap._track_surf = None
 draw_minimap._track_key = None
+
+
+def draw_tutorial_overlay(surface, font_small, frame_state):
+    if frame_state is None or not getattr(frame_state, "active", False):
+        return
+
+    msg = str(getattr(frame_state, "prompt", "")).strip()
+    if not msg:
+        return
+
+    raw_lines = [ln.strip() for ln in msg.splitlines() if ln.strip()]
+    hint_name = str(getattr(frame_state, "hint_image", "") or "").strip()
+
+    # Cache keyboard hint images by resolved path to avoid reloading each frame.
+    if not hasattr(draw_tutorial_overlay, "_hint_cache"):
+        draw_tutorial_overlay._hint_cache = {}
+
+    hint_surface = None
+    if hint_name:
+        hint_path = str(asset_path("track", f"map{const.MAP_NUM}", hint_name))
+        if hint_path not in draw_tutorial_overlay._hint_cache:
+            try:
+                draw_tutorial_overlay._hint_cache[hint_path] = pygame.image.load(hint_path).convert_alpha()
+            except Exception:
+                draw_tutorial_overlay._hint_cache[hint_path] = None
+        hint_surface = draw_tutorial_overlay._hint_cache.get(hint_path)
+
+    panel_w = 420
+    if hint_surface is not None:
+        panel_w = 540
+    text_max_w = panel_w - 28
+
+    def _wrap_line(text: str) -> list[str]:
+        words = text.split()
+        if not words:
+            return []
+        out = []
+        cur = words[0]
+        for w in words[1:]:
+            candidate = f"{cur} {w}"
+            if font_small.size(candidate)[0] <= text_max_w:
+                cur = candidate
+            else:
+                out.append(cur)
+                cur = w
+        out.append(cur)
+        return out
+
+    prompt_lines = []
+    for ln in raw_lines:
+        prompt_lines.extend(_wrap_line(ln))
+    if not prompt_lines:
+        return
+
+    progress = float(getattr(frame_state, "progress", 0.0))
+    progress = max(0.0, min(1.0, progress))
+
+    hint_draw = None
+    if hint_surface is not None:
+        # Roughly 2x the previous hint size.
+        target_w = 184
+        target_h = 128
+        iw, ih = hint_surface.get_width(), hint_surface.get_height()
+        if iw > 0 and ih > 0:
+            scale = min(target_w / iw, target_h / ih)
+            sw = max(1, int(iw * scale))
+            sh = max(1, int(ih * scale))
+            hint_draw = pygame.transform.smoothscale(hint_surface, (sw, sh))
+
+    text_block_h = max(1, len(prompt_lines)) * 18
+    hint_block_h = (hint_draw.get_height() + 10) if hint_draw is not None else 0
+    panel_h = 62 + text_block_h + hint_block_h + 16
+    x = const.WINDOW_WIDTH // 2 - panel_w // 2
+    y = const.TOP_LINE_Y + 16
+
+    panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+    panel.fill((10, 10, 16, 215))
+    pygame.draw.rect(panel, (180, 180, 220), panel.get_rect(), 1)
+
+    title = font_small.render("TUTORIAL", True, (200, 230, 255))
+    panel.blit(title, (14, 10))
+
+    py = 34
+    for line in prompt_lines:
+        prompt = font_small.render(line, True, (245, 245, 255))
+        panel.blit(prompt, (14, py))
+        py += 18
+
+    if hint_draw is not None:
+        hx = (panel_w - hint_draw.get_width()) // 2
+        hy = py + 8
+        panel.blit(hint_draw, (hx, hy))
+
+    bar_x, bar_y, bar_w, bar_h = 14, panel_h - 18, panel_w - 28, 8
+    pygame.draw.rect(panel, (35, 40, 52), (bar_x, bar_y, bar_w, bar_h))
+    fill_w = int(bar_w * progress)
+    if fill_w > 0:
+        pygame.draw.rect(panel, (90, 220, 140), (bar_x, bar_y, fill_w, bar_h))
+    pygame.draw.rect(panel, (110, 130, 165), (bar_x, bar_y, bar_w, bar_h), 1)
+
+    surface.blit(panel, (x, y))
+
+
+def _tutorial_bootstrap_ai_controls(my_car, tutorial_ctrl):
+    """Fallback AI while path discovery is pending in tutorial mode."""
+    controls = {"th": 1.0, "st": 0.0, "br": 0.0}
+    if tutorial_ctrl is None or not getattr(tutorial_ctrl, "has_steps", False):
+        return controls
+
+    try:
+        step = tutorial_ctrl.steps[tutorial_ctrl.step_index]
+        if hasattr(step, "target_point"):
+            tx, ty = step.target_point
+        elif hasattr(step, "zone"):
+            tx, ty = step.zone.centerx, step.zone.centery
+        else:
+            tx, ty = my_car.x, my_car.y
+        dx = tx - my_car.x
+        dy = ty - my_car.y
+        angle_to_target = math.atan2(dy, dx)
+        angle_diff = ((angle_to_target - my_car.angle + math.pi) % (2.0 * math.pi)) - math.pi
+
+        # Match the regular AI style: set target heading directly.
+        my_car.target_angle = angle_to_target
+
+        # If heavily misaligned, avoid full straight throttle into the wrong heading.
+        if abs(angle_diff) > 2.2:
+            controls["th"] = 0.55
+    except Exception:
+        pass
+
+    return controls
 
 
 def draw_chunk_minimap(surface, renderer):
@@ -678,7 +827,7 @@ def main():
     engine_audio = loaded_assets["engine_audio"]
     shift_sound = loaded_assets["shift_sound"]
 
-    stage1 = "menu" # menu | lobby | error | mode1 | mode2
+    stage1 = "menu" # menu | lobby | error | mode1 | mode2 | mode_tutorial
     stage2 = "" # settings
     stage3 = "" # controls | audio | modes
     error_msg = ""
@@ -689,6 +838,8 @@ def main():
     game_mode = None           # active BaseGameMode instance (ClassicRace, etc.)
     _collision_mesh = CollisionMesh([])  # collision polygons from map_meta.json (with spatial hash)
     _path_future = None        # Future for async track discovery
+    _path_future_map_num = None
+    _path_poly_map_num = None  # MAP_NUM for the currently valid path_poly
 
     _ai_debug_surf = None      # Cached surface for AI path debug overlay
     _skip_surf = None          # Cached surface for skip-physics (menu) background
@@ -698,6 +849,17 @@ def main():
     _local_result_sent = False
     _ai_results_sent = {}
     _start_roster = None       # authoritative player/AI roster from relay at race start
+    tutorial_ctrl = None
+    tutorial_frame_state = None
+    tutorial_end_zone = None
+    tutorial_variant = 1
+    time_scale = 1.0
+    rewind_history = deque(maxlen=max(600, int(const.FPS * (const.TUTORIAL_REWIND_SECONDS + 1.5))))
+    last_rewind_at = -9999.0
+    rewind_playback = []
+    rewind_playback_idx = 0
+    rewind_playback_active = False
+    rewind_playback_rate = 1.4
 
     my_name = rand_name()
     my_id = str(uuid.uuid4())[:8]
@@ -727,6 +889,151 @@ def main():
         pass
     # Local player's engine state (avoid mutating Car which may use __slots__)
     engine_state = {"gear": 0, "last_rpm": None}
+
+    def _start_path_discovery_for_current_map():
+        """Launch async polygon discovery for the currently selected map."""
+        nonlocal _path_future, _path_future_map_num, _path_poly_map_num, path_poly
+        if _path_future is not None and _path_future_map_num == const.MAP_NUM:
+            return
+        _disc_start_pos, _disc_start_angle = (220, 1700), 90
+        try:
+            import json as _json
+            with open(asset_path("track", f"map{const.MAP_NUM}", "map_meta.json"), "r", encoding="utf-8") as _mf:
+                _meta_disc = _json.load(_mf)
+            _starts = _meta_disc.get("start", []) or []
+            if _starts:
+                _disc_start_pos = (
+                    sum(s["x"] for s in _starts) / len(_starts),
+                    sum(s["y"] for s in _starts) / len(_starts),
+                )
+                _disc_start_angle = math.degrees(sum(s["a"] for s in _starts) / len(_starts))
+        except Exception:
+            pass
+
+        _path_future_map_num = const.MAP_NUM
+        _path_poly_map_num = None
+        path_poly = []
+        _path_future = path_finder.discover_track_async(
+            path_finder.get_pathfinder_image_path(f"map{const.MAP_NUM}"),
+            start_pos=_disc_start_pos, start_angle=_disc_start_angle,
+        )
+
+    def _tutorial_profile_flags():
+        """Return (allow_ai_takeover_between_qte, enable_qte, enable_rewind)."""
+        # New 3-tier sequence (old level 2 removed):
+        # 01 old 01 (all assists)
+        # 02 old 03 (no QTE)
+        # 03 old 04 (no rewind)
+        allow_ai_takeover = tutorial_variant <= 1
+        enable_qte = tutorial_variant <= 1
+        enable_rewind = tutorial_variant <= 2
+        return allow_ai_takeover, enable_qte, enable_rewind
+
+    def _tutorial_intro_text():
+        if tutorial_variant == 1:
+            return "01 - Let's learn how to drift. Follow the prompts and everything should go well"
+        if tutorial_variant == 2:
+            return "02 - Perfect, Try finishing the map without any prompts"
+        return "03 - Now without crashing"
+
+    def _load_chunked_tutorial_fg(map_num: int, variant: int):
+        """Return a variant FG ChunkedMap for tutorial map when available, else default FG."""
+        map_key = f"map{map_num}"
+        default_fg_root = normalize_asset_path("track", map_key, "chunks_fg")
+        default_fg = ChunkedMap(root=default_fg_root, tile_size=const.TILE_SIZE, use_alpha=True) if os.path.isdir(default_fg_root) else None
+
+        # Logical tutorial tier -> source FG variant file.
+        fg_source_variant = {1: 1, 2: 2, 3: 3}.get(int(variant), int(variant))
+        fg_variant_name = f"main_fg_{int(fg_source_variant):02d}.png"
+        fg_variant_path = asset_path("track", map_key, fg_variant_name)
+        if not os.path.exists(fg_variant_path):
+            return default_fg
+
+        fg_variant_chunks = normalize_asset_path("track", map_key, f"chunks_fg_{int(fg_source_variant):02d}")
+        try:
+            # Slice once per variant into a dedicated folder.
+            from drift.tools.slice_map import slice_map
+            slice_map(
+                input_path=fg_variant_path,
+                outdir=fg_variant_chunks,
+                tile=const.TILE_SIZE,
+                indexing="zero",
+                prefix="",
+                pad_color=(0, 0, 0, 0),
+                force=False,
+            )
+        except Exception:
+            return default_fg
+
+        if os.path.isdir(fg_variant_chunks):
+            return ChunkedMap(root=fg_variant_chunks, tile_size=const.TILE_SIZE, use_alpha=True)
+        return default_fg
+
+    def _init_tutorial_runtime(reset_variant=False):
+        nonlocal tutorial_ctrl, tutorial_frame_state, tutorial_end_zone, tutorial_variant
+        nonlocal time_scale, rewind_history, rewind_playback, rewind_playback_idx, rewind_playback_active
+        nonlocal _collision_mesh, chunked_map_fg
+
+        if reset_variant:
+            tutorial_variant = 1
+
+        _meta = {}
+        _collision_mesh = CollisionMesh([])
+        tutorial_end_zone = None
+        try:
+            meta_path = asset_path("track", f"map{const.MAP_NUM}", "map_meta.json")
+            with open(meta_path, "r", encoding="utf-8") as fh:
+                _meta = json.load(fh)
+            _raw_mesh = _meta.get("collision_mesh", []) or []
+            _collision_mesh = CollisionMesh(_raw_mesh) if _raw_mesh else CollisionMesh([])
+            _tuto = _meta.get("tutorial") if isinstance(_meta, dict) else None
+            _raw_end_zone = _tuto.get("end_zone") if isinstance(_tuto, dict) else None
+            if isinstance(_raw_end_zone, dict):
+                tutorial_end_zone = pygame.Rect(
+                    int(_raw_end_zone.get("x", 0)),
+                    int(_raw_end_zone.get("y", 0)),
+                    max(1, int(_raw_end_zone.get("width", 1))),
+                    max(1, int(_raw_end_zone.get("height", 1))),
+                )
+        except Exception:
+            pass
+
+        renderer.collision_mesh = _collision_mesh
+        tutorial_steps = load_tutorial_steps_for_map(const.MAP_NUM)
+        allow_ai_takeover, enable_qte, _ = _tutorial_profile_flags()
+        tutorial_ctrl = TutorialController(
+            tutorial_steps,
+            allow_ai_takeover_between_qte=allow_ai_takeover,
+            enable_qte=enable_qte,
+            start_qte_intro_text=_tutorial_intro_text(),
+            auto_fill_actions=False,
+        )
+
+        # Tutorial mode should spawn from the map's explicit start list.
+        try:
+            _starts = _meta.get("start", []) or []
+            if _starts:
+                _sp = _starts[0]
+                sx = float(_sp.get("x", my_car.x))
+                sy = float(_sp.get("y", my_car.y))
+                sa = float(_sp.get("a", my_car.angle))
+                my_car.x, my_car.y, my_car.angle = sx, sy, sa
+                my_car.target_angle = sa
+                my_car.vx, my_car.vy = 0.0, 0.0
+                my_car.v_angle = 0.0
+        except Exception:
+            pass
+
+        tutorial_frame_state = None
+        time_scale = 1.0
+        rewind_history.clear()
+        rewind_playback = []
+        rewind_playback_idx = 0
+        rewind_playback_active = False
+
+        # Keep tutorial visuals in sync with assist tier (01..04 foreground variants).
+        chunked_map_fg = _load_chunked_tutorial_fg(const.MAP_NUM, tutorial_variant)
+        renderer.chunked_map_fg = chunked_map_fg
 
     # controller cooldowns
     ctlr_btn2_time = 0.0 # i'll store last time.time() the X button was pressed (change car)
@@ -839,17 +1146,17 @@ def main():
 
     settings_buttons = [ # todo : be able to use '*' like '*/settings' for key binds
     btn.Button("Stop Race", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.25, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, 
-               [["mode1", "settings"], ["mode2", "settings"]], lambda: stop_race(sock, code, my_id)),
+               [["mode1", "settings"], ["mode2", "settings"], ["mode_tutorial", "settings"]], lambda: stop_race(sock, code, my_id)),
     btn.Button("Quit Game", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, 
                [["menu", "settings"]] ,lambda: quit_game()),
     btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, 
-               [["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["leaderboard", "settings"]] ,lambda: leave_room(sock, code, my_id, remotes)),
+               [["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["mode_tutorial", "settings"], ["leaderboard", "settings"]] ,lambda: leave_room(sock, code, my_id, remotes)),
     btn.Button("Controls", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, 
-               [["menu", "settings"], ["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["leaderboard", "settings"]], handle_controls),
+               [["menu", "settings"], ["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["mode_tutorial", "settings"], ["leaderboard", "settings"]], handle_controls),
     btn.Button("Audio", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, 
-               [["menu", "settings"], ["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["leaderboard", "settings"]], handle_audio),
+               [["menu", "settings"], ["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["mode_tutorial", "settings"], ["leaderboard", "settings"]], handle_audio),
     btn.Button("Modes", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.65, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, 
-               [["menu", "settings"], ["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["leaderboard", "settings"]], handle_modes),
+               [["menu", "settings"], ["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["mode_tutorial", "settings"], ["leaderboard", "settings"]], handle_modes),
     ]
     
     profiler = FrameProfiler()
@@ -928,6 +1235,7 @@ def main():
     
     while True:
         dt = clock.tick(const.FPS) / 1000.0
+        dt_sim = dt * time_scale
 
         # ── Poll pending CLI connection (non-blocking) ──
         if _cli_conn is not None and _cli_conn["status"] == "pending":
@@ -1103,26 +1411,75 @@ def main():
             _sync_ai_count()
 
         controls = {"th": 0.0, "st": 0.0, "br": 0.0}
+        ai_controls_for_player = {"th": 0.0, "st": 0.0, "br": 0.0}
         ai_debug_surface = None
         if not skip_physics:
-            ai_controls_ok = False
-            if const.AI_PATH_FOLLOW and path_poly:
-                try:
-                    _ai_surf_size = (track_image.get_width(), track_image.get_height())
-                    if _ai_debug_surf is None or _ai_debug_surf.get_size() != _ai_surf_size:
-                        _ai_debug_surf = pygame.Surface(_ai_surf_size, pygame.SRCALPHA)
+            tutorial_allow_ai_takeover = False
+            if stage1 == "mode_tutorial":
+                tutorial_allow_ai_takeover, _, _ = _tutorial_profile_flags()
+
+            if stage1 == "mode_tutorial":
+                # In tutorial mode, base controls should always come from the player;
+                # tutorial AI may still take over explicitly via force_ai_drive.
+                controls = read_inputs(gp, my_car, cam, const.CURSOR_FOLLOW, False)
+                if tutorial_allow_ai_takeover:
+                    if tutorial_ctrl is not None and path_poly:
+                        try:
+                            ai_controls_for_player = ai_algorithme(path_poly, my_car)
+                        except Exception:
+                            ai_controls_for_player = _tutorial_bootstrap_ai_controls(my_car, tutorial_ctrl)
                     else:
-                        _ai_debug_surf.fill((0, 0, 0, 0))
-                    controls, ai_debug_surface = ai_algorithme(
-                        path_poly, my_car, ai_path_mode=True,
-                        surface=_ai_debug_surf,
-                        font_small=font_small,
-                    )
-                    ai_controls_ok = True
-                except Exception:
-                    pass
-            if not ai_controls_ok:
-                controls = read_inputs(gp, my_car, cam, const.CURSOR_FOLLOW, const.AI_PATH_FOLLOW)
+                        ai_controls_for_player = _tutorial_bootstrap_ai_controls(my_car, tutorial_ctrl)
+            else:
+                ai_controls_ok = False
+                if const.AI_PATH_FOLLOW and path_poly:
+                    try:
+                        _ai_surf_size = (track_image.get_width(), track_image.get_height())
+                        if _ai_debug_surf is None or _ai_debug_surf.get_size() != _ai_surf_size:
+                            _ai_debug_surf = pygame.Surface(_ai_surf_size, pygame.SRCALPHA)
+                        else:
+                            _ai_debug_surf.fill((0, 0, 0, 0))
+                        controls, ai_debug_surface = ai_algorithme(
+                            path_poly, my_car, ai_path_mode=True,
+                            surface=_ai_debug_surf,
+                            font_small=font_small,
+                        )
+                        ai_controls_ok = True
+                    except Exception:
+                        pass
+                if not ai_controls_ok:
+                    controls = read_inputs(gp, my_car, cam, const.CURSOR_FOLLOW, const.AI_PATH_FOLLOW)
+
+            # Tutorial should be AI-driven immediately on entry, even before
+            # the controller instance is created later in the frame lifecycle.
+            if stage1 == "mode_tutorial" and tutorial_allow_ai_takeover and tutorial_ctrl is None:
+                controls = ai_controls_for_player
+
+            if stage1 == "mode_tutorial" and tutorial_ctrl is not None:
+                tutorial_frame_state = tutorial_ctrl.update(dt, time_scale, my_car, controls)
+                if tutorial_allow_ai_takeover and tutorial_frame_state.force_ai_drive:
+                    controls = ai_controls_for_player
+            else:
+                tutorial_frame_state = None
+
+        if stage1 == "mode_tutorial" and tutorial_ctrl is not None and tutorial_frame_state is not None:
+            target_scale = float(tutorial_frame_state.target_time_scale)
+        else:
+            target_scale = 1.0
+
+        target_scale = max(0.0, min(1.0, target_scale))
+        rate = const.TUTORIAL_SPEEDUP_RATE if target_scale >= time_scale else const.TUTORIAL_SLOWDOWN_RATE
+        time_scale += (target_scale - time_scale) * min(1.0, rate * dt)
+
+        if target_scale <= 0.0:
+            # Smoothly ease toward freeze, then snap only when very close.
+            if time_scale <= 0.005:
+                time_scale = 0.0
+            time_scale = max(0.0, min(1.0, time_scale))
+        else:
+            tutorial_min_scale = max(0.0, float(getattr(const, "TUTORIAL_MIN_TIME_SCALE", 0.0)))
+            time_scale = max(tutorial_min_scale, min(1.0, time_scale))
+        dt_sim = dt * time_scale
 
         profiler.end("input")
 
@@ -1142,7 +1499,7 @@ def main():
             if net_result.get("host_id") is not None:
                 I_AM_HOST = (net_result["host_id"] == my_id)
                 host_ref[0] = I_AM_HOST
-            if net_result.get("start_mode") and stage1 in ["lobby", "mode1", "mode2", "leaderboard"]:
+            if net_result.get("start_mode") and stage1 in ["lobby", "mode1", "mode2", "mode_tutorial", "leaderboard"]:
                 new_mode = net_result["start_mode"]
                 if new_mode.startswith("mode") and stage1 != "lobby":
                     new_mode = None
@@ -1152,6 +1509,10 @@ def main():
                     if stage1 != "lobby":
                         if game_mode is not None:
                             game_mode.on_exit(); game_mode = None
+                        tutorial_ctrl = None
+                        tutorial_frame_state = None
+                        time_scale = 1.0
+                        rewind_history.clear()
                         _prev_stage1 = "lobby"; _return_btn_rect = None; _local_result_sent = False; _ai_results_sent = {}; _start_roster = None
                         my_car.x, my_car.y = random.randint(100, const.WINDOW_WIDTH - 100), random.randint(100, const.WINDOW_HEIGHT - 100)
                         my_car.vx, my_car.vy = 0.0, 0.0
@@ -1177,7 +1538,7 @@ def main():
                             new_map_num = const.MAP_NUM
                         if new_map_num != const.MAP_NUM:
                             const.MAP_NUM = new_map_num
-                            track_image = pygame.image.load(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
+                            track_image = pygame.image.load(get_track_base_image_path(f"map{const.MAP_NUM}")).convert()
                             chunked_map = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=const.TILE_SIZE)
                             _bg_root = normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks_bg")
                             chunked_map_bg = ChunkedMap(root=_bg_root, tile_size=const.TILE_SIZE) if os.path.isdir(_bg_root) else None
@@ -1187,6 +1548,10 @@ def main():
                             renderer.chunked_map = chunked_map
                             renderer.chunked_map_bg = chunked_map_bg
                             renderer.chunked_map_fg = chunked_map_fg
+                            _path_future = None
+                            _path_future_map_num = None
+                            _path_poly_map_num = None
+                            path_poly = []
             if game_mode is not None and net_result.get("race_results"):
                 game_mode.apply_network_results(net_result["race_results"])
             err = net_result.get("error")
@@ -1215,10 +1580,63 @@ def main():
 
         profiler.begin("gamemode")
 
+        # Offline/local starts do not receive a relay start event, so apply
+        # the selected lobby track before creating the race game mode.
+        if (
+            stage1 != _prev_stage1
+            and _prev_stage1 in ("lobby", "menu")
+            and stage1.startswith("mode")
+            and (not sock or code == "Offline")
+        ):
+            local_track = get_game_setup().get("selected_track", "track1")
+            if isinstance(local_track, str) and local_track.startswith("track"):
+                try:
+                    new_map_num = int(local_track[5:])
+                except Exception:
+                    new_map_num = const.MAP_NUM
+
+                if new_map_num != const.MAP_NUM:
+                    const.MAP_NUM = new_map_num
+                    track_image = pygame.image.load(get_track_base_image_path(f"map{const.MAP_NUM}")).convert()
+                    chunked_map = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=const.TILE_SIZE)
+                    _bg_root = normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks_bg")
+                    chunked_map_bg = ChunkedMap(root=_bg_root, tile_size=const.TILE_SIZE) if os.path.isdir(_bg_root) else None
+                    _fg_root = normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks_fg")
+                    chunked_map_fg = ChunkedMap(root=_fg_root, tile_size=const.TILE_SIZE, use_alpha=True) if os.path.isdir(_fg_root) else None
+                    renderer.track_image = track_image
+                    renderer.chunked_map = chunked_map
+                    renderer.chunked_map_bg = chunked_map_bg
+                    renderer.chunked_map_fg = chunked_map_fg
+                    _path_future = None
+                    _path_future_map_num = None
+                    _path_poly_map_num = None
+                    path_poly = []
+
+                _cp_rects = []
+                meta_path = asset_path("track", f"map{const.MAP_NUM}", "map_meta.json")
+                try:
+                    with open(meta_path, "r", encoding="utf-8") as fh:
+                        meta = json.load(fh)
+                    for cp in meta.get("checkpoints", []):
+                        _cp_rects.append(pygame.Rect(cp.get("x", 0), cp.get("y", 0), cp.get("width", 0), cp.get("height", 0)))
+                except Exception:
+                    pass
+                checkpoints = _cp_rects
+                renderer.checkpoints = checkpoints
+
         if stage1 != _prev_stage1:
             if _prev_stage1.startswith("mode") and game_mode is not None:
                 if stage1 != "leaderboard":
                     game_mode.on_exit(); game_mode = None
+            if _prev_stage1.startswith("mode") and stage1 != _prev_stage1:
+                tutorial_ctrl = None
+                tutorial_frame_state = None
+                tutorial_end_zone = None
+                time_scale = 1.0
+                rewind_history.clear()
+                rewind_playback = []
+                rewind_playback_idx = 0
+                rewind_playback_active = False
 
             if stage1.startswith("mode") and game_mode is None:
                 _start_grid = []; _lines = []; _collision_mesh = CollisionMesh([])
@@ -1277,6 +1695,9 @@ def main():
                         ai.target_angle = sa
                         ai.vx, ai.vy = 0.0, 0.0
 
+            if stage1 == "mode_tutorial":
+                _init_tutorial_runtime(reset_variant=True)
+
             if _prev_stage1 == "leaderboard" and game_mode is not None:
                 game_mode.on_exit(); game_mode = None
 
@@ -1287,7 +1708,7 @@ def main():
             _mode_players_update = dict(remotes)
             for i, ai in enumerate(ai_cars, start=1):
                 _mode_players_update[f"AI-{i}"] = ai
-            mode_result = game_mode.update(dt, _mode_players_update, my_car)
+            mode_result = game_mode.update(dt_sim, _mode_players_update, my_car, I_AM_HOST)
             local_finish_time = game_mode.get_local_finish_time()
             if local_finish_time is not None and not _local_result_sent and sock and code and code != "Offline":
                 try:
@@ -1345,6 +1766,21 @@ def main():
         profiler.begin("physics")
         if not skip_physics:
             movement_locked = bool(mode_result.get("movement_locked"))
+            tutorial_single_player = stage1 == "mode_tutorial" and (not sock or code == "Offline") and len(remotes) == 0
+            _allow_ai_takeover, _enable_qte, tutorial_rewind_enabled = _tutorial_profile_flags()
+
+            if tutorial_single_player and not rewind_playback_active:
+                rewind_history.append({
+                    "t": time.monotonic(),
+                    "x": my_car.x,
+                    "y": my_car.y,
+                    "vx": my_car.vx,
+                    "vy": my_car.vy,
+                    "angle": my_car.angle,
+                    "v_angle": my_car.v_angle,
+                    "target_angle": my_car.target_angle,
+                    "tutorial": tutorial_ctrl.get_rewind_snapshot() if tutorial_ctrl is not None else None,
+                })
 
             # Build remote views once for collision queries
             remotes_with_ai_for_player = dict(remotes)
@@ -1353,12 +1789,96 @@ def main():
                     key = f"AI-{i}"
                     remotes_with_ai_for_player[key] = {"x": ai.x, "y": ai.y, "a": ai.angle, "vx": ai.vx, "vy": ai.vy, "drift_ratio": ai.drift_ratio, "name": ai.name}
 
-            if movement_locked:
+            player_impact = 0.0
+
+            if rewind_playback_active:
+                steps_per_frame = max(1, int(rewind_playback_rate * dt * const.FPS))
+                rewind_playback_idx = min(len(rewind_playback) - 1, rewind_playback_idx + steps_per_frame)
+                snap = rewind_playback[rewind_playback_idx]
+                my_car.x = snap["x"]
+                my_car.y = snap["y"]
+                my_car.vx = snap["vx"]
+                my_car.vy = snap["vy"]
+                my_car.angle = snap["angle"]
+                my_car.v_angle = snap["v_angle"]
+                my_car.target_angle = snap["target_angle"]
+                controls = {"th": 0.0, "st": 0.0, "br": 0.0}
+                player_impact = 0.0
+                if rewind_playback_idx >= len(rewind_playback) - 1:
+                    restored_t = float(snap.get("t", 0.0)) if isinstance(snap, dict) else 0.0
+                    rewind_playback_active = False
+                    rewind_playback = []
+                    rewind_playback_idx = 0
+                    if tutorial_ctrl is not None:
+                        snap_tutorial = snap.get("tutorial") if isinstance(snap, dict) else None
+                        if isinstance(snap_tutorial, dict):
+                            tutorial_ctrl.apply_rewind_snapshot(snap_tutorial, my_car)
+                        else:
+                            tutorial_ctrl.on_rewind(my_car)
+                        tutorial_frame_state = tutorial_ctrl.update(dt, time_scale, my_car, controls)
+
+                    # Trim away all "future" frames that were recorded after
+                    # the restored snapshot so chained rewinds cannot jump ahead.
+                    if rewind_history:
+                        maxlen = rewind_history.maxlen
+                        rewind_history = deque(
+                            [h for h in rewind_history if float(h.get("t", 0.0)) <= restored_t],
+                            maxlen=maxlen,
+                        )
+
+                    # Seed the new timeline from the restored state.
+                    rewind_history.append({
+                        "t": time.monotonic(),
+                        "x": my_car.x,
+                        "y": my_car.y,
+                        "vx": my_car.vx,
+                        "vy": my_car.vy,
+                        "angle": my_car.angle,
+                        "v_angle": my_car.v_angle,
+                        "target_angle": my_car.target_angle,
+                        "tutorial": tutorial_ctrl.get_rewind_snapshot() if tutorial_ctrl is not None else None,
+                    })
+                    last_rewind_at = time.monotonic()
+            elif movement_locked:
                 controls = {"th": 0.0, "st": 0.0, "br": 0.0}
                 my_car.vx, my_car.vy = 0.0, 0.0
                 my_car.v_angle = 0.0
             else:
-                my_car.step(controls, dt, remotes_with_ai_for_player, world_size, cam=cam, collision_mesh=_collision_mesh)
+                player_impact = my_car.step(controls, dt_sim, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG, cursor_follow=const.CURSOR_FOLLOW, cam=cam, collision_mesh=_collision_mesh)
+
+            if tutorial_single_player and tutorial_ctrl is not None and tutorial_rewind_enabled:
+                now_mono = time.monotonic()
+                if (not rewind_playback_active) and player_impact >= const.TUTORIAL_HARD_CRASH_THRESHOLD and now_mono - last_rewind_at >= const.TUTORIAL_REWIND_COOLDOWN_S and rewind_history:
+                    target_t = now_mono - const.TUTORIAL_REWIND_SECONDS
+                    rewind_segment = [snap for snap in rewind_history if snap["t"] >= target_t]
+                    if not rewind_segment:
+                        rewind_segment = [rewind_history[0]]
+                    rewind_playback = list(reversed(rewind_segment))
+                    rewind_playback_idx = 0
+                    rewind_playback_active = True
+                    renderer.clear_tire_marks()
+
+            # End-zone completion: leave tutorial as soon as player reaches it.
+            if stage1 == "mode_tutorial" and tutorial_end_zone is not None:
+                try:
+                    if tutorial_end_zone.collidepoint(my_car.x, my_car.y):
+                        if tutorial_variant < 3:
+                            tutorial_variant += 1
+                            _init_tutorial_runtime(reset_variant=False)
+                        else:
+                            stage1 = "menu"
+                            stage2 = ""
+                            stage3 = ""
+                            tutorial_ctrl = None
+                            tutorial_frame_state = None
+                            tutorial_end_zone = None
+                            rewind_playback = []
+                            rewind_playback_idx = 0
+                            rewind_playback_active = False
+                            rewind_history.clear()
+                            time_scale = 1.0
+                except Exception:
+                    pass
 
             # Engine audio (single RPM computation, shared with UI HUD)
             try:
@@ -1368,7 +1888,7 @@ def main():
                     prev_rpm = engine_state.get("last_rpm")
                     rpm = calc_engine_rpm(
                         speed_units=speed_units, drift_ratio=my_car.drift_ratio,
-                        throttle=th, prev_rpm=prev_rpm, dt=dt,
+                        throttle=th, prev_rpm=prev_rpm, dt=dt_sim,
                         params=my_car.rpm_params, _state=engine_state,
                     )
                     engine_state["last_rpm"] = rpm
@@ -1400,7 +1920,7 @@ def main():
                             ai_controls = ai_algorithme(path_poly, ai)
                         except Exception:
                             ai_controls = {"th": 0.0, "st": 0.0, "br": 0.0}
-                        ai.step(ai_controls, dt, remotes_with_ai_for_ais, world_size, collision_mesh=_collision_mesh)
+                        ai.step(ai_controls, dt_sim, remotes_with_ai_for_ais, world_size, compute_debug=const.DEBUG, collision_mesh=_collision_mesh)
 
             cam.update(my_car, world_size)
         profiler.end("physics")
@@ -1414,33 +1934,32 @@ def main():
             render_stage = stage1 if stage1 != "leaderboard" else "mode1"
             visible_ai = ai_cars if stage1 != "lobby" else []
             world_surf, resized, is_viewport = renderer.render_world(cam, render_stage, my_car, visible_ai, remotes, lights_on, car_sprites_cache)
-            if resized and not is_viewport and _path_future is None:
-                _disc_start_pos, _disc_start_angle = (220, 1700), 90
-                try:
-                    import json as _json
-                    with open(asset_path("track", f"map{const.MAP_NUM}", "map_meta.json"), "r", encoding="utf-8") as _mf:
-                        _meta_disc = _json.load(_mf)
-                    _starts = _meta_disc.get("start", []) or []
-                    if _starts:
-                        _disc_start_pos = (
-                            sum(s["x"] for s in _starts) / len(_starts),
-                            sum(s["y"] for s in _starts) / len(_starts),
-                        )
-                        _disc_start_angle = math.degrees(sum(s["a"] for s in _starts) / len(_starts))
-                except Exception:
-                    pass
-                _path_future = path_finder.discover_track_async(
-                    normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png"),
-                    start_pos=_disc_start_pos, start_angle=_disc_start_angle,
-                )
+
+            # If map changed while a previous discovery job is still pending,
+            # drop the handle and queue discovery for the active map.
+            if _path_future is not None and _path_future_map_num != const.MAP_NUM:
+                _path_future = None
+                _path_future_map_num = None
+
+            # Ensure each map gets its own path discovery result.
+            if (
+                stage1 in ["lobby", "mode1", "mode2", "mode_tutorial", "leaderboard"]
+                and _path_future is None
+                and _path_poly_map_num != const.MAP_NUM
+            ):
+                _start_path_discovery_for_current_map()
 
             # Poll for async path discovery result
             if _path_future is not None and _path_future.done():
                 try:
-                    path_poly = _path_future.result()
+                    if _path_future_map_num == const.MAP_NUM:
+                        path_poly = _path_future.result()
+                        _path_poly_map_num = const.MAP_NUM
                 except Exception:
                     path_poly = []
+                    _path_poly_map_num = None
                 _path_future = None
+                _path_future_map_num = None
 
             if gpu_display is not None:
                 final_surf = world_surf if is_viewport else cam.apply_no_scale(world_surf)
@@ -1483,6 +2002,8 @@ def main():
         draw_engine_audio_debug(ui_surf, engine_audio)
         draw_chunk_minimap(ui_surf, renderer)
         draw_minimap(ui_surf, path_poly, world_size, my_car, remotes, ai_cars, stage1)
+        if stage1 == "mode_tutorial":
+            draw_tutorial_overlay(ui_surf, font_small, tutorial_frame_state)
         profiler.end("ui")
 
         # Game mode overlays

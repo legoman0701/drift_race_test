@@ -1,6 +1,7 @@
 import math, pygame
 from typing import List, Tuple, Optional, Dict
 from drift.core.helpers import clamp
+from drift.core.path_utils import is_path_closed
 import drift.config.const as const
 
 
@@ -20,9 +21,12 @@ def ai_algorithme(
     if ai_path_mode and const.DEBUG and surface is not None:
         surface.fill((0, 0, 0, 0))
         if path_poly:
-            pygame.draw.polygon(surface, (255, 0, 0), [(p[0], p[1]) for p in path_poly], 3)
+            dbg_closed = is_path_closed(path_poly)
+            if len(path_poly) >= 2:
+                pygame.draw.lines(surface, (255, 0, 0), dbg_closed, [(p[0], p[1]) for p in path_poly], 3)
 
     if path_poly:
+        path_closed = is_path_closed(path_poly)
         def _proj_point_on_segment(px, py, ax, ay, bx, by):
             vx, vy = bx - ax, by - ay
             wx, wy = px - ax, py - ay
@@ -64,8 +68,13 @@ def ai_algorithme(
 
             while remaining > 0:
                 if seg_idx >= len(path_poly) - 1:
-                    seg_idx = 0
-                    t_on_seg = 0.0
+                    if path_closed:
+                        seg_idx = 0
+                        t_on_seg = 0.0
+                    else:
+                        # Open path: stop nudging at the final segment end.
+                        cx, cy = path_poly[-1][0], path_poly[-1][1]
+                        break
                 a = path_poly[seg_idx]
                 b = path_poly[seg_idx + 1]
                 vx, vy = b[0] - a[0], b[1] - a[1]

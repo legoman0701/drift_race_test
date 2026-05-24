@@ -7,7 +7,7 @@ __pycache__/
 assets/git/
 assets/track/**/chunks/
 assets/track/**/chunks_bg/
-assets/track/**/chunks_fg/
+assets/track/**/chunks_fg*/
 
 # venv
 .venv/

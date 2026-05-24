@@ -3,6 +3,83 @@ from pathlib import Path
 import sys
 import os
 
+
+def _read_map_index_entries():
+    """Return ordered track folder names from assets/track/map_index.txt."""
+    index_path = assets_dir() / "track" / "map_index.txt"
+    entries = []
+    try:
+        if index_path.exists():
+            with open(index_path, "r", encoding="utf-8") as fh:
+                for raw_line in fh:
+                    line = raw_line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    entries.append(line)
+    except Exception:
+        return []
+    return entries
+
+
+def get_track_folders():
+    """Return available track folders in numbered order (1-based via map_index)."""
+    entries = _read_map_index_entries()
+    if entries:
+        return entries
+
+    # Fallback for old setups without map_index.txt
+    track_root = assets_dir() / "track"
+    if not track_root.exists():
+        return []
+
+    folders = []
+    for item in sorted(track_root.iterdir()):
+        if not item.is_dir():
+            continue
+        # Ignore generated/utility folders if present
+        if item.name.startswith("chunks"):
+            continue
+        folders.append(item.name)
+    return folders
+
+
+def resolve_track_folder(track_key):
+    """Resolve map key like 'map2' to actual folder name from map_index.txt."""
+    key = str(track_key)
+    if not key.lower().startswith("map"):
+        return key
+
+    number = key[3:]
+    if not number.isdigit():
+        return key
+
+    map_num = int(number)
+    folders = get_track_folders()
+    if 1 <= map_num <= len(folders):
+        return folders[map_num - 1]
+    return key
+
+
+def get_track_base_image_path(track_key):
+    """Return a usable base track image path for map key.
+
+    Preferred order supports newer naming while keeping legacy fallbacks.
+    """
+    for filename in ("main_fr.png", "main.png", "main_tr.png", "main_bg.png", "main_fg.png"):
+        candidate = asset_path("track", track_key, filename)
+        if candidate.exists():
+            return candidate
+    return asset_path("track", track_key, "main.png")
+
+
+def _resolve_track_parts(parts):
+    """Map ('track', 'mapN', ...) to ('track', '<folder_from_index>', ...)."""
+    if len(parts) >= 2 and str(parts[0]).lower() == "track":
+        resolved = [str(parts[0]), resolve_track_folder(parts[1])]
+        resolved.extend(str(p) for p in parts[2:])
+        return resolved
+    return [str(p) for p in parts]
+
 def _base_dir() -> Path:
     """
     Dossier de base selon le contexte:
@@ -37,7 +114,7 @@ def assets_dir() -> Path:
 
 def asset_path(*parts) -> Path:
     """Construit un chemin absolu à partir de morceaux relatifs aux assets."""
-    return assets_dir().joinpath(*parts)
+    return assets_dir().joinpath(*_resolve_track_parts(parts))
 
 def normalize_asset_path(*parts) -> Path:
     """
@@ -51,7 +128,7 @@ def normalize_asset_path(*parts) -> Path:
     # If multiple parts provided, join them first
     if len(parts) > 1:
         # Multiple path parts provided, join them
-        return assets_dir().joinpath(*parts)
+        return assets_dir().joinpath(*_resolve_track_parts(parts))
     elif len(parts) == 0:
         return assets_dir()
     
@@ -59,6 +136,12 @@ def normalize_asset_path(*parts) -> Path:
     p = Path(parts[0])
     if p.is_absolute():
         return p
+
+    # Rewrite track/mapN/... to track/<map_index_entry>/...
+    p_parts = list(p.parts)
+    if len(p_parts) >= 2 and str(p_parts[0]).lower() == "track":
+        p_parts[1] = resolve_track_folder(p_parts[1])
+        p = Path(*p_parts)
 
     path_parts = p.parts
     if path_parts and path_parts[0].lower() == "assets":

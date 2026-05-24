@@ -1,5 +1,5 @@
 import pygame, string, math
-from drift.tools.paths import get_available_cars
+from drift.tools.paths import get_available_cars, get_track_folders
 
 # ======= APPLICATION INFO =======
 VERSION = "0.7.2"
@@ -68,8 +68,8 @@ MODES_CHOICES = {
 }
 
 # ======= MAP & TRACK =======
-MAP_NUM = 1
-TOTAL_MAPS = 2 # new map flag
+MAP_NUM = 3
+TOTAL_MAPS = max(1, len(get_track_folders()))  # Numbered tracks map to map_index order
 TILE_SIZE = 512  # Tile size for map chunks
 TRACK_MARGIN = 40
 TRACK_BORDER_WIDTH = 4
@@ -96,8 +96,8 @@ for car in AVAILABLE_CARS:
             f"cars/{car}/Palette/Image{{i:04}}.png"
         ]
     },
-DEFAULT_CAR_ID = "911"
-DEFAULT_CAR_NAME = "911 SC"
+DEFAULT_CAR_ID = "AE86"
+DEFAULT_CAR_NAME = "AE86"
 
 # ======= CONTROLS =======
 # Menu controls
@@ -143,3 +143,26 @@ AI_PATH_FOLLOW = False
 
 # ======= FLAGS =======
 MODE_CLICKED = False
+
+# ======= TUTORIAL =======
+TUTORIAL_MIN_TIME_SCALE = 0.0
+TUTORIAL_SLOWDOWN_RATE = 8.0
+TUTORIAL_SPEEDUP_RATE = 5.0
+TUTORIAL_ACTION_MIN_HOLD_S = 0.35
+TUTORIAL_HEADING_DELTA_MIN_RAD = 0.12
+TUTORIAL_BRAKE_SPEED_DROP_MIN = 28.0
+TUTORIAL_ACCEL_SPEED_GAIN_MIN = 10.0
+TUTORIAL_STEER_INPUT_THRESHOLD = 0.45
+TUTORIAL_BRAKE_INPUT_THRESHOLD = 0.60
+TUTORIAL_ACCEL_INPUT_THRESHOLD = 0.50
+TUTORIAL_MIN_TURN_YAW_RATE = 0.40
+TUTORIAL_TURN_ONLY_MIN_TIME_SCALE = 0.0
+TUTORIAL_ACCEL_ONLY_MIN_TIME_SCALE = 0.0
+TUTORIAL_TURN_INPUT_ONLY_SPEED_MAX = 45.0
+TUTORIAL_REALTIME_HOLD_STEP = 1.0 / 60.0
+TUTORIAL_REALTIME_HOLD_DECAY = 1.0 / 90.0
+TUTORIAL_POST_QTE_USER_CONTROL_S = 2.0
+
+TUTORIAL_REWIND_SECONDS = 3.0
+TUTORIAL_HARD_CRASH_THRESHOLD = 30.0
+TUTORIAL_REWIND_COOLDOWN_S = 1.2
