@@ -43,7 +43,7 @@ class TutorialController:
     PHASE_DONE = "done"
     START_QTE_PROMPT = "Hold Accelerate"
     START_QTE_HOLD_S = 1.0
-    POST_QTE_USER_CONTROL_S = 1.0
+    POST_QTE_USER_CONTROL_S = float(getattr(const, "TUTORIAL_POST_QTE_USER_CONTROL_S", 2.0))
 
     def __init__(self, steps: List[TutorialStep]):
         self.steps = steps
