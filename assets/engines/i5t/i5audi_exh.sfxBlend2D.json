@@ -1,0 +1,34 @@
+{
+    "header" : {
+        "version" : 1
+    },
+    "eventName" : "event:>Engine>mod_exhaust",
+    "samples" : 
+    [
+        [
+            ["art/sound/engine/i5audi_exh/800.wav", 800],
+			["art/sound/engine/i5audi_exh/1828.wav", 1828],
+			["art/sound/engine/i5audi_exh/3118.wav", 3118],
+			["art/sound/engine/i5audi_exh/3761.wav", 3761],
+			["art/sound/engine/i5audi_exh/4042.wav", 4042],
+			["art/sound/engine/i5audi_exh/4429.wav", 4429],
+			["art/sound/engine/i5audi_exh/4997.wav", 4997],
+			["art/sound/engine/i5audi_exh/5695.wav", 5695],
+			["art/sound/engine/i5audi_exh/6328.wav", 6328],
+			["art/sound/engine/i5audi_exh/6925.wav", 6925]
+        ]
+        ,
+        [
+            ["art/sound/engine/i5audi_exh/800.wav", 800],
+			["art/sound/engine/i5audi_exh/1863_P.wav", 1863],
+			["art/sound/engine/i5audi_exh/2390_P.wav", 2390],
+			["art/sound/engine/i5audi_exh/3234_P.wav", 3234],
+			["art/sound/engine/i5audi_exh/4183_P.wav", 4183],
+			["art/sound/engine/i5audi_exh/5167_P.wav", 5167],
+			["art/sound/engine/i5audi_exh/6011_P.wav", 6011],
+			["art/sound/engine/i5audi_exh/6650_P.wav", 6650],
+			["art/sound/engine/i5audi_exh/7171_P.wav", 7171]
+			
+        ]
+    ]
+}
