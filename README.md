@@ -34,5 +34,6 @@ Full changelog available at: [Changelog](https://nmax0.github.io/drift_race_web/
 
 Audio assets:
 - Turbo blow-off valve: [https://samplefocus.com/samples/blow-off-valve-supra-stutututu](https://samplefocus.com/samples/blow-off-valve-supra-stutututu)
+- Tutorials Keys : [https://gerald-burke.itch.io/geralds-keys](https://gerald-burke.itch.io/geralds-keys)
 
 By Cherry Studios
