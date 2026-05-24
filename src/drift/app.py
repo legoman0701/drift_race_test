@@ -14,7 +14,6 @@ from drift.render.map_chunks import ChunkedMap, ensure_all_maps_sliced
 import drift.core.car as car
 from drift.core.car import get_car_engine_sound_id, CollisionMesh
 from drift.core.helpers import clamp, rand_name
-from drift.core.gamemode import SimpleRace
 from drift.core.path_utils import is_path_closed
 from drift.core.tutorial_controller import TutorialController, load_tutorial_steps_for_map
 from drift.ai.ai import ai_algorithme

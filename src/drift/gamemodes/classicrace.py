@@ -276,8 +276,9 @@ class ClassicRace(BaseGameMode):
         if local_ps is None or not local_ps.finished:
             return
 
-        rank = next((i for i, ps in enumerate(self.leaderboard, start=1) if ps.player_id == self.local_player_id), None)
-        rank_txt = "Finished!" if rank is None else f"Finished! Rank #{rank}"
+        # rank = next((i for i, ps in enumerate(self.leaderboard, start=1) if ps.player_id == self.local_player_id), None)
+        # rank_txt = "Finished!" if rank is None else f"Finished! Rank #{rank}"
+        rank_txt = "Finished!"
 
         # mins = int(local_ps.finish_time) // 60
         # secs = local_ps.finish_time - mins * 60

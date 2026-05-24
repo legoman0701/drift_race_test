@@ -8,7 +8,7 @@ from drift.core.car import CAR_LEN, CAR_WID
 from drift.core.helpers import clamp
 from drift.ui.ui_helpers import get_cached_text, invalidate_ui_text_cache
 from drift.ui.draw_stage import (
-    draw_mode, draw_menu_connection_bar, draw_settings, draw_error,
+    draw_menu_connection_bar, draw_settings, draw_error,
     handle_menu_bar_click, handle_menu_bar_keypress, host_new_game, draw_controls,
     handle_controls_click, handle_controls_keypress, join_new_game,
     get_game_setup, draw_audio_sliders, set_error_message, clear_error_message,
@@ -618,7 +618,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
                 draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name, ping_ms)
         else:
             _controls_rects_cache = None  # Clear cache when not in settings
-            draw_mode(ui_surf, font_big, font_medium, cam, checkpoints)
+            # draw_mode(ui_surf, font_big, font_medium, cam, checkpoints)
             palette_picker_rects = draw_color_palette_picker(ui_surf, font_small)
             _palette_picker_rects_cache = palette_picker_rects
             draw_header(ui_surf, font_big, font_small, const.MODES_NAMES[const.MODE_INDEX], fps, host_name, ping_ms)
@@ -638,7 +638,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
                 draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name, ping_ms)
         else:
             _controls_rects_cache = None
-            draw_mode1(ui_surf, font_big, font_medium, cam, checkpoints)
+            # draw_mode(ui_surf, font_big, font_medium, cam, checkpoints)
             palette_picker_rects = draw_color_palette_picker(ui_surf, font_small)
             _palette_picker_rects_cache = palette_picker_rects
             draw_header(ui_surf, font_big, font_small, "Tutorial", fps, host_name, ping_ms)

@@ -836,34 +836,6 @@ def handle_game_options_click(click_pos, rects, is_host, room_clients_count=1):
 
     return None
 
-
-def draw_mode(ui_surf, font_big, font_medium, cam, cp_rects=[]):
-    # screen dimensions for culling
-    if not cp_rects: return {}
-    
-    screen_rect = ui_surf.get_rect()
-    
-    # draw checkpoints
-    for rect in cp_rects:        
-        # Calculate position relative to camera center
-        rel_x = rect.x - cam.x
-        rel_y = rect.y - cam.y
-        
-        # Scale by zoom and offset by screen center
-        screen_x = int(rel_x * cam.zoom + const.WINDOW_WIDTH / 2)
-        screen_y = int(rel_y * cam.zoom + const.WINDOW_HEIGHT / 2)
-        
-        width = int(rect.width * cam.zoom)
-        height = int(rect.height * cam.zoom)
-        
-        draw_rect = pygame.Rect(screen_x, screen_y, width, height)
-        
-        # Draw only if visible on screen (culling)
-        if screen_rect.colliderect(draw_rect):
-            pygame.draw.rect(ui_surf, (0, 255, 0), draw_rect, 2)
-
-    return {}
-
 def draw_error(ui_surf, error_msg, font_small):
     msg = font_small.render(error_msg, True, (255,200,200))
     ui_surf.blit(msg, (const.WINDOW_WIDTH//2 - msg.get_width()//2, const.WINDOW_HEIGHT//2))
@@ -1536,14 +1508,7 @@ def draw_modes_panel(ui_surf, stage_path, stage3):
         Button("AI AutoPilot", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, get_color(const.AI_PATH_FOLLOW), 
                                [["mode1", "settings", "modes"], ["mode2", "settings", "modes"]], lambda: switch_ai_path_mode(stage3))
     ]
-    for button in mode_rects:
-        button.draw(ui_surf, stage_path)
-
-    # if const.MODE_CLICKED:
-    #     const.MODE_CLICKED = False
-    #     # print("hi")
-    #     return ""
-            
+    for button in mode_rects: button.draw(ui_surf, stage_path)
     return stage3
 
 def handle_modes_keypress(event):
