@@ -753,7 +753,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                         try:
                             opts = get_game_options()
                             # Wait for relay echo/world update before changing stage locally.
-                            sock.send(json.dumps({"t": "start_race", "code": code, "id": my_id, "mode": setup['selected_mode'], "track": setup['selected_track'], "laps": opts["laps"]}).encode("utf-8")) # client -> server
+                            sock.send(json.dumps({"t": "start_race", "code": code, "id": my_id, "mode": setup['selected_mode'], "track": setup['selected_track'], "choice": opts["choice"]}).encode("utf-8")) # client -> server
                         except Exception as e:
                             print(f"Error sending start: {e}")
                     else:

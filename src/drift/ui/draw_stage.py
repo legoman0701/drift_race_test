@@ -50,7 +50,7 @@ _game_options = {
     "selected_car_index": 0,
     "selected_map_index": 0,
     "selected_mode_index": 0,
-    "laps": 3,
+    "choice": 2,
     "ai_amount": 0,
     "ai_difficulty": "Random",
 }
@@ -330,9 +330,6 @@ def handle_palette_picker_keypress(ev):
         _color_palette[color_key] = (r, g, b)
         invalidate_palette_cache()  # Clear cache so changes are visible immediately
 
-def draw_menu():         
-    pass
-
 def draw_menu(ui_surf, font_big, font_medium, is_host):
     """Draw the game lobby/waiting room with start button (host only)."""
     
@@ -406,7 +403,7 @@ def draw_game_options_panel(ui_surf, font_big, font_medium, font_small, is_host,
         title_text = "Mode Options"
         content_h = _CONTENT_PAD
         content_h += fh_m + 3 + _SECTION_BOX_H + 8          # Mode selector
-        content_h += 5 + fh_m + 5 + _PM_BTN_SIZE            # Laps
+        content_h += 5 + fh_m + 5 + _PM_BTN_SIZE            # Choice
         content_h += _CONTENT_PAD
     elif page == "ai":
         title_text = "AI Options"
@@ -606,11 +603,11 @@ def _draw_options_mode_page(ui_surf, font_big, font_medium, font_small,
                             const.MODES_NAMES, px, y, rects, "mode",
                             show_car=False, show_illustration=True, car_id_override=current_car)
 
-    # Laps section
+    # Choice section
     y += 5
-    laps_lbl = font_medium.render("Laps", True, const.WHITE_240)
-    ui_surf.blit(laps_lbl, (cx - laps_lbl.get_width() // 2, y))
-    y += laps_lbl.get_height() + 5
+    choice_lbl = font_medium.render(const.MODES_OPTION_STR[const.MODE_INDEX], True, const.WHITE_240)
+    ui_surf.blit(choice_lbl, (cx - choice_lbl.get_width() // 2, y))
+    y += choice_lbl.get_height() + 5
 
     # -  [value]  +
     total_w = _PM_BTN_SIZE * 2 + 60
@@ -622,12 +619,12 @@ def _draw_options_mode_page(ui_surf, font_big, font_medium, font_small,
     m_sym = font_big.render("-", True, const.WHITE_240)
     ui_surf.blit(m_sym, (minus_rect.centerx - m_sym.get_width() // 2,
                           minus_rect.centery - m_sym.get_height() // 2))
-    rects["laps_minus"] = minus_rect
+    rects["choice_minus"] = minus_rect
 
     val_rect = pygame.Rect(start_x + _PM_BTN_SIZE, y, 60, _PM_BTN_SIZE)
     pygame.draw.rect(ui_surf, (40, 40, 46), val_rect)
     pygame.draw.rect(ui_surf, const.WHITE, val_rect, 1)
-    val_surf = font_big.render(str(_game_options["laps"]), True, const.WHITE_240)
+    val_surf = font_big.render(str(const.MODES_CHOICES[const.MODE_INDEX][_game_options["choice"]]), True, const.WHITE_240)
     ui_surf.blit(val_surf, (val_rect.centerx - val_surf.get_width() // 2,
                              val_rect.centery - val_surf.get_height() // 2))
 
@@ -637,7 +634,7 @@ def _draw_options_mode_page(ui_surf, font_big, font_medium, font_small,
     p_sym = font_big.render("+", True, const.WHITE_240)
     ui_surf.blit(p_sym, (plus_rect.centerx - p_sym.get_width() // 2,
                           plus_rect.centery - p_sym.get_height() // 2))
-    rects["laps_plus"] = plus_rect
+    rects["choice_plus"] = plus_rect
 
 
 def _draw_options_ai_page(ui_surf, font_big, font_medium, font_small,
@@ -711,7 +708,7 @@ def handle_game_options_click(click_pos, rects, is_host, room_clients_count=1):
     Possible actions:
       "toggle_panel", "car_prev", "car_next", "map_prev", "map_next",
       "nav_mode", "nav_ai", "back",
-      "mode_prev", "mode_next", "laps_minus", "laps_plus",
+      "mode_prev", "mode_next", "choice_minus", "choice_plus",
       "ai_amount_minus", "ai_amount_plus", "diff_<name>"
     """
     for name, rect in rects.items():
@@ -778,13 +775,13 @@ def handle_game_options_click(click_pos, rects, is_host, room_clients_count=1):
             const.MODE_INDEX = _game_options["selected_mode_index"]
             return "mode_next"
 
-        # Laps
-        if name == "laps_minus":
-            _game_options["laps"] = max(1, _game_options["laps"] - 1)
-            return "laps_minus"
-        if name == "laps_plus":
-            _game_options["laps"] = min(10, _game_options["laps"] + 1)
-            return "laps_plus"
+        # Choice
+        if name == "choice_minus":
+            _game_options["choice"] = max(0, _game_options["choice"] - 1)
+            return "choice_minus"
+        if name == "choice_plus":
+            _game_options["choice"] = min(len(const.MODES_CHOICES[const.MODE_INDEX])-1, _game_options["choice"]+1)
+            return "choice_plus"
 
         # AI amount
         if name == "ai_amount_minus":
@@ -806,8 +803,7 @@ def handle_game_options_click(click_pos, rects, is_host, room_clients_count=1):
 
 def draw_mode(ui_surf, font_big, font_medium, cam, cp_rects=[]):
     # screen dimensions for culling
-    if not cp_rects:
-        return {}
+    if not cp_rects: return {}
     
     screen_rect = ui_surf.get_rect()
     
@@ -999,7 +995,7 @@ def reset_game_setup():
     _game_options["selected_car_index"] = 0
     _game_options["selected_map_index"] = 0
     _game_options["selected_mode_index"] = 0
-    _game_options["laps"] = 3
+    _game_options["choice"] = 2
     _game_options["ai_amount"] = 0
     _game_options["ai_difficulty"] = "Random"
 
