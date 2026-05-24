@@ -1260,8 +1260,7 @@ def draw_controls(ui_surf, font_small):
         ("LEFT_KEY", "Steer Left"),
         ("RIGHT_KEY", "Steer Right"),
         ("BRAKE_KEY", "Handbrake"),
-        ("RESET_KEY", "Reset Car"),
-        ("CHANGE_CAR_KEY", "Change Car"),
+        ("RESET_KEY", "Restart Checkpoint"),
     ]
     
     total_btn = len(controls)

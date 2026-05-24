@@ -773,7 +773,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
 
         elif stage1.startswith("mode") and stage2 == "" and _palette_picker_rects_cache:
             handle_palette_picker_click(ev.pos, _palette_picker_rects_cache)
-        elif stage1 in ["lobby", "mode1", "mode2", "leaderboard"] and stage2 == "settings" and stage3 == "controls" and _controls_rects_cache:
+        elif stage1 in ["menu", "lobby", "mode1", "mode2", "leaderboard"] and stage2 == "settings" and stage3 == "controls" and _controls_rects_cache:
             res = handle_controls_click(ev.pos, _controls_rects_cache, gamepad)
             if res and res.startswith("gp_connected_"):
                 stage2 = "" ; stage3 = "" # close controls & settings to confirm connection
