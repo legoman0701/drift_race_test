@@ -1169,6 +1169,8 @@ def main():
     # ── Helper: cycle car type (shared by keyboard & gamepad) ──
     def _cycle_car_type():
         nonlocal engine_audio, current_engine_sound_id
+        if stage1 == "mode_tutorial":
+            return
         available_types = list(const.CAR_SPRITES.keys())
         lower_types = [t.lower() for t in available_types]
         try:
@@ -1696,6 +1698,11 @@ def main():
                         ai.vx, ai.vy = 0.0, 0.0
 
             if stage1 == "mode_tutorial":
+                tutorial_car_type = "AE86"
+                if my_car.car_type.lower() != tutorial_car_type.lower():
+                    my_car.set_car_type(tutorial_car_type)
+                    set_palette_colors_from_car(my_car.palette_colors)
+                    invalidate_palette_cache()
                 _init_tutorial_runtime(reset_variant=True)
 
             if _prev_stage1 == "leaderboard" and game_mode is not None:
