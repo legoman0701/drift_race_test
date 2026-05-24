@@ -171,15 +171,15 @@
     ],
     "tutorial": {
         "steps": [
-            {"zone": {"x": 433, "y": 1019, "width": 292, "height": 71}, "actions": ["turn_left", "brake"], "prompt": "Turn Left + Brake", "min_hold_s": 0.45, "heading_delta_min": 0.13, "brake_speed_drop": 22.0},
-            {"zone": {"x": 608, "y": 1190, "width": 156, "height": 214}, "actions": ["turn_left", "accelerate"], "prompt": "Turn Left + Accelerate", "min_hold_s": 0.35, "heading_delta_min": 0.12, "brake_speed_drop": 28.0},
-            {"zone": {"x": 882, "y": 1246, "width": 202, "height": 208}, "actions": ["straighten_out", "accelerate"], "prompt": "Straighten Out + Accelerate", "min_hold_s": 0.35, "heading_delta_min": 0.12, "brake_speed_drop": 28.0},
-            {"zone": {"x": 1306, "y": 1168, "width": 128, "height": 192}, "actions": ["turn_left", "brake"], "prompt": "Turn Left + Brake", "min_hold_s": 0.35, "heading_delta_min": 0.12, "brake_speed_drop": 28.0},
-            {"zone": {"x": 1408, "y": 942, "width": 310, "height": 146}, "actions": ["turn_left", "accelerate"], "prompt": "Turn Left + Accelerate", "min_hold_s": 0.35, "heading_delta_min": 0.12, "brake_speed_drop": 28.0},
-            {"zone": {"x": 1285, "y": 859, "width": 95, "height": 233}, "actions": ["straighten_out", "accelerate"], "prompt": "Straighten Out + Accelerate", "min_hold_s": 0.35, "heading_delta_min": 0.12, "brake_speed_drop": 28.0},
-            {"zone": {"x": 1168, "y": 880, "width": 89, "height": 225}, "actions": ["turn_right", "brake"], "prompt": "Turn Right + Brake", "min_hold_s": 0.35, "heading_delta_min": 0.12, "brake_speed_drop": 28.0},
-            {"zone": {"x": 822, "y": 852, "width": 178, "height": 272}, "actions": ["turn_right", "accelerate"], "prompt": "Turn Right + Accelerate", "min_hold_s": 0.35, "heading_delta_min": 0.12, "brake_speed_drop": 28.0},
-            {"zone": {"x": 868, "y": 652, "width": 286, "height": 166}, "actions": ["straighten_out", "accelerate"], "prompt": "Straighten Out + Accelerate", "min_hold_s": 0.35, "heading_delta_min": 0.12, "brake_speed_drop": 28.0}
+            {"zone": {"x": 508, "y": 1173, "width": 212, "height": -64}, "actions": ["turn_left", "brake"], "prompt": "Turn Left + Brake", "min_hold_s": 0.45, "heading_delta_min": 0.13, "brake_speed_drop": 22.0},
+            {"zone": {"x": 788, "y": 1244, "width": -202, "height": 82}, "actions": ["turn_left", "accelerate"], "prompt": "Turn Left + Accelerate", "min_hold_s": 0.35, "heading_delta_min": 0.12, "brake_speed_drop": 28.0},
+            {"zone": {"x": 892, "y": 1282, "width": 46, "height": 156}, "actions": ["straighten_out", "accelerate"], "prompt": "Straighten Out + Accelerate", "min_hold_s": 0.35, "heading_delta_min": 0.12, "brake_speed_drop": 28.0},
+            {"zone": {"x": 1298, "y": 1180, "width": 50, "height": 156}, "actions": ["turn_left", "brake"], "prompt": "Turn Left + Brake", "min_hold_s": 0.35, "heading_delta_min": 0.12, "brake_speed_drop": 28.0},
+            {"zone": {"x": 1454, "y": 1132, "width": 106, "height": 150}, "actions": ["turn_left", "accelerate"], "prompt": "Turn Left + Accelerate", "min_hold_s": 0.35, "heading_delta_min": 0.12, "brake_speed_drop": 28.0},
+            {"zone": {"x": 1414, "y": 1032, "width": 6, "height": -164}, "actions": ["straighten_out", "accelerate"], "prompt": "Straighten Out + Accelerate", "min_hold_s": 0.35, "heading_delta_min": 0.12, "brake_speed_drop": 28.0},
+            {"zone": {"x": 1066, "y": 928, "width": 54, "height": 170}, "actions": ["turn_right", "brake"], "prompt": "Turn Right + Brake", "min_hold_s": 0.35, "heading_delta_min": 0.12, "brake_speed_drop": 28.0},
+            {"zone": {"x": 976, "y": 936, "width": -56, "height": 168}, "actions": ["turn_right", "accelerate"], "prompt": "Turn Right + Accelerate", "min_hold_s": 0.35, "heading_delta_min": 0.12, "brake_speed_drop": 28.0},
+            {"zone": {"x": 948, "y": 852, "width": -148, "height": -122}, "actions": ["straighten_out", "accelerate"], "prompt": "Straighten Out + Accelerate", "min_hold_s": 0.35, "heading_delta_min": 0.12, "brake_speed_drop": 28.0}
         ],
         "end_zone": {
             "x": 1776,

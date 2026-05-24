@@ -6,7 +6,7 @@ Usage:
     python -m drift.tools.tutorial_editor --map 3
 
 Controls:
-    Left Mouse Drag: create or resize current step zone
+    Left Mouse Drag: create or edit current step line
     N: add new step
     TAB / SHIFT+TAB: next/previous step
     DELETE/BACKSPACE: delete current step
@@ -103,8 +103,9 @@ class TutorialEditor:
                     "zone": {
                         "x": int(zone.get("x", 0)),
                         "y": int(zone.get("y", 0)),
-                        "width": max(1, int(zone.get("width", 10))),
-                        "height": max(1, int(zone.get("height", 10))),
+                        # Legacy line mode: width/height are line deltas from origin.
+                        "width": int(zone.get("width", 160)),
+                        "height": int(zone.get("height", 0)),
                     },
                     "actions": st.get("actions", ["turn_right"]),
                     "prompt": st.get("prompt", "Turn Right"),
@@ -128,7 +129,7 @@ class TutorialEditor:
         if not self.steps:
             actions, prompt = _ACTION_PRESETS[0]
             self.steps.append({
-                "zone": {"x": 100, "y": 100, "width": 140, "height": 90},
+                "zone": {"x": 100, "y": 100, "width": 160, "height": 0},
                 "actions": list(actions),
                 "prompt": prompt,
                 "min_hold_s": const.TUTORIAL_ACTION_MIN_HOLD_S,
@@ -251,6 +252,12 @@ class TutorialEditor:
         cur["prompt"] = presets[(idx + 1) % len(presets)]
 
     def _set_zone_from_drag(self, world_now):
+        if self.edit_end_zone:
+            self._set_end_zone_from_drag(world_now)
+        else:
+            self._set_step_line_from_drag(world_now)
+
+    def _set_end_zone_from_drag(self, world_now):
         ax, ay = self.drag_anchor
         bx, by = world_now
         x0, y0 = min(ax, bx), min(ay, by)
@@ -261,9 +268,18 @@ class TutorialEditor:
             "width": max(1, int(x1 - x0)),
             "height": max(1, int(y1 - y0)),
         }
-        if self.edit_end_zone:
-            self.end_zone = zone
-            return
+        self.end_zone = zone
+
+    def _set_step_line_from_drag(self, world_now):
+        ax, ay = self.drag_anchor
+        bx, by = world_now
+        zone = {
+            "x": int(ax),
+            "y": int(ay),
+            # Legacy line mode: width/height store line delta from origin.
+            "width": int(bx - ax),
+            "height": int(by - ay),
+        }
         if not self.steps:
             return
         self.steps[self.selected]["zone"] = zone
@@ -279,16 +295,18 @@ class TutorialEditor:
 
         for i, step in enumerate(self.steps):
             zone = step.get("zone", {})
-            wx, wy = int(zone.get("x", 0)), int(zone.get("y", 0))
-            ww, wh = int(zone.get("width", 1)), int(zone.get("height", 1))
-            sx, sy = self._world_to_screen(wx, wy)
-            sw = max(1, int(ww * self.zoom))
-            sh = max(1, int(wh * self.zoom))
-            rect = pygame.Rect(sx, sy, sw, sh)
+            x1, y1 = int(zone.get("x", 0)), int(zone.get("y", 0))
+            x2, y2 = x1 + int(zone.get("width", 0)), y1 + int(zone.get("height", 0))
+            sx1, sy1 = self._world_to_screen(x1, y1)
+            sx2, sy2 = self._world_to_screen(x2, y2)
             color = (80, 220, 120) if i == self.selected else (220, 150, 70)
-            pygame.draw.rect(self.screen, color, rect, 2)
+            pygame.draw.line(self.screen, color, (sx1, sy1), (sx2, sy2), 3)
+            pygame.draw.circle(self.screen, color, (sx1, sy1), 4)
+            pygame.draw.circle(self.screen, color, (sx2, sy2), 4)
+            lx = (sx1 + sx2) // 2
+            ly = (sy1 + sy2) // 2
             label = self.font_small.render(f"{i+1}: {step.get('prompt', '')}", True, color)
-            self.screen.blit(label, (sx + 4, sy + 4))
+            self.screen.blit(label, (lx + 6, ly - 10))
 
         if isinstance(self.end_zone, dict):
             ez = self.end_zone
@@ -304,7 +322,7 @@ class TutorialEditor:
             self.screen.blit(elabel, (esx + 4, esy + 4))
 
         mode = "END ZONE" if self.edit_end_zone else "STEP"
-        status = "LMB drag: zone | E end-zone mode | N new | TAB next | A action | P prompt | S save | L load | Del delete/clear | ESC quit"
+        status = "LMB drag: line | E end-zone mode | N new | TAB next | A action | P prompt | S save | L load | Del delete/clear | ESC quit"
         info = self.font.render(status, True, (230, 230, 240))
         self.screen.blit(info, (12, 8))
 
@@ -336,18 +354,24 @@ class TutorialEditor:
                         if self.edit_end_zone and self.end_zone is None:
                             if self.steps:
                                 z = self.steps[self.selected].get("zone", {})
+                                sx = int(z.get("x", 100))
+                                sy = int(z.get("y", 100))
+                                ex = sx + int(z.get("width", 160))
+                                ey = sy + int(z.get("height", 0))
+                                x0, y0 = min(sx, ex), min(sy, ey)
+                                x1, y1 = max(sx, ex), max(sy, ey)
                                 self.end_zone = {
-                                    "x": int(z.get("x", 100)),
-                                    "y": int(z.get("y", 100)),
-                                    "width": max(1, int(z.get("width", 160))),
-                                    "height": max(1, int(z.get("height", 100))),
+                                    "x": x0,
+                                    "y": y0,
+                                    "width": max(1, x1 - x0),
+                                    "height": max(1, y1 - y0),
                                 }
                             else:
                                 self.end_zone = {"x": 100, "y": 100, "width": 160, "height": 100}
                     elif ev.key == pygame.K_n:
                         actions, prompt = _ACTION_PRESETS[0]
                         self.steps.append({
-                            "zone": {"x": 100, "y": 100, "width": 160, "height": 100},
+                            "zone": {"x": 100, "y": 100, "width": 160, "height": 0},
                             "actions": list(actions),
                             "prompt": prompt,
                             "min_hold_s": const.TUTORIAL_ACTION_MIN_HOLD_S,
