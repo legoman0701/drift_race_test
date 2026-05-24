@@ -1,194 +1,242 @@
-import pygame, math
-from concurrent.futures import ThreadPoolExecutor, Future
-from PIL import Image
+import math
+import json
+from concurrent.futures import ThreadPoolExecutor
+from PIL import Image, ImageDraw
+import numpy as np
 
-from drift.config import const
 from drift.tools.paths import normalize_asset_path
 
-# Background thread pool for non-blocking track discovery
 _executor = ThreadPoolExecutor(max_workers=1)
 
-def discover_track(map_path, start_pos=(220, 1700), start_angle=90, sample_rate=8, max_iterations=10000):
+
+def _load_map_meta_for_map(map_path: str) -> dict:
+    """Try to load map_meta.json next to main.png."""
+    p = normalize_asset_path(map_path)
+    meta_path = p.parent / "map_meta.json"
+    try:
+        with open(meta_path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        return {}
+
+
+def _build_driveable_mask(map_path: str, meta: dict) -> np.ndarray:
     """
-    Discover track outline by following the track edges using PIL (no pygame).
-    Args:
-        map_path: Path to the track image
-        start_pos: Starting position (x, y)
-        start_angle: Starting angle in degrees
-        sample_rate: Sample position every N frames
-        max_iterations: Maximum iterations before stopping
-    Returns:
-        List of (x, y) tuples representing the track polygon
+    Return bool mask where True = drivable.
+    Heuristic: green grass is obstacle (g high), road is less green.
     """
-    pil_img = Image.open(normalize_asset_path(map_path)).convert("RGBA")
-    width, height = pil_img.size
-    px = pil_img.load()
+    img = Image.open(normalize_asset_path(map_path)).convert("RGB")
+    arr = np.asarray(img, dtype=np.uint8)
+    driveable = arr[:, :, 1] < 170
 
-    finder_pos = (float(start_pos[0]), float(start_pos[1]))
-    finder_angle = float(start_angle)
-    positions = []
-    iterations = 0
+    mesh = meta.get("collision_mesh", []) or []
+    if mesh:
+        h, w = driveable.shape
+        mask_img = Image.new("L", (w, h), 255)
+        draw = ImageDraw.Draw(mask_img)
+        for poly in mesh:
+            if len(poly) >= 3:
+                draw.polygon([tuple(p) for p in poly], fill=0)
+        barrier_mask = np.asarray(mask_img, dtype=np.uint8) > 0
+        driveable &= barrier_mask
 
-    def raycast(pos, angle, length=800):
-        x, y = pos
-        for l in range(length):
-            rx = int(x + math.cos(math.radians(angle)) * l)
-            ry = int(y + math.sin(math.radians(angle)) * l)
-            if 0 <= rx < width and 0 <= ry < height:
-                color = px[rx, ry]
-                # color can be (r,g,b) or (r,g,b,a)
-                if color[1] > 180:  # same heuristic as before
-                    return l
-        return length
-
-    while iterations < max_iterations:
-        # Move finder forward and steer to keep track centered
-        left_angle = finder_angle - 45
-        right_angle = finder_angle + 45
-        left_dist = raycast(finder_pos, left_angle)
-        right_dist = raycast(finder_pos, right_angle)
-
-        # Calculate steering
-        center_offset = right_dist - left_dist
-        steer = max(-5, min(5, center_offset * 0.1))
-        finder_angle += steer
-
-        # Move forward
-        speed = 4
-        finder_pos = (
-            finder_pos[0] + math.cos(math.radians(finder_angle)) * speed,
-            finder_pos[1] + math.sin(math.radians(finder_angle)) * speed
-        )
-
-        # Sample positions
-        if iterations % sample_rate == 0:
-            positions.append((int(finder_pos[0]), int(finder_pos[1])))
-
-        # Check if we've completed a loop (back near start)
-        if len(positions) > 50:
-            start_x, start_y = start_pos
-            curr_x, curr_y = finder_pos
-            distance_to_start = math.hypot(curr_x - start_x, curr_y - start_y)
-            if distance_to_start < 50:
-                break
-
-        iterations += 1
-
-    return positions
+    return driveable
 
 
-def discover_track_visual(map_path, start_pos=(220, 1700), start_angle=90, sample_rate=8):
-    """
-    Discover track with visual display (original functionality).
-    Returns the polygon when window is closed.
-    """
-    bg_image = pygame.image.load(normalize_asset_path(map_path))
-    image_surface = pygame.Surface((bg_image.get_width(), bg_image.get_height()))
-    tmp_drawing_surf = pygame.Surface((bg_image.get_width(), bg_image.get_height()), pygame.SRCALPHA)
+def _ordered_checkpoint_centers(meta: dict):
+    cps = meta.get("checkpoints", []) or []
+    if not cps:
+        return []
+    cps_sorted = sorted(cps, key=lambda c: int(c.get("id", 0)))
+    centers = []
+    for c in cps_sorted:
+        x = float(c["x"]) + float(c["width"]) * 0.5
+        y = float(c["y"]) + float(c["height"]) * 0.5
+        centers.append((x, y))
+    return centers
 
-    pygame.init()
-    screen = pygame.display.set_mode((bg_image.get_width()//2, bg_image.get_height()//2))
-    pygame.display.set_caption("Track Discovery")
 
-    image_surface.blit(bg_image, (0, 0))
+def _densify_closed_polyline(points, step=20.0):
+    if len(points) < 2:
+        return points[:]
+    dense = []
+    n = len(points)
+    for i in range(n):
+        ax, ay = points[i]
+        bx, by = points[(i + 1) % n]
+        dx, dy = bx - ax, by - ay
+        seg = math.hypot(dx, dy)
+        if seg < 1e-6:
+            continue
+        k = max(1, int(seg / step))
+        for j in range(k):
+            t = j / k
+            dense.append((ax + dx * t, ay + dy * t))
+    return dense
 
-    finder_pos = start_pos
-    finder_angle = start_angle
-    positions = []
-    frame = 0
 
-    def draw_finder(surface, pos, angle):
-        x, y = pos
-        size = 30
-        points = [
-            (x + math.cos(math.radians(angle)) * size, y + math.sin(math.radians(angle)) * size),
-            (x + math.cos(math.radians(angle + 120)) * size * 0.6, y + math.sin(math.radians(angle + 120)) * size * 0.6),
-            (x + math.cos(math.radians(angle - 120)) * size * 0.6, y + math.sin(math.radians(angle - 120)) * size * 0.6),
+def _smooth_closed_polyline(points, passes=3):
+    if len(points) < 5:
+        return points[:]
+    pts = points[:]
+    for _ in range(passes):
+        out = []
+        n = len(pts)
+        for i in range(n):
+            x0, y0 = pts[(i - 1) % n]
+            x1, y1 = pts[i]
+            x2, y2 = pts[(i + 1) % n]
+            out.append(((x0 + 2.0 * x1 + x2) * 0.25, (y0 + 2.0 * y1 + y2) * 0.25))
+        pts = out
+    return pts
+
+
+def _project_to_driveable(points, driveable):
+    """Snap each point to nearest drivable pixel in small radius."""
+    h, w = driveable.shape
+    out = []
+    for x, y in points:
+        ix, iy = int(round(x)), int(round(y))
+        if 0 <= ix < w and 0 <= iy < h and driveable[iy, ix]:
+            out.append((float(ix), float(iy)))
+            continue
+        best = None
+        best_d2 = 1e18
+        R = 24
+        for ry in range(max(0, iy - R), min(h, iy + R + 1)):
+            for rx in range(max(0, ix - R), min(w, ix + R + 1)):
+                if driveable[ry, rx]:
+                    d2 = (rx - ix) * (rx - ix) + (ry - iy) * (ry - iy)
+                    if d2 < best_d2:
+                        best_d2 = d2
+                        best = (rx, ry)
+        if best is not None:
+            out.append((float(best[0]), float(best[1])))
+        else:
+            out.append((float(ix), float(iy)))
+    return out
+
+
+def _compute_curvature_and_speed(points, a_lat_max=180.0, vmin=40.0, vmax=360.0):
+    n = len(points)
+    if n < 5:
+        return [
+            {
+                "x": p[0],
+                "y": p[1],
+                "heading": 0.0,
+                "kappa": 0.0,
+                "v_target": 120.0,
+                "drift_zone": False,
+                "drift_intensity": 0.0,
+            }
+            for p in points
         ]
-        pygame.draw.polygon(surface, (255, 0, 0), points)
 
-    def raycast(surface, pos, angle, length=800):
-        x, y = pos
-        for l in range(length):
-            rx = int(x + math.cos(math.radians(angle)) * l)
-            ry = int(y + math.sin(math.radians(angle)) * l)
-            if 0 <= rx < surface.get_width() and 0 <= ry < surface.get_height():
-                color = surface.get_at((rx, ry))
-                if color[1] > 180:
-                    return l
-        return length
+    traj = []
+    for i in range(n):
+        x_prev, y_prev = points[(i - 1) % n]
+        x, y = points[i]
+        x_next, y_next = points[(i + 1) % n]
 
-    def draw_ray(surface, pos, angle, length, color):
-        end = (
-            pos[0] + math.cos(math.radians(angle)) * length,
-            pos[1] + math.sin(math.radians(angle)) * length
+        tx = x_next - x_prev
+        ty = y_next - y_prev
+        heading = math.atan2(ty, tx)
+
+        a = math.hypot(x - x_prev, y - y_prev)
+        b = math.hypot(x_next - x, y_next - y)
+        c = math.hypot(x_next - x_prev, y_next - y_prev)
+        if a < 1e-6 or b < 1e-6 or c < 1e-6:
+            kappa = 0.0
+        else:
+            area2 = abs((x - x_prev) * (y_next - y_prev) - (y - y_prev) * (x_next - x_prev))
+            kappa = area2 / (a * b * c + 1e-9)
+
+        v_target = math.sqrt(a_lat_max / max(kappa, 1e-5))
+        v_target = max(vmin, min(vmax, v_target))
+
+        drift_zone = kappa > 0.012
+        drift_intensity = min(1.0, kappa * 80.0) if drift_zone else 0.0
+
+        traj.append(
+            {
+                "x": x,
+                "y": y,
+                "heading": heading,
+                "kappa": kappa,
+                "v_target": v_target,
+                "drift_zone": drift_zone,
+                "drift_intensity": drift_intensity,
+            }
         )
-        pygame.draw.line(surface, color, pos, end, 2)
-
-    running = True
-    while running:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-
-        screen.blit(pygame.transform.scale_by(image_surface, 0.5), (0, 0))
-
-        left_angle = finder_angle - 45
-        right_angle = finder_angle + 45
-        left_dist = raycast(image_surface, finder_pos, left_angle)
-        right_dist = raycast(image_surface, finder_pos, right_angle)
-
-        center_offset = right_dist - left_dist
-        steer = max(-5, min(5, center_offset * 0.1))
-        finder_angle += steer
-
-        speed = 4
-        finder_pos = (
-            finder_pos[0] + math.cos(math.radians(finder_angle)) * speed,
-            finder_pos[1] + math.sin(math.radians(finder_angle)) * speed
-        )
-
-        tmp_drawing_surf.fill((0, 0, 0, 0))
-
-        draw_ray(tmp_drawing_surf, finder_pos, left_angle, left_dist, (0, 255, 0))
-        draw_ray(tmp_drawing_surf, finder_pos, right_angle, right_dist, (0, 255, 0))
-        draw_finder(tmp_drawing_surf, finder_pos, finder_angle)
-
-        frame += 1
-        if frame % sample_rate == 0:
-            positions.append((int(finder_pos[0]), int(finder_pos[1])))
-
-        if len(positions) >= 3:
-            pygame.draw.polygon(tmp_drawing_surf, (0, 0, 255), positions, 2)
-
-        if len(positions) > 50:
-            start_x, start_y = start_pos
-            curr_x, curr_y = finder_pos
-            distance_to_start = math.hypot(curr_x - start_x, curr_y - start_y)
-            if distance_to_start < 50:
-                print("Loop completed — stopping discovery.")
-                pygame.draw.polygon(tmp_drawing_surf, (255, 0, 0), positions, 3)
-                screen.blit(pygame.transform.scale_by(tmp_drawing_surf, 0.5), (0, 0))
-                pygame.display.flip()
-                pygame.time.wait(500)
-                running = False
-
-        screen.blit(pygame.transform.scale_by(tmp_drawing_surf, 0.5), (0, 0))
-        pygame.display.flip()
-
-    pygame.quit()
-    return positions
+    return traj
 
 
-def discover_track_async(map_path, start_pos=(220, 1700), start_angle=90, sample_rate=8, max_iterations=10000):
-    """Start track discovery in a background thread. Returns a Future.
-    
-    Poll with future.done(); retrieve result with future.result().
+def discover_track(
+    map_path,
+    start_pos=(220, 1700),
+    start_angle=90,
+    sample_rate=8,
+    max_iterations=10000,
+):
     """
-    return _executor.submit(discover_track, map_path, start_pos, start_angle, sample_rate, max_iterations)
+    Build AI trajectory from map + map_meta.
+    Returns:
+      {
+        "polyline": [(x,y), ...],
+        "trajectory": [{x,y,heading,kappa,v_target,drift_zone,drift_intensity}, ...],
+        "map_id": str,
+        "map_num": int,
+      }
+    """
+    meta = _load_map_meta_for_map(map_path)
+    driveable = _build_driveable_mask(map_path, meta)
+
+    cps = _ordered_checkpoint_centers(meta)
+    if len(cps) < 3:
+        r = 220.0
+        pts = []
+        for i in range(36):
+            a = (i / 36.0) * 2.0 * math.pi
+            pts.append((start_pos[0] + math.cos(a) * r, start_pos[1] + math.sin(a) * r))
+    else:
+        pts = cps
+
+    pts = _densify_closed_polyline(pts, step=20.0)
+    pts = _project_to_driveable(pts, driveable)
+    pts = _smooth_closed_polyline(pts, passes=4)
+
+    trajectory = _compute_curvature_and_speed(pts)
+
+    p = normalize_asset_path(map_path)
+    map_num = 1
+    try:
+        parent_name = p.parent.name
+        if parent_name.startswith("map"):
+            map_num = int(parent_name.replace("map", ""))
+    except Exception:
+        pass
+
+    return {
+        "polyline": [(p["x"], p["y"]) for p in trajectory],
+        "trajectory": trajectory,
+        "map_id": meta.get("map_name", f"map{map_num}"),
+        "map_num": map_num,
+    }
 
 
-if __name__ == "__main__":
-    # Run visual version when called directly
-    polygon = discover_track_visual(f"track/map1/main.png")
-    print(f"Discovered track polygon with {len(polygon)} points")
+def discover_track_async(
+    map_path,
+    start_pos=(220, 1700),
+    start_angle=90,
+    sample_rate=8,
+    max_iterations=10000,
+):
+    return _executor.submit(
+        discover_track,
+        map_path,
+        start_pos,
+        start_angle,
+        sample_rate,
+        max_iterations,
+    )
