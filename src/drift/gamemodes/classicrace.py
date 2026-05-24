@@ -5,14 +5,15 @@ from drift.gamemodes.template import BaseGameMode, PlayerRaceState
 class ClassicRace(BaseGameMode):
     """player who complete all laps first wins"""
 
-    def __init__(self, checkpoints, total_laps=3, start_grid=None, lines=None, local_player_id="local", path_poly=None):
-        super().__init__(checkpoints, total_laps, start_grid)
+    def __init__(self, checkpoints, start_grid=None, choice_index=2, lines=None, local_player_id="local", path_poly=None):
+        super().__init__(checkpoints, start_grid)
         self.phase = self.PHASE_COUNTDOWN
         self.countdown_start = 0.0
         self.countdown_duration = 3.0 # seconds
         self.cooldown_start = 0.0
         self.cooldown_duration = 5.0 # seconds
-        self.max_time = 90.0 * total_laps # seconds (90 seconds per lap)
+        self.total_laps = const.MODES_CHOICES[const.MODE_INDEX][choice_index]
+        self.max_time = 60.0 * self.total_laps # seconds (60 seconds per lap)
         self.max_players = 6
         self.local_player_id = str(local_player_id)
 
@@ -276,35 +277,48 @@ class ClassicRace(BaseGameMode):
             return
 
         rank = next((i for i, ps in enumerate(self.leaderboard, start=1) if ps.player_id == self.local_player_id), None)
-        if rank is None:
-            rank_txt = "Finished!"
-        else:
-            rank_txt = f"Finished! Rank #{rank}"
+        rank_txt = "Finished!" if rank is None else f"Finished! Rank #{rank}"
 
-        mins = int(local_ps.finish_time) // 60
-        secs = local_ps.finish_time - mins * 60
-        time_txt = f"Time: {mins}:{secs:05.2f}"
+        # mins = int(local_ps.finish_time) // 60
+        # secs = local_ps.finish_time - mins * 60
+        # time_txt = f"Time: {mins}:{secs:05.2f}"
 
         banner = font_big.render(rank_txt, True, (120, 255, 120))
-        sub = font_small.render(time_txt, True, const.WHITE_240)
+        # sub = font_small.render(time_txt, True, const.WHITE_240)
         bx = const.WINDOW_WIDTH // 2 - banner.get_width() // 2
-        by = const.TOP_LINE_Y + 36
-        sx = const.WINDOW_WIDTH // 2 - sub.get_width() // 2
-        sy = by + banner.get_height() + 4
+        by = const.TOP_LINE_Y + 136
+        # sx = const.WINDOW_WIDTH // 2 - sub.get_width() // 2
+        # sy = by + banner.get_height() + 4
 
         shadow = font_big.render(rank_txt, True, (0, 0, 0))
         ui_surf.blit(shadow, (bx + 2, by + 2))
         ui_surf.blit(banner, (bx, by))
-        ui_surf.blit(sub, (sx, sy))
+        # ui_surf.blit(sub, (sx, sy))
 
     def _draw_race_hud(self, ui_surf, font_medium, font_small):
-        # Timer (top center, below header)
+        # race timer
         mins = int(self.race_time) // 60
         secs = self.race_time - mins * 60
-        time_str = f"{mins}:{secs:05.2f}"
-        time_surf = font_medium.render(time_str, True, const.WHITE_240)
-        ui_surf.blit(time_surf, (const.WINDOW_WIDTH // 2 - time_surf.get_width() // 2,
-                                  const.TOP_LINE_Y + 8))
+        total_time_str = f"Race: {mins}:{secs:05.2f}"
+        total_time_surf = font_medium.render(total_time_str, True, const.WHITE_240)
+        ui_surf.blit(total_time_surf, (const.WINDOW_WIDTH // 2 - total_time_surf.get_width() // 2,
+                                       const.TOP_LINE_Y + 8))
+        # current lap timer
+        local_ps = self.player_states.get(self.local_player_id)
+        if local_ps:
+            current_time_str = self.race_time - local_ps._lap_start_time
+            mins = int(current_time_str) // 60
+            secs = current_time_str - mins * 60
+            lap_time_str = f"Lap: {mins}:{secs:05.2f}"
+            lap_time_surf = font_medium.render(lap_time_str, True, const.WHITE_240)
+            ui_surf.blit(lap_time_surf, (const.WINDOW_WIDTH // 2 - lap_time_surf.get_width() // 2,
+                                     const.TOP_LINE_Y + total_time_surf.get_height() * 2))
+        # best lap timer
+        if local_ps and local_ps.best_lap_time is not None:
+            best_time_str = f"Best: {local_ps.best_lap_time:.2f}"
+            best_time_surf = font_medium.render(best_time_str, True, const.WHITE_240)
+            ui_surf.blit(best_time_surf, (const.WINDOW_WIDTH // 2 - best_time_surf.get_width() // 2,
+                                      const.TOP_LINE_Y + total_time_surf.get_height() * 2 + lap_time_surf.get_height() * 2))
 
         # Per-player lap / checkpoint (left side)
         y = const.TOP_LINE_Y + 40
@@ -313,6 +327,6 @@ class ClassicRace(BaseGameMode):
             lap_str = f"Lap {min(local_ps.current_lap + 1, self.total_laps)}/{self.total_laps}"
             cp_str = f"CP {local_ps.current_checkpoint}/{len(self._cp_rects)}"
             lap_surf = font_small.render(lap_str, True, const.WHITE_240)
-            cp_surf = font_small.render(cp_str, True, const.GREY_200)
+            cp_surf = font_small.render(cp_str, True, const.WHITE_240)
             ui_surf.blit(lap_surf, (12, y))
             ui_surf.blit(cp_surf, (12, y + 20))

@@ -25,6 +25,7 @@ TICK = 0.01             # main loop tick
 #   }
 rooms = {}
 
+CHOICE_MAX = 5
 
 def assign_random_host(room):
     if not room.get("clients"):
@@ -108,6 +109,7 @@ def broadcast_world(sock, code, room): # update world screen
         "race_started": bool(room.get("race_started", False)),
         "mode": room.get("mode", "mode1"),
         "track": room.get("track", "track1"),
+        "choice": room.get("choice", 0),
     }
     for caddr in list(room["clients"].keys()):
         sendto_json(sock, caddr, world)
@@ -192,6 +194,7 @@ def loop():
                 sendto_json(sock, addr, {"t":"error","msg":"room_already_exists"}); continue
             evict_from_other_rooms(code, addr, pid)
             max_players = max(1, min(int(msg.get("max_players", 6)), 16))
+            choice = max(0, min(int(msg.get("choice", 0)), CHOICE_MAX - 1))
             room = {"clients": {}, "states": {}, "results": {}, "host_addr": addr, "host_id": pid, "host_name": name, "mode": mode, "track": track, "max_players": max_players, "race_started": False, "last_broadcast": 0.0, "dirty": True}
             rooms[code] = room
             room["clients"][addr] = {"id": pid, "name": name, "car_type": car_type, "last": now}
@@ -342,9 +345,9 @@ def loop():
             # haven't been received yet via world snapshots.
             roster = sorted(room["states"].keys())
             start_msg = {"t": "start_race", "code": code, "mode": requested_mode, "track": room.get("track", "track1"), "roster": roster}
-            laps = msg.get("laps")
-            if isinstance(laps, int) and 1 <= laps <= 10:
-                start_msg["laps"] = laps
+            choice = msg.get("choice")
+            if isinstance(choice, int) and 0 <= choice < CHOICE_MAX:
+                start_msg["choice"] = choice
             for caddr in list(room["clients"].keys()):
                 sendto_json(sock, caddr, start_msg)
 

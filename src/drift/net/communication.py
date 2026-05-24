@@ -91,9 +91,9 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
             track = msg.get("track")
             if isinstance(track, str) and track:
                 result["start_track"] = track
-            laps = msg.get("laps")
-            if isinstance(laps, int) and 1 <= laps <= 10:
-                result["start_laps"] = laps
+            choice = msg.get("choice")
+            if isinstance(choice, int) and 0 <= choice < len(const.MODES_CHOICES[const.MODE_INDEX]):
+                result["start_choice"] = choice
             # Roster: authoritative list of all player/AI IDs from the relay,
             # used to compute deterministic spawn positions on every client.
             roster = msg.get("roster")

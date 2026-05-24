@@ -1160,9 +1160,9 @@ def main():
                 else:
                     stage1 = new_mode
                     renderer.clear_tire_marks()
-                    start_laps = net_result.get("start_laps")
-                    if isinstance(start_laps, int):
-                        set_game_option("laps", start_laps)
+                    start_choice = net_result.get("start_choice")
+                    if isinstance(start_choice, int):
+                        set_game_option("choice", start_choice)
                     # Save relay roster so spawn positions are deterministic
                     # across all clients (avoids AI/player slot mismatch).
                     _start_roster = net_result.get("start_roster")
@@ -1237,8 +1237,9 @@ def main():
                 mode_classes = {0: ClassicRace, 1: BestLap}
                 game_mode = mode_classes.get(const.MODE_INDEX)
                 if game_mode:
-                    game_mode = game_mode(renderer.checkpoints or [], total_laps=get_game_options()["laps"], 
-                                           start_grid=_start_grid, lines=_lines, local_player_id=my_id, path_poly=path_poly)
+                    # print(get_game_options()["choice"])
+                    game_mode = game_mode(renderer.checkpoints or [], start_grid=_start_grid, choice_index=get_game_options()["choice"], 
+                                          lines=_lines, local_player_id=my_id, path_poly=path_poly)
 
                 _local_result_sent = False
                 _ai_results_sent = {}

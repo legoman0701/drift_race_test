@@ -5,14 +5,14 @@ from drift.gamemodes.template import BaseGameMode, PlayerRaceState
 class BestLap(BaseGameMode):
     """player with best single lap time wins"""
 
-    def __init__(self, checkpoints, total_laps=3, start_grid=None, lines=None, local_player_id="local", path_poly=None):
-        super().__init__(checkpoints, total_laps, start_grid)
+    def __init__(self, checkpoints, start_grid=None, choice_index=2, lines=None, local_player_id="local", path_poly=None):
+        super().__init__(checkpoints, start_grid)
         self.phase = self.PHASE_COUNTDOWN
         self.countdown_start = 0.0
         self.countdown_duration = 3.0 # seconds
         self.cooldown_start = 0.0
         self.cooldown_duration = 5.0 # seconds
-        self.max_time = 60.0 * total_laps # seconds (60 seconds per lap)
+        self.max_time = const.MODES_CHOICES[const.MODE_INDEX][choice_index]
         self.max_players = 6
         self.local_player_id = str(local_player_id)
 
@@ -61,23 +61,22 @@ class BestLap(BaseGameMode):
         # Keep tracked racers aligned with currently active players.
         self._sync_active_players(players)
 
-        if self.phase == self.PHASE_COUNTDOWN:
+        if self.phase == self.PHASE_COUNTDOWN: # 3 2 1 go phase
             result["movement_locked"] = True
             elapsed = time.monotonic() - self.countdown_start
             if elapsed >= self.countdown_duration:
                 self.phase = self.PHASE_RACING
-                self.race_time = 0.0
+                self.race_time = 0.0 # start timer
                 # mark lap start for all players when racing begins
                 for ps in self.player_states.values():
                     ps._lap_start_time = 0.0
             return result
 
-        if self.phase == self.PHASE_RACING:
+        if self.phase == self.PHASE_RACING: # race phase
             self.race_time += dt
             self._check_checkpoints(players, my_car)
 
-            # Time limit exceeded — force-finish all remaining players
-            if self.race_time >= self.max_time:
+            if self.race_time >= self.max_time: # timer runs out
                 for ps in self.player_states.values():
                     if not ps.finished:
                         self._mark_player_finished(ps, self.race_time)
@@ -86,12 +85,12 @@ class BestLap(BaseGameMode):
                 return result
 
             # Check if all players finished
-            if self.player_states and all(ps.finished for ps in self.player_states.values()):
-                self.phase = self.PHASE_COOLDOWN
-                self.cooldown_start = time.monotonic()
+            # if self.player_states and all(ps.finished for ps in self.player_states.values()):
+            #     self.phase = self.PHASE_COOLDOWN
+            #     self.cooldown_start = time.monotonic()
             return result
 
-        if self.phase == self.PHASE_COOLDOWN:
+        if self.phase == self.PHASE_COOLDOWN: # cooldown before lb phase
             result["movement_locked"] = True
             elapsed = time.monotonic() - self.cooldown_start
             if elapsed >= self.cooldown_duration:
@@ -178,10 +177,10 @@ class BestLap(BaseGameMode):
                     if ps.best_lap_time is None or lap_time < ps.best_lap_time:
                         ps.best_lap_time = lap_time
                     ps._lap_start_time = self.race_time
-                    if ps.current_lap >= self.total_laps:
-                        self._mark_player_finished(ps, self.race_time)
-                    else:
-                        ps.current_checkpoint = 0  # reset for next lap
+                    # if ps.current_lap >= self.total_laps:
+                    #     self._mark_player_finished(ps, self.race_time)
+                    # else:
+                    ps.current_checkpoint = 0  # reset for next lap
 
     def _tangent_angle_at(self, x, y): # path tangent helper for respawn orientation
         """Return the path tangent angle (radians) at the point on _path_poly
@@ -275,43 +274,58 @@ class BestLap(BaseGameMode):
             return
 
         rank = next((i for i, ps in enumerate(self.leaderboard, start=1) if ps.player_id == self.local_player_id), None)
-        if rank is None:
-            rank_txt = "Finished!"
-        else:
-            rank_txt = f"Finished! Rank #{rank}"
+        rank_txt = "Finished!" if rank is None else f"Finished! Rank #{rank}"
 
-        mins = int(local_ps.finish_time) // 60
-        secs = local_ps.finish_time - mins * 60
-        time_txt = f"Time: {mins}:{secs:05.2f}"
+        # mins = int(local_ps.finish_time) // 60
+        # secs = local_ps.finish_time - mins * 60
+        # time_txt = f"Time: {mins}:{secs:05.2f}"
 
         banner = font_big.render(rank_txt, True, (120, 255, 120))
-        sub = font_small.render(time_txt, True, const.WHITE_240)
+        # sub = font_small.render(time_txt, True, const.WHITE_240)
         bx = const.WINDOW_WIDTH // 2 - banner.get_width() // 2
-        by = const.TOP_LINE_Y + 36
-        sx = const.WINDOW_WIDTH // 2 - sub.get_width() // 2
-        sy = by + banner.get_height() + 4
+        by = const.TOP_LINE_Y + 136
+        # sx = const.WINDOW_WIDTH // 2 - sub.get_width() // 2
+        # sy = by + banner.get_height() + 4
 
         shadow = font_big.render(rank_txt, True, (0, 0, 0))
         ui_surf.blit(shadow, (bx + 2, by + 2))
         ui_surf.blit(banner, (bx, by))
-        ui_surf.blit(sub, (sx, sy))
+        # ui_surf.blit(sub, (sx, sy))
 
     def _draw_race_hud(self, ui_surf, font_medium, font_small):
-        # Timer (top center, below header)
-        mins = int(self.race_time) // 60
-        secs = self.race_time - mins * 60
-        time_str = f"{mins}:{secs:05.2f}"
-        time_surf = font_medium.render(time_str, True, const.WHITE_240)
-        ui_surf.blit(time_surf, (const.WINDOW_WIDTH // 2 - time_surf.get_width() // 2,
-                                  const.TOP_LINE_Y + 8))
+        # remaining timer
+        remaining_timer = self.max_time - self.race_time
+        if remaining_timer < 0: remaining_timer = 0.0
+        mins = int(remaining_timer) // 60
+        secs = remaining_timer - mins * 60
+        remaining_timer_str = f"{mins}:{secs:05.2f}"
+        remaining_timer_surf = font_medium.render(remaining_timer_str, True, const.WHITE_240)
+        ui_surf.blit(remaining_timer_surf, (const.WINDOW_WIDTH // 2 - remaining_timer_surf.get_width() // 2,
+                                             const.TOP_LINE_Y + 8))
+        # current lap timer
+        local_ps = self.player_states.get(self.local_player_id)
+        if local_ps:
+            current_time_str = self.race_time - local_ps._lap_start_time
+            mins = int(current_time_str) // 60
+            secs = current_time_str - mins * 60
+            lap_time_str = f"Lap: {mins}:{secs:05.2f}"
+            lap_time_surf = font_medium.render(lap_time_str, True, const.WHITE_240)
+            ui_surf.blit(lap_time_surf, (const.WINDOW_WIDTH // 2 - lap_time_surf.get_width() // 2,
+                                     const.TOP_LINE_Y + remaining_timer_surf.get_height() * 2))
+        # best lap timer
+        if local_ps and local_ps.best_lap_time is not None:
+            best_time_str = f"Best: {local_ps.best_lap_time:.2f}"
+            best_time_surf = font_medium.render(best_time_str, True, const.WHITE_240)
+            ui_surf.blit(best_time_surf, (const.WINDOW_WIDTH // 2 - best_time_surf.get_width() // 2,
+                                      const.TOP_LINE_Y + remaining_timer_surf.get_height() * 3 + lap_time_surf.get_height()))
 
         # Per-player lap / checkpoint (left side)
         y = const.TOP_LINE_Y + 40
         local_ps = self.player_states.get(self.local_player_id)
         if local_ps:
-            lap_str = f"Lap {min(local_ps.current_lap + 1, self.total_laps)}/{self.total_laps}"
+            lap_str = f"Lap {local_ps.current_lap + 1}"
             cp_str = f"CP {local_ps.current_checkpoint}/{len(self._cp_rects)}"
             lap_surf = font_small.render(lap_str, True, const.WHITE_240)
-            cp_surf = font_small.render(cp_str, True, const.GREY_200)
+            cp_surf = font_small.render(cp_str, True, const.WHITE_240)
             ui_surf.blit(lap_surf, (12, y))
             ui_surf.blit(cp_surf, (12, y + 20))

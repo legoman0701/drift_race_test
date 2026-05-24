@@ -59,8 +59,13 @@ TIRE_MARK_SMOKE = (255, 255, 255, 100)     # smoke while drifting
 TIRE_MARK_GROUND = (220, 220, 220, 220)    # marks on ground
 
 # ======= MODES =======
-MODE_INDEX = 1
+MODE_INDEX = 0
 MODES_NAMES = ["ClassicRace", "BestLap"] # new mode flag
+MODES_OPTION_STR = ["Laps", "Timer"]
+MODES_CHOICES = {
+    0: [1, 2, 3, 4, 5], # laps
+    1: [30, 60, 120, 180, 300] # timer
+}
 
 # ======= MAP & TRACK =======
 MAP_NUM = 1

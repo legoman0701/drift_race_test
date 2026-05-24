@@ -34,14 +34,13 @@ class BaseGameMode(ABC):
     PHASE_COOLDOWN  = "cooldown" # 5-second wait after all finish
     PHASE_LEADERBOARD = "leaderboard"
 
-    def __init__(self, checkpoints, total_laps=3, start_grid=None):
+    def __init__(self, checkpoints, start_grid=None):
         self.checkpoints = checkpoints # list[pygame.Rect]
-        self.total_laps = total_laps
-        self.active = False
-        self.sorted = False
+        self.active = False # is race active
+        self.sorted = False # has lb been sorted
         self.race_time = 0.0 # seconds since the GO
         self.player_states: dict[str, PlayerRaceState] = {} # player_id -> _PlayerRaceState
-        self.leaderboard: list[PlayerRaceState] = []  # ordered
+        self.leaderboard: list[PlayerRaceState] = []  # should be sorted
 
         # Optional spawn coordinates from map_meta.json -> "start"
         # expected format: [{"x":..., "y":..., "a":...}, ...]
@@ -205,18 +204,14 @@ class BaseGameMode(ABC):
     # ---------- leaderboard ----------
 
     def force_end_race(self, max_time_fallback=9999.0):
-        """Manually stop the race and push all active players to the leaderboard."""
+        """stop the race and push all active players to the leaderboard."""
         self.phase = self.PHASE_COOLDOWN
         self.cooldown_start = time.monotonic()
-        
-        # Determine what time to give unfinished players (forces them to show as DNF)
-        dnf_time = getattr(self, 'max_time', max_time_fallback)
 
-        # Force all players who haven't finished onto the leaderboard
         for ps in self.player_states.values():
             if not ps.finished:
                 ps.finished = True
-                ps.finish_time = dnf_time
+                # ps.finish_time = dnf_time
                 if not any(item.player_id == ps.player_id for item in self.leaderboard):
                     self.leaderboard.append(ps)
                     
@@ -264,8 +259,9 @@ class BaseGameMode(ABC):
         for rank, ps in enumerate(self.leaderboard, start=1):
             # print("someone ? from draw_leaderboard located in template.py")
             color = (255, 215, 0) if rank == 1 else (200, 200, 200) if rank == 2 else (180, 140, 100) if rank == 3 else const.WHITE_240
-            if ps.finish_time < self.max_time: rank_s = font_medium.render(f"#{rank}", True, color)
-            else: rank_s = font_medium.render(f"DNF", True, const.WHITE_240)
+            # if ps.finish_time < self.max_time: rank_s = font_medium.render(f"#{rank}", True, color)
+            # else: rank_s = font_medium.render(f"DNF", True, const.WHITE_240)
+            rank_s = font_medium.render(f"#{rank}", True, color)
             name_s = font_medium.render(ps.name[:16], True, const.WHITE_240)
             car_s = font_medium.render(ps.car_type, True, const.GREY_200)
             if ps.best_lap_time is not None:
@@ -275,9 +271,10 @@ class BaseGameMode(ABC):
             else:
                 best_str = "-"
             best_s = font_medium.render(best_str, True, (180, 220, 255))
-            mins = int(ps.finish_time) // 60
-            secs = ps.finish_time - mins * 60
-            time_str = f"{mins}:{secs:05.2f}" if ps.finish_time < self.max_time else "DNF"
+            # print(ps.finish_time)
+            mins = int(self.race_time) // 60
+            secs = self.race_time - mins * 60
+            time_str = f"{mins}:{secs:05.2f}" # if ps.finish_time < self.max_time else "DNF"
             time_s = font_medium.render(time_str, True, const.WHITE_240)
 
             ui_surf.blit(rank_s, (col_rank_x, row_y))
@@ -338,7 +335,7 @@ class BaseGameMode(ABC):
         text = f"Race finished! Leaderboard in {remaining:.0f}s"
         surf = font_big.render(text, True, (80, 255, 80))
         x = const.WINDOW_WIDTH // 2 - surf.get_width() // 2
-        y = const.WINDOW_HEIGHT // 3
+        y = const.WINDOW_HEIGHT * 0.45
         shadow = font_big.render(text, True, (0, 0, 0))
         ui_surf.blit(shadow, (x + 2, y + 2))
         ui_surf.blit(surf, (x, y))
