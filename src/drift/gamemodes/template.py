@@ -78,7 +78,7 @@ class BaseGameMode(ABC):
         const.CURSOR_FOLLOW = False
 
     @abstractmethod
-    def update(self, dt, players, my_car):
+    def update(self, dt, players, my_car, is_host=False):
         """Per-frame logic.  Returns a dict with optional keys:
         - 'finished': bool  (all players finished)
         - 'stage1':   str   (request a stage transition, e.g. 'leaderboard')

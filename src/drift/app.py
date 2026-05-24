@@ -1844,7 +1844,7 @@ def main():
                 my_car.vx, my_car.vy = 0.0, 0.0
                 my_car.v_angle = 0.0
             else:
-                player_impact = my_car.step(controls, dt_sim, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG, cursor_follow=const.CURSOR_FOLLOW, cam=cam, collision_mesh=_collision_mesh)
+                player_impact = my_car.step(controls, dt_sim, remotes_with_ai_for_player, world_size, cam=cam, collision_mesh=_collision_mesh)
 
             if tutorial_single_player and tutorial_ctrl is not None and tutorial_rewind_enabled:
                 now_mono = time.monotonic()
@@ -1920,7 +1920,7 @@ def main():
                             ai_controls = ai_algorithme(path_poly, ai)
                         except Exception:
                             ai_controls = {"th": 0.0, "st": 0.0, "br": 0.0}
-                        ai.step(ai_controls, dt_sim, remotes_with_ai_for_ais, world_size, compute_debug=const.DEBUG, collision_mesh=_collision_mesh)
+                        ai.step(ai_controls, dt_sim, remotes_with_ai_for_ais, world_size, collision_mesh=_collision_mesh)
 
             cam.update(my_car, world_size)
         profiler.end("physics")

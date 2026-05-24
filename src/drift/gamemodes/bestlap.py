@@ -54,7 +54,7 @@ class BestLap(BaseGameMode):
         for ps in self.player_states.values():
             ps._lap_start_time = 0.0
 
-    def update(self, dt, players, my_car): # per frame upadte
+    def update(self, dt, players, my_car, is_host=False): # per frame upadte
         """Returns dict with optional 'movement_locked' and 'stage_transition' keys."""
         result = {"movement_locked": False, "stage_transition": None}
 
