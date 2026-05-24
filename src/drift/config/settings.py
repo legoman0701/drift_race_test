@@ -1,8 +1,3 @@
-"""
-Settings management for the drift game.
-Handles UI sliders and persistent settings state.
-"""
-import drift.config.const as const
 
 class SettingsManager:
     """Manages game settings including sliders and toggles."""

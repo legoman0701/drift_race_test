@@ -395,6 +395,22 @@ def loop():
                 pass
             room["dirty"] = True
 
+        elif mtype == "stop_race":
+            code = (msg.get("code") or "").upper().strip()
+            pid  = (msg.get("id") or "")[:16]
+            room = rooms.get(code)
+            
+            if room and addr == room.get("host_addr") and pid == room.get("host_id"): # only host
+                room["race_started"] = False
+                room["dirty"] = True
+                
+                for sid in list(room["states"].keys()): # delete ai states
+                    if isinstance(sid, str) and sid.startswith("AI-"):
+                        room["states"].pop(sid, None)
+                
+                for caddr in list(room["clients"].keys()): # send to all clients
+                    sendto_json(sock, caddr, {"t": "stop_race"})
+
         else:
             sendto_json(sock, addr, {"t":"error","msg":"unknown_type"})
 
