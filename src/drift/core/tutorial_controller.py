@@ -51,6 +51,7 @@ class TutorialController:
     PHASE_WAIT_ZONE = "wait_zone"
     PHASE_DONE = "done"
     START_QTE_PROMPT = "Accelerate to Start"
+    KEEP_PRESSING_PROMPT = "Keep pushing the button"
     START_QTE_HOLD_S = 1.0
     POST_QTE_USER_CONTROL_S = float(getattr(const, "TUTORIAL_POST_QTE_USER_CONTROL_S", 2.0))
     SAFE_MIN_TIME_SCALE = max(0.0, float(getattr(const, "TUTORIAL_MIN_TIME_SCALE", 0.0)))
@@ -254,9 +255,9 @@ class TutorialController:
             return False
         if self._controls_match_step(self._recover_step, controls):
             return False
-        out.active = False
-        out.prompt = ""
-        out.hint_image = ""
+        out.active = True
+        out.prompt = self.KEEP_PRESSING_PROMPT
+        out.hint_image = self._hint_image_for_actions(self._recover_step.actions)
         out.target_time_scale = self._target_time_scale_for_step(self._recover_step)
         out.progress = 0.0
         return True

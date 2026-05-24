@@ -2058,16 +2058,8 @@ def main():
                 # print("cerise activated ?")
                 lb_result = game_mode.draw_leaderboard(ui_surf, font_big, font_medium, font_small, I_AM_HOST)
                 _return_btn_rect = lb_result.get("return_btn_rect")
-            elif stage1.startswith("mode"):
-                game_mode.draw_hud(
-                    ui_surf,
-                    cam,
-                    font_big,
-                    font_medium,
-                    font_small,
-                    show_timers=stage1 != "mode_tutorial",
-                    show_countdown=stage1 != "mode_tutorial",
-                )
+            elif stage1 in ("mode1", "mode2"):
+                game_mode.draw_hud(ui_surf, cam, font_big, font_medium, font_small)
 
         if show_frame_analysis:
             draw_frame_analysis(ui_surf, profiler)
