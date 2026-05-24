@@ -77,6 +77,7 @@ CAR_WID = 20.0
 # }
 # STEER_BIAS = 1.0  # how much the car automatically steers into the drift
 VIEW_ANGLE = 70 * math.pi / 180.0  # radians
+AI_RESET_DELAY = 3.0
 
 # ======= CAR SPRITES =======
 AVAILABLE_CARS = get_available_cars()
@@ -134,3 +135,6 @@ KEY_REPEAT_INTERVAL = 35
 DEBUG = False
 CURSOR_FOLLOW = False
 AI_PATH_FOLLOW = False
+
+# ======= FLAGS =======
+MODE_CLICKED = False

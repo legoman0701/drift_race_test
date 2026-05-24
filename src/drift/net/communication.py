@@ -61,6 +61,7 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
         "host_name": None,
         "host_id": None,
         "race_results": None,
+        "stop_race": False,
     }
     players = {}
     now = time.time()
@@ -180,13 +181,32 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
             for pid in list(remotes.keys()):
                 if pid not in players:
                     remotes.pop(pid, None)
+        elif t == "stop_race":
+            result["stop_race"] = True
         elif t == "error":
-            result["error"] = msg.get("msg", "error")
+            error_msg = msg.get("msg", "error")
+            if error_msg == "unknown_type": # avoid fallback offline
+                print("WARNING: Server sent 'unknown_type'. Is the relay.py updated?")
+                continue 
+            result["error"] = error_msg
             return result
     return result
 
 
 # ── Ping & PL helpers ───────────────────────────────────────────────────
+
+def send_stop_race(sock, code: str, my_id: str):
+    # print("hi from send_stop_race located in communication.py")
+    try:
+        sock.send(json.dumps({
+            "t": "stop_race", 
+            "code": code,
+            "id": my_id
+        }).encode("utf-8"))
+        return True
+    except Exception:
+        # print("Failed from send_stop_race located in communication.py")
+        return False
 
 def _update_own_ping(rtt_ms: float, my_car):
     """Update own ping (RTT/2) using EWMA. Stores result on my_car.ping_ms."""
@@ -199,7 +219,6 @@ def _update_own_ping(rtt_ms: float, my_car):
         _ping_ewma += _PING_ALPHA * (rtt_ms / 2.0 - _ping_ewma)
     if my_car is not None:
         my_car.ping_ms = _ping_ewma
-
 
 def _update_own_pl(d: dict, now: float, my_car):
     """Update own packet-loss % from echoed sq gaps + spike detection.
@@ -227,7 +246,6 @@ def _update_own_pl(d: dict, now: float, my_car):
         total_exp = sum(e[1] for e in _pl_events)
         total_recv = sum(e[2] for e in _pl_events)
         my_car.pl_pct = max(0.0, 100.0 * (1.0 - total_recv / total_exp)) if total_exp > 0 else 0.0
-
 
 def send_network_state(sock, code: str, my_id: str, my_car, palette=None):
     global _last_send_time, _send_seq
@@ -257,7 +275,6 @@ def send_network_state(sock, code: str, my_id: str, my_car, palette=None):
     except Exception:
         pass
 
-
 def send_ai_states(sock, code: str, ai_cars):
     # Host broadcasts AI car states including palette so non-host
     # clients can render AI cars with the correct colors.
@@ -284,13 +301,11 @@ def send_ai_states(sock, code: str, ai_cars):
         except Exception:
             pass
 
-
 def send_ping(sock, code: str):
     try:
         sock.send(json.dumps({"t": "ping", "code": code, "ts": round(time.time(), 4)}).encode("utf-8"))
     except Exception:
         pass
-
 
 def advance_remotes(remotes: Dict[str, Any], dt: float):
     """Dead-reckoning: advance every remote car's predicted position by its

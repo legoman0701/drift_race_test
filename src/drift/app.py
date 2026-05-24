@@ -9,24 +9,24 @@ from collections import deque
 from drift.tools.paths import asset_path, chdir_to_exe_folder_if_frozen, normalize_asset_path, get_available_sprite_layers
 import drift.config.const as const
 import drift.render.camera as camera
+from drift.render.renderer import WorldRenderer
+from drift.render.map_chunks import ChunkedMap, ensure_all_maps_sliced
 import drift.core.car as car
 from drift.core.car import get_car_engine_sound_id, CollisionMesh
-import drift.ui.button as btn
-import drift.ai.path_finder as path_finder
-from drift.render.renderer import WorldRenderer
 from drift.core.helpers import clamp, rand_name
-from drift.gamemodes.classicrace import ClassicRace
-from drift.gamemodes.bestlap import BestLap
-from drift.ai.ai import ai_algorithme
 from drift.core.inputs import read_inputs
-from drift.net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, advance_remotes
+from drift.core.rpm import calc_engine_rpm
+from drift.core.gamepad import Gamepad
+import drift.ui.button as btn
 from drift.ui.ui import handle_game_events, draw_stage_ui, draw_scoreboard, invalidate_ui_text_cache, invalidate_palette_cache, draw_car, poll_pending_connection
 from drift.ui.draw_stage import set_palette_colors_from_car, get_palette_colors, get_game_options, get_game_setup, set_game_option
-from drift.core.rpm import calc_engine_rpm
+from drift.ai.ai import ai_algorithme
+import drift.ai.path_finder as path_finder
+from drift.gamemodes.classicrace import ClassicRace
+from drift.gamemodes.bestlap import BestLap
+from drift.net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, advance_remotes, send_stop_race
 from drift.audio.engine_audio import V8EngineAudio
 from drift.audio.gear_shift_sound import GearShiftSound
-from drift.render.map_chunks import ChunkedMap, ensure_all_maps_sliced
-from drift.core.gamepad import Gamepad
 
 # ======= CONFIGURATION =======
 
@@ -680,7 +680,7 @@ def main():
 
     stage1 = "menu" # menu | lobby | error | mode1 | mode2
     stage2 = "" # settings
-    stage3 = "" # controls
+    stage3 = "" # controls | audio | modes
     error_msg = ""
     remotes = {}
     ai_cars = []
@@ -781,6 +781,15 @@ def main():
     cam = camera.Camera(const.WINDOW_WIDTH, const.WINDOW_HEIGHT, zoom=1.0)
     dragging = False
     host_ref = [I_AM_HOST]
+    
+    def stop_race(sock, code, my_id): # flag1
+        nonlocal stage2
+        stage2 = ""
+        # print("hi from stop_race located in app.py")
+        if not send_stop_race(sock, code, my_id):
+            game_mode.force_end_race()
+            # game_mode.phase = game_mode.PHASE_COOLDOWN
+            # game_mode.cooldown_start = time.monotonic()
 
     def quit_game():
         pygame.quit()
@@ -821,34 +830,26 @@ def main():
     def handle_audio():
         nonlocal stage3
         stage3 = "audio"
-        
-    def switch_cursor_follow_mode(stage1):
-        const.CURSOR_FOLLOW = not const.CURSOR_FOLLOW
-        if const.CURSOR_FOLLOW: const.AI_PATH_FOLLOW = False
-        # stage, substage sock, code, remotes
-        try: return stage1, "", sock, code, remotes
-        except Exception: return stage1, "", None, None, {}
-
-    def switch_ai_path_mode(stage1):
-        const.AI_PATH_FOLLOW = not const.AI_PATH_FOLLOW
-        if const.AI_PATH_FOLLOW: const.CURSOR_FOLLOW = False
-        # stage, substage sock, code, remotes
-        try: return stage1, "", sock, code, remotes
-        except Exception: return stage1, "", None, None, {}
+        # print("hi from handle_audio located in app.py")
+    
+    def handle_modes():
+        nonlocal stage3
+        stage3 = "modes"
+        # print("hi from handle_modes located in app.py")
 
     settings_buttons = [ # todo : be able to use '*' like '*/settings' for key binds
-    btn.Button("Quit Game", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.25, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, 
+    btn.Button("Stop Race", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.25, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, 
+               [["mode1", "settings"], ["mode2", "settings"]], lambda: stop_race(sock, code, my_id)),
+    btn.Button("Quit Game", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, 
                [["menu", "settings"]] ,lambda: quit_game()),
-    btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.25, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, 
+    btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, 
                [["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["leaderboard", "settings"]] ,lambda: leave_room(sock, code, my_id, remotes)),
-    btn.Button("Controls", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, 
+    btn.Button("Controls", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, 
                [["menu", "settings"], ["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["leaderboard", "settings"]], handle_controls),
-    btn.Button("Audio", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, 
+    btn.Button("Audio", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, 
                [["menu", "settings"], ["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["leaderboard", "settings"]], handle_audio),
-    btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, 
-               [["mode1", "settings"], ["mode2", "settings"]], lambda: switch_cursor_follow_mode(stage1)),
-    btn.Button("AI Path Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.65, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, 
-               [["mode1", "settings"], ["mode2", "settings"]], lambda: switch_ai_path_mode(stage1)),
+    btn.Button("Modes", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.65, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, 
+               [["menu", "settings"], ["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["leaderboard", "settings"]], handle_modes),
     ]
     
     profiler = FrameProfiler()
@@ -1035,12 +1036,14 @@ def main():
                 cam.offset[0] -= ev.rel[0] / cam.zoom
                 cam.offset[1] -= ev.rel[1] / cam.zoom
 
+            # print(f"stage3 before handle_game_events: {stage3}")
             # Delegate to UI event handler (menus, menu, lobby setup)
             ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map, checkpoints = handle_game_events(
                 screen, ev, stage1, stage2, stage3, gp, remotes, ai_cars, sock, code,
                 my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name,
                 track_image=track_image, chunked_map=chunked_map, checkpoints=checkpoints,
             )
+            # print(f"stage3 after: {stage3}")
             I_AM_HOST = host_ref[0]
             engine_audio, current_engine_sound_id = sync_engine_audio_system(
                 engine_audio, audio_initialized, current_engine_sound_id, my_car,
@@ -1129,7 +1132,11 @@ def main():
 
         profiler.begin("network")
         if sock:
-            net_result = handle_network_messages(sock, remotes, dt, my_id, I_AM_HOST, code, my_car=my_car)
+            net_result = handle_network_messages(sock, remotes, dt, my_id, I_AM_HOST, code, my_car=my_car) # flag1
+            if net_result.get("stop_race") and game_mode:
+                game_mode.force_end_race()
+                # game_mode.phase = game_mode.PHASE_COOLDOWN
+                # game_mode.cooldown_start = time.monotonic()
             if net_result.get("host_name") is not None:
                 host_name = net_result["host_name"] or None
             if net_result.get("host_id") is not None:
@@ -1350,7 +1357,7 @@ def main():
                 my_car.vx, my_car.vy = 0.0, 0.0
                 my_car.v_angle = 0.0
             else:
-                my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG, cursor_follow=const.CURSOR_FOLLOW, cam=cam, collision_mesh=_collision_mesh)
+                my_car.step(controls, dt, remotes_with_ai_for_player, world_size, cam=cam, collision_mesh=_collision_mesh)
 
             # Engine audio (single RPM computation, shared with UI HUD)
             try:
@@ -1386,12 +1393,13 @@ def main():
                     if movement_locked:
                         ai.vx, ai.vy = 0.0, 0.0
                         ai.v_angle = 0.0
+                        ai.time_since_mouvement = time.time() # reset timer when no game is running
                     else:
                         try:
                             ai_controls = ai_algorithme(path_poly, ai)
                         except Exception:
                             ai_controls = {"th": 0.0, "st": 0.0, "br": 0.0}
-                        ai.step(ai_controls, dt, remotes_with_ai_for_ais, world_size, compute_debug=const.DEBUG, collision_mesh=_collision_mesh)
+                        ai.step(ai_controls, dt, remotes_with_ai_for_ais, world_size, collision_mesh=_collision_mesh)
 
             cam.update(my_car, world_size)
         profiler.end("physics")
@@ -1456,7 +1464,8 @@ def main():
         ui_checkpoints = renderer.checkpoints
         if game_mode is not None and stage1 in ["mode1", "leaderboard"]:
             ui_checkpoints = []
-
+            
+        # print(f"stage3 before: {stage3}")
         world_surf, button_results, menu_bar_rects, palette_picker_rects, game_options_rects = draw_stage_ui(
             ui_surf, stage1 if stage1 != "leaderboard" else "mode1",
             stage2, stage3, code, world_surf, world_size, ui_checkpoints,
@@ -1465,6 +1474,11 @@ def main():
             room_clients_count=1 + len(remotes),
             ping_ms=ping_ms,
         )
+        if const.MODE_CLICKED:
+            const.MODE_CLICKED = False
+            stage2 = ""
+            stage3 = ""
+            
         draw_engine_audio_debug(ui_surf, engine_audio)
         draw_chunk_minimap(ui_surf, renderer)
         draw_minimap(ui_surf, path_poly, world_size, my_car, remotes, ai_cars, stage1)
@@ -1474,6 +1488,7 @@ def main():
         _return_btn_rect = None
         if game_mode is not None:
             if stage1 == "leaderboard":
+                # print("cerise activated ?")
                 lb_result = game_mode.draw_leaderboard(ui_surf, font_big, font_medium, font_small, I_AM_HOST)
                 _return_btn_rect = lb_result.get("return_btn_rect")
             elif stage1.startswith("mode"):

@@ -73,8 +73,10 @@ class BaseGameMode(ABC):
 
     def on_exit(self):
         self.active = False
-        self.player_states.clear()
         self.leaderboard.clear()
+        self.player_states.clear()
+        const.AI_PATH_FOLLOW = False
+        const.CURSOR_FOLLOW = False
 
     @abstractmethod
     def update(self, dt, players, my_car):
@@ -202,6 +204,25 @@ class BaseGameMode(ABC):
 
     # ---------- leaderboard ----------
 
+    def force_end_race(self, max_time_fallback=9999.0):
+        """Manually stop the race and push all active players to the leaderboard."""
+        self.phase = self.PHASE_COOLDOWN
+        self.cooldown_start = time.monotonic()
+        
+        # Determine what time to give unfinished players (forces them to show as DNF)
+        dnf_time = getattr(self, 'max_time', max_time_fallback)
+
+        # Force all players who haven't finished onto the leaderboard
+        for ps in self.player_states.values():
+            if not ps.finished:
+                ps.finished = True
+                ps.finish_time = dnf_time
+                if not any(item.player_id == ps.player_id for item in self.leaderboard):
+                    self.leaderboard.append(ps)
+                    
+        # self.sort_leaderboard()
+        # self.sorted = True
+
     @abstractmethod
     def sort_leaderboard(self):
         """Sort the leaderboard."""
@@ -235,9 +256,13 @@ class BaseGameMode(ABC):
             hdr = font_medium.render(label, True, const.GREY_200)
             ui_surf.blit(hdr, (lx, header_y))
 
+        # if not self.player_states: print("empty player states from draw_leaderboard located in template.py")
+        # self._sync_active_players(self.player_states)
+
         # Rows
         row_y = header_y + 40
         for rank, ps in enumerate(self.leaderboard, start=1):
+            # print("someone ? from draw_leaderboard located in template.py")
             color = (255, 215, 0) if rank == 1 else (200, 200, 200) if rank == 2 else (180, 140, 100) if rank == 3 else const.WHITE_240
             if ps.finish_time < self.max_time: rank_s = font_medium.render(f"#{rank}", True, color)
             else: rank_s = font_medium.render(f"DNF", True, const.WHITE_240)

@@ -55,11 +55,10 @@ _game_options = {
     "ai_difficulty": "Random",
 }
 
-# Map metadata cache
+# cache
 _map_meta_cache = {}
-
-# Map thumbnail cache (scaled previews)
 _map_thumb_cache = {}
+_illustration_cache = {}
 
 def get_game_options():
     """Get current game options state."""
@@ -93,6 +92,18 @@ def _get_map_thumbnail(map_index, thumb_w=100, thumb_h=70):
         img = pygame.image.load(normalize_asset_path("track", key, "main.png")).convert()
         thumb = pygame.transform.smoothscale(img, (thumb_w, thumb_h))
         _map_thumb_cache[key] = thumb
+        return thumb
+    except Exception:
+        return None
+
+def _get_illustration_thumbnail(key, thumb_w=120, thumb_h=65):
+    """Get a scaled thumbnail of a map illustration. Cached."""
+    if key in _illustration_cache:
+        return _illustration_cache[key]
+    try:
+        img = pygame.image.load(normalize_asset_path("illustrations", f"{key}.png")).convert_alpha()
+        thumb = pygame.transform.smoothscale(img, (thumb_w, thumb_h))
+        _illustration_cache[key] = thumb
         return thumb
     except Exception:
         return None
@@ -505,7 +516,7 @@ def _draw_options_main_page(ui_surf, font_big, font_medium, font_small,
 
 def _draw_item_selector(ui_surf, font_medium, font_small, car_sprites_cache,
                         label, index, items, px, y, rects, prefix,
-                        show_car=False, show_map=False, car_id_override=None):
+                        show_car=False, show_map=False, show_illustration=False, car_id_override=None):
     """Draw a selection widget (used for Car, Map, Mode).
 
     Returns the new y position after drawing.
@@ -535,12 +546,17 @@ def _draw_item_selector(ui_surf, font_medium, font_small, car_sprites_cache,
         text_over = items[safe_index] if car_id_override else None
         _draw_rotating_car(ui_surf, car_id, box_rect, font_small, car_sprites_cache, _car_rotation_angle, text_override=text_over)
     elif show_map:
-        thumb = _get_map_thumbnail(safe_index, _SECTION_BOX_W - 4, _SECTION_BOX_H - 25)
         item_name = items[safe_index]
         name_surf = font_small.render(item_name, True, const.WHITE_240)
-        ui_surf.blit(name_surf, (box_rect.centerx - name_surf.get_width() // 2, box_rect.y + 3))
-        if thumb:
-            ui_surf.blit(thumb, (box_rect.x + 2, box_rect.y + 22))
+        ui_surf.blit(name_surf, (box_rect.centerx - name_surf.get_width() // 2, box_rect.y + 6))
+        thumb = _get_map_thumbnail(safe_index, _SECTION_BOX_W - 4, _SECTION_BOX_H - 25)
+        if thumb: ui_surf.blit(thumb, (box_rect.x + 2, box_rect.y + 22))
+    elif show_illustration: # mode icon
+        item_name = items[safe_index]
+        name_surf = font_small.render(item_name, True, const.WHITE_240)
+        ui_surf.blit(name_surf, (box_rect.centerx - name_surf.get_width() // 2, box_rect.y + 6))
+        img = _get_illustration_thumbnail(item_name, _SECTION_BOX_W - 10, _SECTION_BOX_H - 25)
+        if img: ui_surf.blit(img, (box_rect.x + _SECTION_BOX_W//2 - img.get_width()//2, box_rect.y + 22))
     else:
         item_name = items[safe_index]
         name_surf = font_medium.render(item_name, True, const.WHITE_240)
@@ -588,7 +604,7 @@ def _draw_options_mode_page(ui_surf, font_big, font_medium, font_small,
     y = _draw_item_selector(ui_surf, font_medium, font_small, car_sprites_cache,
                             "Mode", _game_options["selected_mode_index"],
                             const.MODES_NAMES, px, y, rects, "mode",
-                            show_car=False, car_id_override=current_car)
+                            show_car=False, show_illustration=True, car_id_override=current_car)
 
     # Laps section
     y += 5
@@ -1164,31 +1180,11 @@ def _finalize_connection(my_name, code, sock, is_host, host_name, error, is_host
     else:
         return ("lobby", my_name, code, sock, is_host, host_name, error, track_image, chunked_map, _cp_rects)
 
-def draw_settings(ui_surf, world_surf, world_size, buttons, stage_path, font_small=None):    
+def draw_settings(ui_surf, world_surf, world_size, buttons, stage_path, font_small=None, is_host=False):    
     # Draw buttons and handle their state
     button_results = []
     for button in buttons:
-        try:
-            if hasattr(button, 'action'):
-                # Update button text based on current state
-                action_name = button.action.__name__ if hasattr(button.action, '__name__') else str(button.action)
-                if 'cursor_follow' in action_name.lower():
-                    if const.CURSOR_FOLLOW:
-                        button.text = "Mouse Following : On"
-                        button.color = const.GREEN
-                    else:
-                        button.text = "Mouse Following : Off"
-                        button.color = const.RED
-                elif 'ai_path' in action_name.lower():
-                    if const.AI_PATH_FOLLOW:
-                        button.text = "AI Path Mode : On"
-                        button.color = const.GREEN
-                    else:
-                        button.text = "AI Path Mode : Off"
-                        button.color = const.RED
-        except Exception: 
-            pass
-        
+        if button.text == "Stop Race" and not is_host: continue
         res = button.draw(ui_surf, stage_path)
         if res is not None:
             button_results.append(res)
@@ -1361,32 +1357,6 @@ def draw_controls(ui_surf, font_small):
     
     return {**bind_rects, **gp_rects}
 
-def draw_audio_sliders(ui_surf, font_small):
-    # (self, x, y, width, height, min_val, max_val, current_val, label, font)
-    if 'master_volume' not in audio_volumes.sliders:
-        master_slider = Slider(
-            x=const.WINDOW_WIDTH // 2 - 100, y=int(const.WINDOW_HEIGHT * 0.4),
-            width=200, height=30, min_val=0.0, max_val=1.0, current_val=audio_volumes.get_value("master_volume"),
-            label="Master Volume:", font=font_small
-        )
-        audio_volumes.add_slider('master_volume', master_slider)
-    if 'music_volume' not in audio_volumes.sliders:
-        music_slider = Slider(
-            x=const.WINDOW_WIDTH // 2 - 100, y=int(const.WINDOW_HEIGHT * 0.5),
-            width=200, height=30, min_val=0.0, max_val=1.0, current_val=audio_volumes.get_value("music_volume"),
-            label="Music Volume:", font=font_small
-        )
-        audio_volumes.add_slider('music_volume', music_slider)
-    if 'sfx_volume' not in audio_volumes.sliders:
-        sfx_slider = Slider(
-            x=const.WINDOW_WIDTH // 2 - 100, y=int(const.WINDOW_HEIGHT * 0.6),
-            width=200, height=30, min_val=0.0, max_val=1.0, current_val=audio_volumes.get_value("sfx_volume"),
-            label="SFX Volume:", font=font_small
-        )
-        audio_volumes.add_slider('sfx_volume', sfx_slider)
-    
-    audio_volumes.draw_sliders(ui_surf)
-
 def handle_controls_click(click_pos, all_rects, gamepad):
     """Handle mouse clicks on key bind rectangles and gamepad rows.
     
@@ -1461,6 +1431,66 @@ def handle_controls_keypress(event):
     
     return None
 
+def draw_audio_sliders(ui_surf, font_small):
+    # (self, x, y, width, height, min_val, max_val, current_val, label, font)
+    if 'master_volume' not in audio_volumes.sliders:
+        master_slider = Slider(
+            x=const.WINDOW_WIDTH // 2 - 100, y=int(const.WINDOW_HEIGHT * 0.4),
+            width=200, height=30, min_val=0.0, max_val=1.0, current_val=audio_volumes.get_value("master_volume"),
+            label="Master Volume:", font=font_small
+        )
+        audio_volumes.add_slider('master_volume', master_slider)
+    if 'music_volume' not in audio_volumes.sliders:
+        music_slider = Slider(
+            x=const.WINDOW_WIDTH // 2 - 100, y=int(const.WINDOW_HEIGHT * 0.5),
+            width=200, height=30, min_val=0.0, max_val=1.0, current_val=audio_volumes.get_value("music_volume"),
+            label="Music Volume:", font=font_small
+        )
+        audio_volumes.add_slider('music_volume', music_slider)
+    if 'sfx_volume' not in audio_volumes.sliders:
+        sfx_slider = Slider(
+            x=const.WINDOW_WIDTH // 2 - 100, y=int(const.WINDOW_HEIGHT * 0.6),
+            width=200, height=30, min_val=0.0, max_val=1.0, current_val=audio_volumes.get_value("sfx_volume"),
+            label="SFX Volume:", font=font_small
+        )
+        audio_volumes.add_slider('sfx_volume', sfx_slider)
+    
+    audio_volumes.draw_sliders(ui_surf)
+
 def handle_audio_keypress(event):
+    if event.key == pygame.K_ESCAPE: return "back"
+    return None
+
+def switch_cursor_follow_mode(stage3):
+    const.CURSOR_FOLLOW = not const.CURSOR_FOLLOW
+    if const.CURSOR_FOLLOW: const.AI_PATH_FOLLOW = False
+    const.MODE_CLICKED = True
+
+def switch_ai_path_mode(stage3):
+    const.AI_PATH_FOLLOW = not const.AI_PATH_FOLLOW
+    if const.AI_PATH_FOLLOW: const.CURSOR_FOLLOW = False
+    const.MODE_CLICKED = True
+
+def get_color(const_var):
+    return const.GREEN if const_var else const.RED
+
+def draw_modes_panel(ui_surf, stage_path, stage3):
+    mode_rects = [
+        Button("Follow Cursor", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, get_color(const.CURSOR_FOLLOW), 
+                                [["menu", "settings", "modes"], ["lobby", "settings", "modes"], ["mode1", "settings", "modes"], ["mode2", "settings", "modes"]], lambda: switch_cursor_follow_mode(stage3)),
+        Button("AI AutoPilot", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, get_color(const.AI_PATH_FOLLOW), 
+                               [["mode1", "settings", "modes"], ["mode2", "settings", "modes"]], lambda: switch_ai_path_mode(stage3))
+    ]
+    for button in mode_rects:
+        button.draw(ui_surf, stage_path)
+
+    # if const.MODE_CLICKED:
+    #     const.MODE_CLICKED = False
+    #     # print("hi")
+    #     return ""
+            
+    return stage3
+
+def handle_modes_keypress(event):
     if event.key == pygame.K_ESCAPE: return "back"
     return None

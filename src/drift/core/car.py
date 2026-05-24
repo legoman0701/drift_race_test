@@ -370,7 +370,7 @@ class Car:
         self.palette_colors = specs_vals["PALETTE_COLORS"]
         self._init_spring_points(specs_vals)
 
-    def step(self, inputs, dt, players, bounds, compute_debug=False, cursor_follow=False, cam=None, collision_mesh=None):        
+    def step(self, inputs, dt, players, bounds, cam=None, collision_mesh=None):        
         # Use cached specs values (updated only on set_car_type or __init__)
         specs_vals = self._cached_specs_vals
         CAR_LEN = specs_vals["CAR_LEN"]
@@ -397,7 +397,7 @@ class Car:
         if self.is_ai:
             if self.vx**2 + self.vy**2 > 25 or self.last_checkpoint_coordinates is None:
                 self.time_since_mouvement = time.time()
-            if time.time() - self.time_since_mouvement > 3.0 and self.last_checkpoint_coordinates is not None:
+            if time.time() - self.time_since_mouvement > const.AI_RESET_DELAY and self.last_checkpoint_coordinates is not None:
                 lx, ly, la = self.last_checkpoint_coordinates
                 self.x, self.y, self.angle = lx, ly, la
                 self.vx, self.vy = 0.0, 0.0
@@ -405,7 +405,7 @@ class Car:
                 self.time_since_mouvement = time.time()
         
         # Update target angle based on steering mode
-        if cursor_follow and cam is not None:
+        if const.CURSOR_FOLLOW and cam is not None:
             # Mouse/cursor mode: directly set target angle to point at cursor
             import pygame
             mouse_pos = pygame.mouse.get_pos()
@@ -500,7 +500,7 @@ class Car:
         total_force_body_x = 0.0
         total_force_body_y = 0.0
         total_torque_z = 0.0
-        wheel_debug_list = [] if compute_debug else None
+        wheel_debug_list = [] if const.DEBUG else None
         grip_per_wheel = []
 
         for index, (wx_local, wy_local) in enumerate(wheel_local_positions):
@@ -568,7 +568,7 @@ class Car:
             total_torque_z += wx_local * force_body_y - wy_local * force_body_x
 
             # Prepare debug info (world position, wheel angle, forces, slip) - only if requested
-            if compute_debug:
+            if const.DEBUG:
                 # World position of wheel
                 rx = wx_local * forward_x + wy_local * right_x
                 ry = wx_local * forward_y + wy_local * right_y
@@ -903,7 +903,7 @@ class Car:
                             self.v_angle += (crx * imp_y - cry * imp_x) / max(1e-4, inertia_z_p2p)
 
         # Save wheel debug for renderer (including body-level forces) - only if computed
-        if compute_debug:
+        if const.DEBUG:
             self.wheel_debug["wheels"] = wheel_debug_list
             self.wheel_debug["body_forces"] = {
                 "rolling": (rolling_x, rolling_y),

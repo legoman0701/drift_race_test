@@ -15,7 +15,8 @@ from drift.ui.draw_stage import (
     handle_palette_picker_click, handle_palette_picker_keypress,
     draw_color_palette_picker, poll_connection, draw_menu,
     draw_game_options_panel, handle_game_options_click, get_game_options,
-    set_palette_colors_from_car, handle_audio_keypress,
+    set_palette_colors_from_car, handle_audio_keypress, draw_modes_panel,
+    handle_modes_keypress,
 )
 from drift.config.settings import physics_controls, audio_volumes
 
@@ -526,11 +527,13 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
     """Draw UI elements based on current stage levels (stage1, stage2, stage3).
     
     Stage levels:
-    - stage1: menu | game | error
+    - stage1: menu | lobby | mode{} | error
     - stage2: settings
-    - stage3: controls
+    - stage3: controls | audio | modes
     """
     global _menu_bar_rects_cache, _controls_rects_cache, _palette_picker_rects_cache, _game_rects_cache, _controls_rects_cache, _game_options_rects_cache
+
+    # print(f"draw_stage_ui before: '{stage3}'")
 
     button_results = []
     # click detection
@@ -549,9 +552,13 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
             elif stage3 == "audio":
                 draw_audio_sliders(ui_surf, font_small)
                 draw_header(ui_surf, font_big, font_small, "Audio", fps, host_name, ping_ms)
+            elif stage3 == "modes":
+                # print(f"'{stage3}'")
+                stage3 = draw_modes_panel(ui_surf, [stage1, stage2, stage3], stage3)
+                draw_header(ui_surf, font_big, font_small, "Modes", fps, host_name, ping_ms)
             else:
                 _controls_rects_cache = None
-                world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
+                world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small, is_host)
                 draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name, ping_ms)
         else:
             # Main menu with connection bar at the bottom
@@ -570,9 +577,12 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
             elif stage3 == "audio":
                 draw_audio_sliders(ui_surf, font_small)
                 draw_header(ui_surf, font_big, font_small, "Audio", fps, host_name, ping_ms)
+            elif stage3 == "modes":
+                stage3 = draw_modes_panel(ui_surf, [stage1, stage2, stage3], stage3)
+                draw_header(ui_surf, font_big, font_small, "Modes", fps, host_name, ping_ms)
             else:
                 _controls_rects_cache = None  # Clear cache when not in controls
-                world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
+                world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small, is_host)
                 draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name, ping_ms)
             _game_options_rects_cache = None
         else:
@@ -598,9 +608,12 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
             elif stage3 == "audio":
                 draw_audio_sliders(ui_surf, font_small)
                 draw_header(ui_surf, font_big, font_small, "Audio", fps, host_name, ping_ms)
+            elif stage3 == "modes":
+                stage3 = draw_modes_panel(ui_surf, [stage1, stage2, stage3], stage3)
+                draw_header(ui_surf, font_big, font_small, "Modes", fps, host_name, ping_ms)
             else:
                 _controls_rects_cache = None  # Clear cache when not in controls
-                world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
+                world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small, is_host)
                 draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name, ping_ms)
         else:
             _controls_rects_cache = None  # Clear cache when not in settings
@@ -616,6 +629,8 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
         draw_header(ui_surf, font_big, font_small, "Error", fps, ping_ms=ping_ms)
         draw_error(ui_surf, error_msg, font_small)
         draw_footer(ui_surf, font_small, code)
+
+    # print(f"draw_stage_ui after: '{stage3}'")
     
     return world_surf, button_results, menu_bar_rects, palette_picker_rects, game_options_rects
 
@@ -656,6 +671,12 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                         invalidate_ui_text_cache('all')
                     elif result == "back":
                         stage3 = ""
+                elif stage3 == "modes":
+                    result = handle_modes_keypress(ev)
+                    if result == "saved":
+                        invalidate_ui_text_cache('all')
+                    elif result == "back":
+                        stage3 = ""
                 elif stage3 == "" and ev.key == const.ESCAPE_KEY:
                     stage2 = ""
         elif stage1 in ["lobby", "mode1", "mode2", "leaderboard"]: # in game
@@ -670,6 +691,12 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                         stage3 = ""  # Go back to settings menu
                 elif stage3 == "audio":
                     result = handle_audio_keypress(ev)
+                    if result == "saved":
+                        invalidate_ui_text_cache('all')
+                    elif result == "back":
+                        stage3 = ""  # Go back to settings menu
+                elif stage3 == "modes":
+                    result = handle_modes_keypress(ev)
                     if result == "saved":
                         invalidate_ui_text_cache('all')
                     elif result == "back":
