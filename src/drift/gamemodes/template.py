@@ -307,7 +307,7 @@ class BaseGameMode(ABC):
     # ---------- draw hud ----------
 
     @abstractmethod
-    def draw_hud(self, ui_surf, cam, font_big, font_medium, font_small):
+    def draw_hud(self, ui_surf, cam, font_big, font_medium, font_small, show_timers=True, show_countdown=True):
         """Draw mode-specific HUD elements (countdown, lap counter, etc.)."""
 
     def _draw_countdown(self, ui_surf, font_big):

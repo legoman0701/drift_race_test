@@ -1198,6 +1198,41 @@ def main():
         except Exception:
             return []
 
+    def _reload_current_map_assets():
+        """Reload base track assets and map-scoped caches for the current MAP_NUM."""
+        nonlocal track_image, chunked_map, chunked_map_bg, chunked_map_fg
+        nonlocal checkpoints, _path_future, _path_future_map_num, _path_poly_map_num, path_poly
+
+        track_image = pygame.image.load(get_track_base_image_path(f"map{const.MAP_NUM}")).convert()
+        chunked_map = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=const.TILE_SIZE)
+        _bg_root = normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks_bg")
+        chunked_map_bg = ChunkedMap(root=_bg_root, tile_size=const.TILE_SIZE) if os.path.isdir(_bg_root) else None
+        _fg_root = normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks_fg")
+        chunked_map_fg = ChunkedMap(root=_fg_root, tile_size=const.TILE_SIZE, use_alpha=True) if os.path.isdir(_fg_root) else None
+
+        _cp_rects = []
+        meta_path = asset_path("track", f"map{const.MAP_NUM}", "map_meta.json")
+        try:
+            with open(meta_path, "r", encoding="utf-8") as fh:
+                meta = json.load(fh)
+            for cp in meta.get("checkpoints", []):
+                _cp_rects.append(pygame.Rect(cp.get("x", 0), cp.get("y", 0), cp.get("width", 0), cp.get("height", 0)))
+        except Exception:
+            pass
+        checkpoints = _cp_rects
+
+        _path_future = None
+        _path_future_map_num = None
+        _path_poly_map_num = None
+        path_poly = []
+
+        if renderer:
+            renderer.track_image = track_image
+            renderer.chunked_map = chunked_map
+            renderer.chunked_map_bg = chunked_map_bg
+            renderer.chunked_map_fg = chunked_map_fg
+            renderer.checkpoints = checkpoints
+
     # ── Helper: spawn AI car (shared by keyboard & gamepad) ──
     def _try_spawn_ai():
         _max_p = game_mode.max_players if game_mode else 6
@@ -1347,12 +1382,15 @@ def main():
                 cam.offset[1] -= ev.rel[1] / cam.zoom
 
             # print(f"stage3 before handle_game_events: {stage3}")
+            map_num_before_ui = const.MAP_NUM
             # Delegate to UI event handler (menus, menu, lobby setup)
             ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map, checkpoints = handle_game_events(
                 screen, ev, stage1, stage2, stage3, gp, remotes, ai_cars, sock, code,
                 my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name,
                 track_image=track_image, chunked_map=chunked_map, checkpoints=checkpoints,
             )
+            if const.MAP_NUM != map_num_before_ui:
+                _reload_current_map_assets()
             # print(f"stage3 after: {stage3}")
             I_AM_HOST = host_ref[0]
             engine_audio, current_engine_sound_id = sync_engine_audio_system(
@@ -2021,7 +2059,15 @@ def main():
                 lb_result = game_mode.draw_leaderboard(ui_surf, font_big, font_medium, font_small, I_AM_HOST)
                 _return_btn_rect = lb_result.get("return_btn_rect")
             elif stage1.startswith("mode"):
-                game_mode.draw_hud(ui_surf, cam, font_big, font_medium, font_small)
+                game_mode.draw_hud(
+                    ui_surf,
+                    cam,
+                    font_big,
+                    font_medium,
+                    font_small,
+                    show_timers=stage1 != "mode_tutorial",
+                    show_countdown=stage1 != "mode_tutorial",
+                )
 
         if show_frame_analysis:
             draw_frame_analysis(ui_surf, profiler)

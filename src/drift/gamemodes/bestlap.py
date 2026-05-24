@@ -213,15 +213,15 @@ class BestLap(BaseGameMode):
     # drawing
     # ------------------------------------------------------------------
 
-    def draw_hud(self, ui_surf, cam, font_big, font_medium, font_small): # 
+    def draw_hud(self, ui_surf, cam, font_big, font_medium, font_small, show_timers=True, show_countdown=True): # 
         self.draw_checkpoints(ui_surf, cam, player_id=self.local_player_id)
-        if self.phase == self.PHASE_COUNTDOWN:
+        if self.phase == self.PHASE_COUNTDOWN and show_countdown:
             self._draw_countdown(ui_surf, font_big)
         elif self.phase == self.PHASE_RACING:
-            self._draw_race_hud(ui_surf, font_medium, font_small)
+            self._draw_race_hud(ui_surf, font_medium, font_small, show_timers=show_timers)
             self._draw_finish_banner(ui_surf, font_big, font_small)
         elif self.phase == self.PHASE_COOLDOWN:
-            self._draw_race_hud(ui_surf, font_medium, font_small)
+            self._draw_race_hud(ui_surf, font_medium, font_small, show_timers=show_timers)
             self._draw_finish_banner(ui_surf, font_big, font_small)
             self._draw_cooldown_banner(ui_surf, font_big)
 
@@ -292,19 +292,21 @@ class BestLap(BaseGameMode):
         ui_surf.blit(banner, (bx, by))
         # ui_surf.blit(sub, (sx, sy))
 
-    def _draw_race_hud(self, ui_surf, font_medium, font_small):
-        # remaining timer
-        remaining_timer = self.max_time - self.race_time
-        if remaining_timer < 0: remaining_timer = 0.0
-        mins = int(remaining_timer) // 60
-        secs = remaining_timer - mins * 60
-        remaining_timer_str = f"{mins}:{secs:05.2f}"
-        remaining_timer_surf = font_medium.render(remaining_timer_str, True, const.WHITE_240)
-        ui_surf.blit(remaining_timer_surf, (const.WINDOW_WIDTH // 2 - remaining_timer_surf.get_width() // 2,
-                                             const.TOP_LINE_Y + 8))
-        # current lap timer
+    def _draw_race_hud(self, ui_surf, font_medium, font_small, show_timers=True):
+        remaining_timer_surf = None
+        lap_time_surf = None
+        if show_timers:
+            remaining_timer = self.max_time - self.race_time
+            if remaining_timer < 0:
+                remaining_timer = 0.0
+            mins = int(remaining_timer) // 60
+            secs = remaining_timer - mins * 60
+            remaining_timer_str = f"{mins}:{secs:05.2f}"
+            remaining_timer_surf = font_medium.render(remaining_timer_str, True, const.WHITE_240)
+            ui_surf.blit(remaining_timer_surf, (const.WINDOW_WIDTH // 2 - remaining_timer_surf.get_width() // 2,
+                                                 const.TOP_LINE_Y + 8))
         local_ps = self.player_states.get(self.local_player_id)
-        if local_ps:
+        if show_timers and local_ps:
             current_time_str = self.race_time - local_ps._lap_start_time
             mins = int(current_time_str) // 60
             secs = current_time_str - mins * 60
@@ -312,8 +314,7 @@ class BestLap(BaseGameMode):
             lap_time_surf = font_medium.render(lap_time_str, True, const.WHITE_240)
             ui_surf.blit(lap_time_surf, (const.WINDOW_WIDTH // 2 - lap_time_surf.get_width() // 2,
                                      const.TOP_LINE_Y + remaining_timer_surf.get_height() * 2))
-        # best lap timer
-        if local_ps and local_ps.best_lap_time is not None:
+        if show_timers and local_ps and local_ps.best_lap_time is not None and remaining_timer_surf is not None and lap_time_surf is not None:
             best_time_str = f"Best: {local_ps.best_lap_time:.2f}"
             best_time_surf = font_medium.render(best_time_str, True, const.WHITE_240)
             ui_surf.blit(best_time_surf, (const.WINDOW_WIDTH // 2 - best_time_surf.get_width() // 2,

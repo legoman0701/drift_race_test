@@ -76,6 +76,7 @@ class TutorialController:
         # One-shot activation per step: once touched, a zone is consumed.
         self._zone_consumed_step = -1
         self._prev_car_pos: Optional[Tuple[float, float]] = None
+        self._recover_step: Optional[TutorialStep] = None
 
     @property
     def has_steps(self) -> bool:
@@ -90,7 +91,8 @@ class TutorialController:
             return self.steps[self.step_index]
         return None
 
-    def _advance_step(self, car) -> None:
+    def _advance_step(self, completed_step: TutorialStep, car) -> None:
+        self._recover_step = completed_step
         self.step_index += 1
         self._hold_s = 0.0
         self._post_qte_user_control_s = self.POST_QTE_USER_CONTROL_S
@@ -195,6 +197,69 @@ class TutorialController:
         if self.auto_fill_actions:
             return base * 2.0
         return base
+
+    def _target_time_scale_for_step(self, step: TutorialStep) -> float:
+        requires_turn = ("turn_left" in step.actions) or ("turn_right" in step.actions)
+        requires_brake = "brake" in step.actions
+        requires_accelerate = "accelerate" in step.actions
+        if requires_turn and not requires_brake:
+            return max(self.SAFE_MIN_TIME_SCALE, const.TUTORIAL_TURN_ONLY_MIN_TIME_SCALE)
+        if requires_accelerate and not requires_brake:
+            return max(self.SAFE_MIN_TIME_SCALE, const.TUTORIAL_ACCEL_ONLY_MIN_TIME_SCALE)
+        return self.SAFE_MIN_TIME_SCALE
+
+    def _controls_match_step(self, step: TutorialStep, controls: dict) -> bool:
+        th = float(controls.get("th", 0.0))
+        st = float(controls.get("st", 0.0))
+        br = float(controls.get("br", 0.0))
+
+        requires_turn_right = "turn_right" in step.actions
+        requires_turn_left = "turn_left" in step.actions
+        requires_brake = "brake" in step.actions
+        requires_accelerate = "accelerate" in step.actions
+        requires_straighten = any(a in step.actions for a in ("straighten_out", "straighten", "straight"))
+
+        steer_idle_max = const.TUTORIAL_STEER_INPUT_THRESHOLD * 0.35
+        accel_idle_max = const.TUTORIAL_ACCEL_INPUT_THRESHOLD * 0.35
+        brake_idle_max = const.TUTORIAL_BRAKE_INPUT_THRESHOLD * 0.35
+        steer_straight_max = const.TUTORIAL_STEER_INPUT_THRESHOLD * 0.5
+
+        input_ok = True
+        if (requires_turn_right and requires_turn_left) or (requires_straighten and (requires_turn_right or requires_turn_left)):
+            input_ok = False
+
+        if requires_turn_right:
+            input_ok = input_ok and (st >= const.TUTORIAL_STEER_INPUT_THRESHOLD)
+        elif requires_turn_left:
+            input_ok = input_ok and (st <= -const.TUTORIAL_STEER_INPUT_THRESHOLD)
+        elif requires_straighten:
+            input_ok = input_ok and (abs(st) <= steer_straight_max)
+        else:
+            input_ok = input_ok and (abs(st) <= steer_idle_max)
+
+        if requires_brake:
+            input_ok = input_ok and (br >= const.TUTORIAL_BRAKE_INPUT_THRESHOLD)
+        else:
+            input_ok = input_ok and (br <= brake_idle_max)
+
+        if requires_accelerate:
+            input_ok = input_ok and (th >= const.TUTORIAL_ACCEL_INPUT_THRESHOLD)
+        else:
+            input_ok = input_ok and (th <= accel_idle_max)
+
+        return input_ok
+
+    def _apply_recover_enforcement(self, out: TutorialFrameState, controls: dict) -> bool:
+        if self._recover_step is None:
+            return False
+        if self._controls_match_step(self._recover_step, controls):
+            return False
+        out.active = False
+        out.prompt = ""
+        out.hint_image = ""
+        out.target_time_scale = self._target_time_scale_for_step(self._recover_step)
+        out.progress = 0.0
+        return True
 
     def on_rewind(self, car) -> None:
         if not self.has_steps or self.is_done:
@@ -312,6 +377,7 @@ class TutorialController:
             if self._hold_s >= self.START_QTE_HOLD_S:
                 self._hold_s = 0.0
                 self._post_qte_user_control_s = self.POST_QTE_USER_CONTROL_S
+                self._recover_step = None
                 self.phase = self.PHASE_AI_DRIVE
 
         step = self._current_step()
@@ -331,11 +397,13 @@ class TutorialController:
             self._zone_consumed_step = self.step_index
             self.phase = self.PHASE_SLOWMO
             self._post_qte_user_control_s = 0.0
+            self._recover_step = None
             self._start_step_context(car)
 
         if self.phase == self.PHASE_AI_DRIVE:
-            out.target_time_scale = 1.0
-            out.active = False
+            if not self._apply_recover_enforcement(out, controls):
+                out.target_time_scale = 1.0
+                out.active = False
             if zone_ready:
                 self._handoff_done = True
                 self._reentry_required = False
@@ -344,33 +412,28 @@ class TutorialController:
             out.active = True
             out.prompt = step.prompt
             out.hint_image = self._hint_image_for_actions(step.actions)
-            requires_turn = ("turn_left" in step.actions) or ("turn_right" in step.actions)
-            requires_brake = "brake" in step.actions
-            requires_accelerate = "accelerate" in step.actions
-            if requires_turn and not requires_brake:
-                out.target_time_scale = max(self.SAFE_MIN_TIME_SCALE, const.TUTORIAL_TURN_ONLY_MIN_TIME_SCALE)
-            elif requires_accelerate and not requires_brake:
-                out.target_time_scale = max(self.SAFE_MIN_TIME_SCALE, const.TUTORIAL_ACCEL_ONLY_MIN_TIME_SCALE)
-            else:
-                out.target_time_scale = self.SAFE_MIN_TIME_SCALE
+            out.target_time_scale = self._target_time_scale_for_step(step)
             done = self._evaluate_step(step, car, controls)
             out.progress = min(1.0, self._hold_s / self._required_hold_s(step))
             if done:
-                self._advance_step(car)
+                self._advance_step(step, car)
 
         if self.phase == self.PHASE_RECOVER:
-            out.active = False
-            out.target_time_scale = 1.0
-            if current_time_scale >= 0.98:
+            if not self._apply_recover_enforcement(out, controls):
+                out.active = False
+                out.target_time_scale = 1.0
+            if (not out.active) and current_time_scale >= 0.98:
                 self.phase = self.PHASE_WAIT_ZONE
 
         if self.phase == self.PHASE_WAIT_ZONE:
-            out.active = False
-            out.target_time_scale = 1.0
+            if not self._apply_recover_enforcement(out, controls):
+                out.active = False
+                out.target_time_scale = 1.0
             if zone_ready:
                 self._zone_consumed_step = self.step_index
                 self.phase = self.PHASE_SLOWMO
                 self._post_qte_user_control_s = 0.0
+                self._recover_step = None
                 self._start_step_context(car)
                 self._reentry_required = False
 
@@ -403,46 +466,7 @@ class TutorialController:
             self._hold_s += self._dt_real
             return self._hold_s >= required_hold
 
-        th = float(controls.get("th", 0.0))
-        st = float(controls.get("st", 0.0))
-        br = float(controls.get("br", 0.0))
-
-        requires_turn_right = "turn_right" in step.actions
-        requires_turn_left = "turn_left" in step.actions
-        requires_brake = "brake" in step.actions
-        requires_accelerate = "accelerate" in step.actions
-        requires_straighten = any(a in step.actions for a in ("straighten_out", "straighten", "straight"))
-
-        # Non-requested controls must stay mostly inactive while holding a step.
-        steer_idle_max = const.TUTORIAL_STEER_INPUT_THRESHOLD * 0.35
-        accel_idle_max = const.TUTORIAL_ACCEL_INPUT_THRESHOLD * 0.35
-        brake_idle_max = const.TUTORIAL_BRAKE_INPUT_THRESHOLD * 0.35
-        steer_straight_max = const.TUTORIAL_STEER_INPUT_THRESHOLD * 0.5
-
-        input_ok = True
-        # Guard against conflicting step definitions.
-        if (requires_turn_right and requires_turn_left) or (requires_straighten and (requires_turn_right or requires_turn_left)):
-            input_ok = False
-
-        if requires_turn_right:
-            input_ok = input_ok and (st >= const.TUTORIAL_STEER_INPUT_THRESHOLD)
-        elif requires_turn_left:
-            input_ok = input_ok and (st <= -const.TUTORIAL_STEER_INPUT_THRESHOLD)
-        elif requires_straighten:
-            # Require near-neutral steering while holding the combo.
-            input_ok = input_ok and (abs(st) <= steer_straight_max)
-        else:
-            input_ok = input_ok and (abs(st) <= steer_idle_max)
-
-        if requires_brake:
-            input_ok = input_ok and (br >= const.TUTORIAL_BRAKE_INPUT_THRESHOLD)
-        else:
-            input_ok = input_ok and (br <= brake_idle_max)
-
-        if requires_accelerate:
-            input_ok = input_ok and (th >= const.TUTORIAL_ACCEL_INPUT_THRESHOLD)
-        else:
-            input_ok = input_ok and (th <= accel_idle_max)
+        input_ok = self._controls_match_step(step, controls)
 
         # Tutorial progression is purely based on holding the requested controls
         # long enough, independent of vehicle motion/heading changes.
