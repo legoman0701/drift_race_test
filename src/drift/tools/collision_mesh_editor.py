@@ -11,6 +11,7 @@ Controls:
     Middle Mouse + Drag: Pan the map
     Mouse Wheel: Zoom in/out
     G: Toggle grid visibility
+    F: Toggle foreground layer visibility
     S: Save collision mesh
     L: Load collision mesh
     C: Clear current shape
@@ -60,6 +61,11 @@ class CollisionMeshEditor:
         # Grid settings
         self.grid_size = 5  # 5x5 pixel grid
         self.show_grid = True
+        self.show_fg = True
+
+        # Map layer surfaces
+        self.map_bg_image = None
+        self.map_fg_image = None
         
         # Panning
         self.panning = False
@@ -123,27 +129,26 @@ class CollisionMeshEditor:
             bg_img = pygame.image.load(bg_path).convert_alpha() if os.path.exists(bg_path) else None
             fg_img = pygame.image.load(fg_path).convert_alpha() if os.path.exists(fg_path) else None
 
+            self.map_bg_image = bg_img
+            self.map_fg_image = fg_img
+
             if bg_img is not None or fg_img is not None:
-                # Compose visible layers into one preview image.
+                # Keep layers separate so foreground visibility can be toggled.
                 ref = bg_img if bg_img is not None else fg_img
-                width, height = ref.get_width(), ref.get_height()
-                image = pygame.Surface((width, height), pygame.SRCALPHA)
-                if bg_img is not None:
-                    image.blit(bg_img, (0, 0))
-                if fg_img is not None:
-                    image.blit(fg_img, (0, 0))
-                image = image.convert_alpha()
+                image = ref.convert_alpha()
                 loaded_layers = []
                 if bg_img is not None:
                     loaded_layers.append("main_bg.png")
                 if fg_img is not None:
                     loaded_layers.append("main_fg.png")
-                print(f"Loaded map layers: {', '.join(loaded_layers)} ({width}x{height})")
+                print(f"Loaded map layers: {', '.join(loaded_layers)} ({image.get_width()}x{image.get_height()})")
                 return image
 
             # Fallback to main image when layered files are absent.
             map_path = get_track_base_image_path(map_key)
             image = pygame.image.load(map_path).convert()
+            self.map_bg_image = image
+            self.map_fg_image = None
             print(f"Loaded map: {map_path} ({image.get_width()}x{image.get_height()})")
             return image
         except Exception as e:
@@ -151,6 +156,8 @@ class CollisionMeshEditor:
             # Create a placeholder image
             placeholder = pygame.Surface((2000, 2000))
             placeholder.fill((40, 40, 40))
+            self.map_bg_image = placeholder
+            self.map_fg_image = None
             return placeholder
     
     def _snap_to_grid(self, x, y):
@@ -327,6 +334,9 @@ class CollisionMeshEditor:
                 elif event.key == pygame.K_g:
                     self.show_grid = not self.show_grid
                     print(f"Grid: {'ON' if self.show_grid else 'OFF'}")
+                elif event.key == pygame.K_f:
+                    self.show_fg = not self.show_fg
+                    print(f"Foreground layer: {'ON' if self.show_fg else 'OFF'}")
                 elif event.key == pygame.K_s:
                     if self._save_collision_mesh():
                         print("Collision mesh saved successfully!")
@@ -464,9 +474,10 @@ class CollisionMeshEditor:
     
     def draw_map(self):
         """Draw the track map"""
-        # Only draw the visible portion of the map to avoid costly full-image scaling
-        map_w = self.map_image.get_width()
-        map_h = self.map_image.get_height()
+        # Only draw the visible portion of each layer to avoid costly full-image scaling.
+        layer_ref = self.map_bg_image if self.map_bg_image is not None else self.map_image
+        map_w = layer_ref.get_width()
+        map_h = layer_ref.get_height()
 
         # Visible world bounds (top-left and bottom-right)
         top_left_world = self._screen_to_world(0, 0)
@@ -485,23 +496,25 @@ class CollisionMeshEditor:
         src_w = src_right - src_left
         src_h = src_bottom - src_top
 
-        # Extract the visible subimage and scale only that portion to the destination size
-        try:
-            sub = self.map_image.subsurface((src_left, src_top, src_w, src_h)).copy()
-        except Exception:
-            # Fallback to full image if subsurface isn't available for some surface types
-            sub = self.map_image
-            src_left, src_top, src_w, src_h = 0, 0, map_w, map_h
-
         dest_x, dest_y = self._world_to_screen(src_left, src_top)
         dest_w = int(src_w * self.zoom)
         dest_h = int(src_h * self.zoom)
-
         if dest_w <= 0 or dest_h <= 0:
             return
 
-        scaled = pygame.transform.scale(sub, (dest_w, dest_h))
-        self.screen.blit(scaled, (int(dest_x), int(dest_y)))
+        def _blit_layer(layer):
+            if layer is None:
+                return
+            try:
+                sub = layer.subsurface((src_left, src_top, src_w, src_h)).copy()
+            except Exception:
+                sub = layer
+            scaled = pygame.transform.scale(sub, (dest_w, dest_h))
+            self.screen.blit(scaled, (int(dest_x), int(dest_y)))
+
+        _blit_layer(self.map_bg_image if self.map_bg_image is not None else self.map_image)
+        if self.show_fg:
+            _blit_layer(self.map_fg_image)
     
     def draw_collision_mesh(self):
         """Draw the collision mesh vertices and lines"""
@@ -590,6 +603,7 @@ class CollisionMeshEditor:
             "",
             "KEYBOARD:",
             "G: Toggle grid",
+            "F: Toggle foreground",
             "S: Save mesh",
             "L: Load mesh",
             "C: Clear current shape",
@@ -607,6 +621,7 @@ class CollisionMeshEditor:
             f"Map: {self.map_num} / {max(1, int(getattr(const, 'TOTAL_MAPS', 1)))}",
             f"Zoom: {self.zoom:.2f}x",
             f"Grid: {self.grid_size}px ({'ON' if self.show_grid else 'OFF'})",
+            f"Foreground: {'ON' if self.show_fg else 'OFF'}",
         ]
         
         for line in controls:

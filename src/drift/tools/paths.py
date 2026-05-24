@@ -61,8 +61,11 @@ def resolve_track_folder(track_key):
 
 
 def get_track_base_image_path(track_key):
-    """Return a usable base track image path for map key (main -> bg -> fg)."""
-    for filename in ("main.png", "main_bg.png", "main_fg.png"):
+    """Return a usable base track image path for map key.
+
+    Preferred order supports newer naming while keeping legacy fallbacks.
+    """
+    for filename in ("main_fr.png", "main.png", "main_tr.png", "main_bg.png", "main_fg.png"):
         candidate = asset_path("track", track_key, filename)
         if candidate.exists():
             return candidate

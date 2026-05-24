@@ -7,7 +7,7 @@ from drift.core.helpers import rand_code
 from drift.net.communication import connect_to_relay, recv_jsons
 from drift.ui.slider import Slider
 from drift.config.settings import settings_manager
-from drift.tools.paths import asset_path, normalize_asset_path, get_track_base_image_path
+from drift.tools.paths import asset_path, normalize_asset_path, get_track_base_image_path, get_track_folders
 
 AVAILABLE_CARS = const.AVAILABLE_CARS
 
@@ -60,6 +60,27 @@ _map_meta_cache = {}
 
 # Map thumbnail cache (scaled previews)
 _map_thumb_cache = {}
+
+_MODE_OPTIONS = [
+    ("mode1", "Simple Race"),
+]
+
+
+def get_tutorial_track_key() -> str:
+    """Return track key (trackN) for the first map containing tutorial steps."""
+    folders = get_track_folders()
+    for idx, folder in enumerate(folders, start=1):
+        try:
+            meta_path = asset_path("track", folder, "map_meta.json")
+            with open(meta_path, "r", encoding="utf-8") as fh:
+                meta = json.load(fh)
+            tutorial = meta.get("tutorial") if isinstance(meta, dict) else None
+            steps = tutorial.get("steps") if isinstance(tutorial, dict) else None
+            if isinstance(steps, list) and len(steps) > 0:
+                return f"track{idx}"
+        except Exception:
+            continue
+    return "track1"
 
 def get_game_options():
     """Get current game options state."""
@@ -583,7 +604,7 @@ def _draw_options_mode_page(ui_surf, font_big, font_medium, font_small,
     y = py + _CONTENT_PAD
 
     # Mode selector with decorative current car
-    mode_labels = ["Simple Race"]
+    mode_labels = [label for _, label in _MODE_OPTIONS]
     current_car = AVAILABLE_CARS[_game_options["selected_car_index"] % len(AVAILABLE_CARS)] if AVAILABLE_CARS else None
     y = _draw_item_selector(ui_surf, font_medium, font_small, car_sprites_cache,
                             "Mode", _game_options["selected_mode_index"],
@@ -752,11 +773,16 @@ def handle_game_options_click(click_pos, rects, is_host, room_clients_count=1):
 
         # Mode selection
         if name == "mode_up":
-            # Only 1 mode for now
-            pass
+            total = len(_MODE_OPTIONS)
+            if total > 0:
+                _game_options["selected_mode_index"] = (_game_options["selected_mode_index"] - 1) % total
+                _game_setup["selected_mode"] = _MODE_OPTIONS[_game_options["selected_mode_index"]][0]
             return "mode_prev"
         if name == "mode_down":
-            pass
+            total = len(_MODE_OPTIONS)
+            if total > 0:
+                _game_options["selected_mode_index"] = (_game_options["selected_mode_index"] + 1) % total
+                _game_setup["selected_mode"] = _MODE_OPTIONS[_game_options["selected_mode_index"]][0]
             return "mode_next"
 
         # Laps
@@ -909,7 +935,8 @@ def draw_menu_connection_bar(ui_surf, font_medium):
     action_btn_w = 80
     margin = 15
 
-    total_w = username_w + margin + code_w + action_btn_w
+    tutorial_btn_w = 110
+    total_w = username_w + margin + code_w + action_btn_w + margin + tutorial_btn_w
     x = center_x - total_w // 2
 
     rects = {}
@@ -951,6 +978,15 @@ def draw_menu_connection_bar(ui_surf, font_medium):
                                 action_rect.centery - action_text.get_height() // 2))
     rects["action_btn"] = action_rect
 
+    # 4. Tutorial button (always available, local/offline flow)
+    x += action_btn_w + margin
+    tutorial_rect = pygame.Rect(x, bar_y, tutorial_btn_w, bar_height)
+    pygame.draw.rect(ui_surf, (70, 120, 230), tutorial_rect)
+    tutorial_text = font_medium.render("Tutorial", True, const.WHITE_240)
+    ui_surf.blit(tutorial_text, (tutorial_rect.centerx - tutorial_text.get_width() // 2,
+                                  tutorial_rect.centery - tutorial_text.get_height() // 2))
+    rects["tutorial_btn"] = tutorial_rect
+
     # Error message (above bar)
     if _game_setup["error_message"]:
         error_surf = font_medium.render(_game_setup["error_message"], True, (255, 100, 100))
@@ -972,6 +1008,8 @@ def handle_menu_bar_click(click_pos, rects):
         if _game_setup.get("room_code", ""):
             return "join_game"
         return "host_game"
+    elif "tutorial_btn" in rects and rects["tutorial_btn"].collidepoint(click_pos):
+        return "start_tutorial"
     return None
 
 def handle_menu_bar_keypress(event):
@@ -1008,6 +1046,18 @@ def handle_menu_bar_keypress(event):
 def get_game_setup():
     """Get current game setup configuration."""
     return _game_setup.copy()
+
+
+def update_game_setup(mode=None, track=None):
+    """Update selected mode/track in shared game setup state."""
+    if mode is not None:
+        _game_setup["selected_mode"] = str(mode)
+    if track is not None:
+        track_key = str(track)
+        _game_setup["selected_track"] = track_key
+        if track_key.startswith("track") and track_key[5:].isdigit():
+            idx = max(0, int(track_key[5:]) - 1)
+            _game_options["selected_map_index"] = idx
 
 def reset_game_setup():
     """Reset game setup to defaults."""

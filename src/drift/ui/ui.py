@@ -15,7 +15,7 @@ from drift.ui.draw_stage import (
     handle_palette_picker_click, handle_palette_picker_keypress,
     draw_color_palette_picker, poll_connection, draw_menu,
     draw_game_options_panel, handle_game_options_click, get_game_options,
-    set_palette_colors_from_car,
+    set_palette_colors_from_car, get_tutorial_track_key, update_game_setup,
 )
 from drift.config.settings import settings_manager
 
@@ -622,6 +622,26 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
             draw_controls_hud(ui_surf, ai_path_mode_controls, gamepad, my_car, cam, font_small, dt, engine_state, 7000)
         draw_footer(ui_surf, font_small, code)
 
+    elif stage1 == "mode_tutorial":
+        _menu_bar_rects_cache = None
+        if stage2 == "settings":
+            if stage3 == "controls":
+                controls_rects = draw_controls(ui_surf, font_small)
+                _controls_rects_cache = controls_rects
+                draw_header(ui_surf, font_big, font_small, "Controls", fps, host_name, ping_ms)
+            else:
+                _controls_rects_cache = None
+                world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small)
+                draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name, ping_ms)
+        else:
+            _controls_rects_cache = None
+            draw_mode1(ui_surf, font_big, font_medium, cam, checkpoints)
+            palette_picker_rects = draw_color_palette_picker(ui_surf, font_small)
+            _palette_picker_rects_cache = palette_picker_rects
+            draw_header(ui_surf, font_big, font_small, "Tutorial", fps, host_name, ping_ms)
+            draw_controls_hud(ui_surf, ai_path_mode_controls, gamepad, my_car, cam, font_small, dt, engine_state, 7000)
+        draw_footer(ui_surf, font_small, code)
+
     elif stage1 == "error":
         _menu_bar_rects_cache = None  # Clear cache when in error
         draw_header(ui_surf, font_big, font_small, "Error", fps, ping_ms=ping_ms)
@@ -663,7 +683,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                         stage3 = ""
                 elif stage3 == "" and ev.key == const.ESCAPE_KEY:
                     stage2 = ""
-        elif stage1 in ["lobby", "mode1", "mode2", "leaderboard"]: # in game
+        elif stage1 in ["lobby", "mode1", "mode2", "mode_tutorial", "leaderboard"]: # in game
             if stage2 == "" and ev.key == const.ESCAPE_KEY: 
                 stage2 = "settings" # open settings
             elif stage2 == "settings":
@@ -714,6 +734,17 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                 else:
                     clear_error_message()
                     _start_join_connection(my_id, setup, my_car, is_host_flag_ref)
+            elif action == "start_tutorial":
+                track_key = get_tutorial_track_key()
+                update_game_setup(mode="mode_tutorial", track=track_key)
+                try:
+                    const.MAP_NUM = int(str(track_key)[5:])
+                except Exception:
+                    pass
+                stage1 = "mode_tutorial"
+                stage2 = ""
+                stage3 = ""
+                clear_error_message()
         elif stage1 == "lobby" and stage2 == "":
             if _game_rects_cache:
                 start_btn = _game_rects_cache.get("start_btn") # Start button
@@ -745,7 +776,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
 
         elif stage1.startswith("mode") and stage2 == "" and _palette_picker_rects_cache:
             handle_palette_picker_click(ev.pos, _palette_picker_rects_cache)
-        elif stage1 in ["lobby", "mode1", "mode2", "leaderboard"] and stage2 == "settings" and stage3 == "controls" and _controls_rects_cache:
+        elif stage1 in ["lobby", "mode1", "mode2", "mode_tutorial", "leaderboard"] and stage2 == "settings" and stage3 == "controls" and _controls_rects_cache:
             res = handle_controls_click(ev.pos, _controls_rects_cache, gamepad)
             if res and res.startswith("gp_connected_"):
                 stage2 = "" ; stage3 = "" # close controls & settings to confirm connection
@@ -764,7 +795,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                 elif js.get_button(7) and not has_pending_connection(): # + -> host
                     setup = get_game_setup()
                     _start_host_connection(my_id, setup, my_car, is_host_flag_ref)
-        elif stage1 in ["lobby", "mode1", "mode2", "leaderboard"]: # in game
+        elif stage1 in ["lobby", "mode1", "mode2", "mode_tutorial", "leaderboard"]: # in game
             if stage2 == "": # main game screen
                 if js.get_button(8): # left stick press -> open settings (esc)
                     stage2 = "settings"
@@ -777,7 +808,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                         stage2 = ""
     
     # Handle slider events in settings menu (all event types)
-    if ((stage1 in ["lobby", "mode1", "mode2", "leaderboard"] and stage2 == "settings" and stage3 == "") or 
+    if ((stage1 in ["lobby", "mode1", "mode2", "mode_tutorial", "leaderboard"] and stage2 == "settings" and stage3 == "") or 
         (stage1 == "menu" and stage2 == "settings" and stage3 == "")):
         settings_manager.handle_slider_events(ev)
 

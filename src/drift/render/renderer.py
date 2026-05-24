@@ -285,54 +285,40 @@ class WorldRenderer:
 
             offx, offy = camera_rect.left, camera_rect.top
 
-            # Build depth-sorted draw list: (sort_y, kind, *data)
-            # kind = 'tile' | 'ai_car' | 'my_car' | 'remote'
-            depth_items = []
-
-            # _fg tiles (each tile's sort key is its world bottom-Y edge)
-            if self.chunked_map_fg is not None:
-                for world_bottom_y, dest_x, dest_y, surf in self.chunked_map_fg.get_visible_tile_items(camera_rect):
-                    depth_items.append((world_bottom_y, 'tile', dest_x, dest_y, surf))
-
-            # AI cars
+            # Depth-sort only cars/remotes (top-to-bottom by world Y),
+            # then render the full _fg layer above everything.
+            car_items = []
             for ai_car in ai_cars:
                 car_sprites = car_sprites_cache.get(ai_car.car_type, car_sprites_cache.get("ae86", []))
-                depth_items.append((ai_car.y, 'ai_car', ai_car, car_sprites))
+                car_items.append((ai_car.y, "ai", ai_car, car_sprites))
 
-            # Player car
             my_car_sprites = car_sprites_cache.get(my_car.car_type, car_sprites_cache.get("ae86", []))
-            depth_items.append((my_car.y, 'my_car', my_car, my_car_sprites))
+            car_items.append((my_car.y, "my", my_car, my_car_sprites))
 
-            # Remote cars
             if draw_remotes:
                 for pid, d in remotes.items():
                     remote_car_sprites = car_sprites_cache.get(d.get("car_type", "ae86"), car_sprites_cache.get("ae86", []))
-                    depth_items.append((d["y"], 'remote', pid, d, remote_car_sprites))
+                    car_items.append((d["y"], "remote", pid, d, remote_car_sprites))
 
-            # Sort top-to-bottom (ascending Y → painter's algorithm)
-            depth_items.sort(key=lambda item: item[0])
+            car_items.sort(key=lambda item: item[0])
 
-            # Draw in sorted order
-            for item in depth_items:
+            for item in car_items:
                 kind = item[1]
-                if kind == 'tile':
-                    _, _, dest_x, dest_y, surf = item
-                    world_surf.blit(surf, (dest_x, dest_y))
-                elif kind == 'ai_car':
-                    _, _, c, sp = item
-                    draw_car(world_surf, c.x - offx, c.y - offy, c.angle, c.name,
+                if kind == "ai":
+                    _, _, ai_car, car_sprites = item
+                    draw_car(world_surf, ai_car.x - offx, ai_car.y - offy, ai_car.angle, ai_car.name,
                              color_body=const.COLOR_BODY_DEFAULT,
-                             car_sprites_list=sp,
+                             car_sprites_list=car_sprites,
                              lights_on=lights_on,
-                             palette_colors=getattr(c, 'palette_colors', None))
-                elif kind == 'my_car':
+                             palette_colors=getattr(ai_car, 'palette_colors', None))
+                elif kind == "my":
                     _, _, c, sp = item
                     draw_car(world_surf, c.x - offx, c.y - offy, c.angle, c.name,
                              color_body=const.COLOR_MY_CAR,
                              car_sprites_list=sp,
                              lights_on=lights_on,
                              palette_colors=get_palette_colors())
-                elif kind == 'remote':
+                else:
                     _, _, pid, d, sp = item
                     drift_pts = draw_car(world_surf, d["x"] - offx, d["y"] - offy, d["a"], d.get("name", f"Player{pid}"),
                                          color_body=const.COLOR_BODY_REMOTE,
@@ -357,6 +343,9 @@ class WorldRenderer:
                     self._drift_points_old_remotes[pid] = tuple(
                         (pt[0] + offx, pt[1] + offy) for pt in drift_pts
                     ) if drift_pts else ()
+
+            if self.chunked_map_fg is not None:
+                self.chunked_map_fg.render_to(world_surf, camera_rect)
 
             # Debug overlays (always on top, after depth-sorted draw)
             if const.DEBUG:
@@ -412,7 +401,7 @@ class WorldRenderer:
             draw_collision_debug(world_surf, my_car, self.collision_mesh, 0, 0)
 
         # 5) Draw network/online players' cars
-        if stage in ["lobby", "mode1", "mode2"] and draw_remotes:
+        if stage in ["lobby", "mode1", "mode2", "mode_tutorial"] and draw_remotes:
             for pid, d in remotes.items():
                 remote_car_sprites = car_sprites_cache.get(d.get("car_type", "ae86"), car_sprites_cache.get("ae86", []))
                 drift_pts = draw_car(world_surf, d["x"], d["y"], d["a"], d.get("name", f"Player{pid}"),
