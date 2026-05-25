@@ -261,6 +261,7 @@ class WorldRenderer:
                      lights_on: bool,
                      car_sprites_cache: Dict[str, List[List[pygame.Surface]]],
                      draw_remotes: bool = True,
+                     penguins: list = None,
                      ) -> Tuple[pygame.Surface, bool]:
         """
         Render track, cars, and marks.
@@ -284,6 +285,14 @@ class WorldRenderer:
             self._blit_tire_marks_chunked(world_surf, camera_rect)
 
             offx, offy = camera_rect.left, camera_rect.top
+
+            # Draw penguins (world objects) before cars so cars render on top
+            if penguins:
+                for p in penguins:
+                    try:
+                        p.draw(world_surf, offx, offy, scale=1.0 / cam.zoom)
+                    except Exception:
+                        pass
 
             # Depth-sort only cars/remotes (top-to-bottom by world Y),
             # then render the full _fg layer above everything.
@@ -370,6 +379,14 @@ class WorldRenderer:
 
         # 1) Draw the background track image
         self._draw_track(world_surf, cam, stage)
+
+        # Draw penguins for classic path
+        if penguins:
+            for p in penguins:
+                try:
+                    p.draw(world_surf, 0, 0, scale=1.0)
+                except Exception:
+                    pass
 
         # 2) Tire Marks
         self._update_tire_marks(my_car, ai_cars, remotes, stage)

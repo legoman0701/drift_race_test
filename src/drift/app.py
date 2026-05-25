@@ -33,6 +33,7 @@ from drift.gamemodes.driftangle import DriftAngleRace
 from drift.net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, advance_remotes, send_stop_race
 from drift.audio.engine_audio import V8EngineAudio
 from drift.audio.gear_shift_sound import GearShiftSound
+from drift.entities.penguin import Penguin
 
 # ======= CONFIGURATION =======
 
@@ -874,6 +875,7 @@ def main():
     spawnx = random.uniform(const.WINDOW_WIDTH*0.3, const.WINDOW_WIDTH*0.7)
     spawny = random.uniform(const.WINDOW_HEIGHT*0.3, const.WINDOW_HEIGHT*0.7)
     my_car = Car(spawnx, spawny, my_name, is_ai=False, me=True)
+    penguins = []
     current_engine_sound_id = my_car.engine_sound_id
     # Set palette colors from car specs
     set_palette_colors_from_car(my_car.palette_colors)
@@ -1215,6 +1217,36 @@ def main():
                 meta = json.load(fh)
             for cp in meta.get("checkpoints", []):
                 _cp_rects.append(pygame.Rect(cp.get("x", 0), cp.get("y", 0), cp.get("width", 0), cp.get("height", 0)))
+            # Load penguin spawns for this map (if any)
+            _raw_peng = meta.get("penguins", []) or []
+            # Try to locate a sprite for penguins in common asset locations
+            peng_sprite = None
+            try:
+                candidates = [
+                    ("track", f"map{const.MAP_NUM}", "pinguin.png"),
+                    ("track", f"map{const.MAP_NUM}", "penguin.png"),
+                    ("illustrations", "pinguin.png"),
+                    ("illustrations", "penguin.png"),
+                ]
+                for c in candidates:
+                    pth = asset_path(*c)
+                    if pth.exists():
+                        try:
+                            peng_sprite = pygame.image.load(str(pth)).convert_alpha()
+                            break
+                        except Exception:
+                            peng_sprite = None
+            except Exception:
+                peng_sprite = None
+
+            penguins.clear()
+            for p in _raw_peng:
+                try:
+                    px = float(p.get("x", 0))
+                    py = float(p.get("y", 0))
+                    penguins.append(Penguin(px, py, sprite=peng_sprite))
+                except Exception:
+                    pass
         except Exception:
             pass
         checkpoints = _cp_rects
@@ -2004,9 +2036,51 @@ def main():
 
         profiler.begin("render_world")
         if not skip_physics:
+            # Ensure penguins are loaded for this map (lazy-load if needed)
+            try:
+                if const.MAP_NUM == 2 and not penguins:
+                    meta_path = asset_path("track", f"map{const.MAP_NUM}", "map_meta.json")
+                    try:
+                        with open(meta_path, "r", encoding="utf-8") as fh:
+                            meta = json.load(fh)
+                        _raw_peng = meta.get("penguins", []) or []
+                        # Try to find sprite
+                        peng_sprite = None
+                        try:
+                            candidates = [
+                                ("track", f"map{const.MAP_NUM}", "pinguin.png"),
+                                ("track", f"map{const.MAP_NUM}", "penguin.png"),
+                                ("illustrations", "pinguin.png"),
+                                ("illustrations", "penguin.png"),
+                            ]
+                            for c in candidates:
+                                pth = asset_path(*c)
+                                if pth.exists():
+                                    try:
+                                        peng_sprite = pygame.image.load(str(pth)).convert_alpha()
+                                        break
+                                    except Exception:
+                                        peng_sprite = None
+                        except Exception:
+                            peng_sprite = None
+
+                        for p in _raw_peng:
+                            try:
+                                px = float(p.get("x", 0))
+                                py = float(p.get("y", 0))
+                                penguins.append(Penguin(px, py, sprite=peng_sprite))
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+
+                for p in penguins:
+                    p.step(dt_sim, collision_mesh=_collision_mesh, cars=[my_car] + ai_cars)
+            except Exception:
+                pass
             render_stage = stage1 if stage1 != "leaderboard" else "mode1"
             visible_ai = ai_cars if stage1 != "lobby" else []
-            world_surf, resized, is_viewport = renderer.render_world(cam, render_stage, my_car, visible_ai, remotes, lights_on, car_sprites_cache)
+            world_surf, resized, is_viewport = renderer.render_world(cam, render_stage, my_car, visible_ai, remotes, lights_on, car_sprites_cache, penguins=penguins)
 
             # If map changed while a previous discovery job is still pending,
             # drop the handle and queue discovery for the active map.
