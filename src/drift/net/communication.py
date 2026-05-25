@@ -148,6 +148,7 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
                 # Read the remote player's self-reported ping & PL
                 remote_ping = float(d["ps"]) if d.get("ps") is not None else None
                 remote_pl = float(d["pl"]) if d.get("pl") is not None else None
+                remote_drift_score = float(d["drift_score"]) if d.get("drift_score") is not None else None
 
                 if pid not in remotes:
                     remotes[pid] = {
@@ -157,6 +158,7 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
                         "car_type": car_type, "palette": palette,
                         "ping": remote_ping,
                         "pl": remote_pl,
+                        "drift_score": remote_drift_score,
                     }
                 else:
                     cur = remotes[pid]
@@ -164,6 +166,8 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
                         cur["ping"] = remote_ping
                     if remote_pl is not None:
                         cur["pl"] = remote_pl
+                    if remote_drift_score is not None:
+                        cur["drift_score"] = remote_drift_score
                     ex, ey = tx - cur["x"], ty - cur["y"]
                     if ex * ex + ey * ey > _SNAP_DIST_SQ:
                         cur["x"], cur["y"] = tx, ty
@@ -185,8 +189,8 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
             result["stop_race"] = True
         elif t == "error":
             error_msg = msg.get("msg", "error")
-            if error_msg == "unknown_type": # avoid fallback offline
-                print("WARNING: Server sent 'unknown_type'. Is the relay.py updated?")
+            if error_msg in ("unknown_type", "packet_too_big"): # non-fatal compatibility/telemetry errors
+                print(f"WARNING: Relay sent non-fatal error: {error_msg}")
                 continue 
             result["error"] = error_msg
             return result
@@ -247,7 +251,7 @@ def _update_own_pl(d: dict, now: float, my_car):
         total_recv = sum(e[2] for e in _pl_events)
         my_car.pl_pct = max(0.0, 100.0 * (1.0 - total_recv / total_exp)) if total_exp > 0 else 0.0
 
-def send_network_state(sock, code: str, my_id: str, my_car, palette=None):
+def send_network_state(sock, code: str, my_id: str, my_car, palette=None, drift_score=None):
     global _last_send_time, _send_seq
     _last_send_time = time.time()
     _send_seq += 1
@@ -270,12 +274,17 @@ def send_network_state(sock, code: str, my_id: str, my_car, palette=None):
     }
     if palette:
         pkt["palette"] = [list(c) for c in palette]
+    if drift_score is not None:
+        try:
+            pkt["drift_score"] = round(float(drift_score), 4)
+        except Exception:
+            pass
     try:
         sock.send(json.dumps(pkt).encode("utf-8"))
     except Exception:
         pass
 
-def send_ai_states(sock, code: str, ai_cars):
+def send_ai_states(sock, code: str, ai_cars, drift_scores=None):
     # Host broadcasts AI car states including palette so non-host
     # clients can render AI cars with the correct colors.
     for i, ai in enumerate(ai_cars, start=1):
@@ -296,6 +305,13 @@ def send_ai_states(sock, code: str, ai_cars):
         palette = getattr(ai, "palette_colors", None)
         if palette:
             pkt["palette"] = [list(c) for c in palette]
+        if isinstance(drift_scores, dict):
+            score = drift_scores.get(f"AI-{i}")
+            if score is not None:
+                try:
+                    pkt["drift_score"] = round(float(score), 4)
+                except Exception:
+                    pass
         try:
             sock.send(json.dumps(pkt).encode("utf-8"))
         except Exception:

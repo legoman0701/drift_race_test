@@ -27,6 +27,7 @@ from drift.ai.ai import ai_algorithme
 import drift.ai.path_finder as path_finder
 from drift.gamemodes.classicrace import ClassicRace
 from drift.gamemodes.bestlap import BestLap
+from drift.gamemodes.driftangle import DriftAngleRace
 from drift.net.communication import connect_to_relay, handle_network_messages, send_network_state, send_ai_states, send_ping, advance_remotes, send_stop_race
 from drift.audio.engine_audio import V8EngineAudio
 from drift.audio.gear_shift_sound import GearShiftSound
@@ -483,7 +484,7 @@ def draw_engine_audio_debug(surface, engine_audio):
 
 def draw_minimap(surface, path_poly, world_size, my_car, remotes, ai_cars, stage1):
     """Bottom-left minimap: shows track path and car positions during gameplay."""
-    if not path_poly or stage1 not in ("game", "mode1", "mode2", "mode_tutorial", "leaderboard"):
+    if not path_poly or not (stage1 == "game" or stage1.startswith("mode") or stage1 == "leaderboard"):
         return
     if world_size is None or world_size[0] <= 0 or world_size[1] <= 0:
         return
@@ -1145,17 +1146,17 @@ def main():
 
     settings_buttons = [ # todo : be able to use '*' like '*/settings' for key binds
     btn.Button("Stop Race", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.25, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, 
-               [["mode1", "settings"], ["mode2", "settings"], ["mode_tutorial", "settings"]], lambda: stop_race(sock, code, my_id)),
+               [["mode1", "settings"], ["mode2", "settings"], ["mode3", "settings"], ["mode_tutorial", "settings"]], lambda: stop_race(sock, code, my_id)),
     btn.Button("Quit Game", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, 
                [["menu", "settings"]] ,lambda: quit_game()),
     btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, 
-               [["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["mode_tutorial", "settings"], ["leaderboard", "settings"]] ,lambda: leave_room(sock, code, my_id, remotes)),
+               [["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["mode3", "settings"], ["mode_tutorial", "settings"], ["leaderboard", "settings"]] ,lambda: leave_room(sock, code, my_id, remotes)),
     btn.Button("Controls", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, 
-               [["menu", "settings"], ["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["mode_tutorial", "settings"], ["leaderboard", "settings"]], handle_controls),
+               [["menu", "settings"], ["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["mode3", "settings"], ["mode_tutorial", "settings"], ["leaderboard", "settings"]], handle_controls),
     btn.Button("Audio", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, 
-               [["menu", "settings"], ["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["mode_tutorial", "settings"], ["leaderboard", "settings"]], handle_audio),
+               [["menu", "settings"], ["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["mode3", "settings"], ["mode_tutorial", "settings"], ["leaderboard", "settings"]], handle_audio),
     btn.Button("Modes", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.65, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, 
-               [["menu", "settings"], ["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["mode_tutorial", "settings"], ["leaderboard", "settings"]], handle_modes),
+               [["menu", "settings"], ["lobby", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["mode3", "settings"], ["mode_tutorial", "settings"], ["leaderboard", "settings"]], handle_modes),
     ]
     
     profiler = FrameProfiler()
@@ -1235,7 +1236,7 @@ def main():
     # ── Helper: spawn AI car (shared by keyboard & gamepad) ──
     def _try_spawn_ai():
         _max_p = game_mode.max_players if game_mode else 6
-        if I_AM_HOST and stage1 in ["lobby", "mode1", "mode2"] and stage2 == "" and 1 + len(remotes) + len(ai_cars) < _max_p:
+        if I_AM_HOST and (stage1 == "lobby" or stage1.startswith("mode")) and stage2 == "" and 1 + len(remotes) + len(ai_cars) < _max_p:
             from drift.ui.draw_stage import set_game_option
             set_game_option("ai_amount", len(ai_cars) + 1)
 
@@ -1446,7 +1447,7 @@ def main():
         skip_physics = stage3 == "controls"
 
         # Sync AI car count with game options (lobby + active gameplay)
-        if stage1 in ("lobby", "mode1", "mode2"):
+        if stage1 == "lobby" or stage1.startswith("mode"):
             _sync_ai_count()
 
         controls = {"th": 0.0, "st": 0.0, "br": 0.0}
@@ -1538,7 +1539,7 @@ def main():
             if net_result.get("host_id") is not None:
                 I_AM_HOST = (net_result["host_id"] == my_id)
                 host_ref[0] = I_AM_HOST
-            if net_result.get("start_mode") and stage1 in ["lobby", "mode1", "mode2", "mode_tutorial", "leaderboard"]:
+            if net_result.get("start_mode") and (stage1 == "lobby" or stage1.startswith("mode") or stage1 == "leaderboard"):
                 new_mode = net_result["start_mode"]
                 if new_mode.startswith("mode") and stage1 != "lobby":
                     new_mode = None
@@ -1559,6 +1560,9 @@ def main():
                         stage1 = new_mode
                 else:
                     stage1 = new_mode
+                    if new_mode.startswith("mode") and new_mode[4:].isdigit():
+                        const.MODE_INDEX = max(0, int(new_mode[4:]) - 1)
+                        set_game_option("selected_mode_index", const.MODE_INDEX)
                     renderer.clear_tire_marks()
                     start_choice = net_result.get("start_choice")
                     if isinstance(start_choice, int):
@@ -1605,9 +1609,25 @@ def main():
             now = time.time()
             if now - last_state_send >= 1.0 / const.SEND_HZ:
                 last_state_send = now
-                send_network_state(sock, code, my_id, my_car, palette=get_palette_colors())
+                local_drift_score = None
+                ai_drift_scores = None
+                if game_mode is not None and hasattr(game_mode, "player_drift_scores"):
+                    try:
+                        local_drift_score = game_mode.player_drift_scores.get(my_id)
+                        ai_drift_scores = game_mode.player_drift_scores
+                    except Exception:
+                        local_drift_score = None
+                        ai_drift_scores = None
+                send_network_state(
+                    sock,
+                    code,
+                    my_id,
+                    my_car,
+                    palette=get_palette_colors(),
+                    drift_score=local_drift_score,
+                )
                 if I_AM_HOST and ai_cars and stage1 != "lobby":
-                    send_ai_states(sock, code, ai_cars)
+                    send_ai_states(sock, code, ai_cars, drift_scores=ai_drift_scores)
             if now - last_ping >= 1.0 / const.PING_HZ:
                 last_ping = now
                 send_ping(sock, code)
@@ -1691,7 +1711,7 @@ def main():
                     pass
 
                 renderer.collision_mesh = _collision_mesh
-                mode_classes = {0: ClassicRace, 1: BestLap}
+                mode_classes = {0: ClassicRace, 1: BestLap, 2: DriftAngleRace}
                 game_mode = mode_classes.get(const.MODE_INDEX)
                 if game_mode:
                     # print(get_game_options()["choice"])
@@ -1768,6 +1788,13 @@ def main():
                     payload = {"t": "race_result", "code": code, "id": my_id, "time": float(local_finish_time)}
                     if best_lap is not None:
                         payload["best_lap"] = float(best_lap)
+                    try:
+                        if hasattr(game_mode, "player_drift_scores"):
+                            drift_score = game_mode.player_drift_scores.get(my_id)
+                            if drift_score is not None:
+                                payload["drift_score"] = float(drift_score)
+                    except Exception:
+                        pass
 
                     sock.send(json.dumps(payload).encode("utf-8"))
                     _local_result_sent = True
@@ -1787,6 +1814,13 @@ def main():
                             try:
                                 if ps.best_lap_time is not None:
                                     payload["best_lap"] = float(ps.best_lap_time)
+                            except Exception:
+                                pass
+                            try:
+                                if hasattr(game_mode, "player_drift_scores"):
+                                    drift_score = game_mode.player_drift_scores.get(aid)
+                                    if drift_score is not None:
+                                        payload["drift_score"] = float(drift_score)
                             except Exception:
                                 pass
                             try:
@@ -1987,7 +2021,7 @@ def main():
 
             # Ensure each map gets its own path discovery result.
             if (
-                stage1 in ["lobby", "mode1", "mode2", "mode_tutorial", "leaderboard"]
+                (stage1 == "lobby" or stage1.startswith("mode") or stage1 == "leaderboard")
                 and _path_future is None
                 and _path_poly_map_num != const.MAP_NUM
             ):
@@ -2026,7 +2060,7 @@ def main():
         fps = clock.get_fps()
         ping_ms = my_car.ping_ms if my_car else None
         ui_checkpoints = renderer.checkpoints
-        if game_mode is not None and stage1 in ["mode1", "leaderboard"]:
+        if game_mode is not None and (stage1.startswith("mode") or stage1 == "leaderboard"):
             ui_checkpoints = []
             
         # print(f"stage3 before: {stage3}")
@@ -2057,7 +2091,7 @@ def main():
                 # print("cerise activated ?")
                 lb_result = game_mode.draw_leaderboard(ui_surf, font_big, font_medium, font_small, I_AM_HOST)
                 _return_btn_rect = lb_result.get("return_btn_rect")
-            elif stage1 in ("mode1", "mode2"):
+            elif stage1.startswith("mode"):
                 game_mode.draw_hud(ui_surf, cam, font_big, font_medium, font_small)
 
         if show_frame_analysis:

@@ -285,6 +285,9 @@ class Car:
         self.v_angle = 0.0
         self.name = name
         self.drift_ratio = 0.0
+        self.drift_angle_degrees = 0.0
+        self.drift_multiplier = 1.0
+        self.last_impact_speed = 0.0
         self.is_ai = is_ai
         self.car_type = car_type
         self.car_name = car_name
@@ -464,7 +467,9 @@ class Car:
         vel_dir_f = body_forward_speed / speed_norm
         vel_dir_r = body_lateral_speed / speed_norm
         drift_angle = ((math.atan2(vel_dir_f, vel_dir_r) - math.pi/2 + math.pi) % (2*math.pi) - math.pi)
+        self.drift_angle_degrees = math.degrees(drift_angle)
         self.drift_ratio = clamp(abs(drift_angle) * clamp(abs(body_forward_speed) - 10.0, 0.0, 1.0), 0.0, 1.0)
+        self.drift_multiplier = max(1.0, 1.0 + self.drift_ratio)
 
         # Wheel configuration (local positions in body frame) - compute from current car dimensions
         wheel_x_off = WHEELBASE * 0.5
@@ -933,9 +938,10 @@ class Car:
             ry = wx_local * sa + wy_local * ca
             wheel_world_points.append((int(self.x + rx), int(self.y + ry)))
 
-        return max_impact_speed
-
+        self.last_impact_speed = max_impact_speed
         self.drift_points_old = self.drift_points
         self.drift_points = tuple(wheel_world_points)
+
+        return max_impact_speed
 
     # wheel_debug already updated inside step above

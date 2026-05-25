@@ -700,7 +700,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                         stage3 = ""
                 elif stage3 == "" and ev.key == const.ESCAPE_KEY:
                     stage2 = ""
-        elif stage1 in ["lobby", "mode1", "mode2", "mode_tutorial", "leaderboard"]: # in game
+        elif stage1 in ["lobby", "mode1", "mode2", "mode3", "mode_tutorial", "leaderboard"]: # in game
             if stage2 == "" and ev.key == const.ESCAPE_KEY: 
                 stage2 = "settings" # open settings
             elif stage2 == "settings":
@@ -805,7 +805,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
 
         elif stage1.startswith("mode") and stage2 == "" and _palette_picker_rects_cache:
             handle_palette_picker_click(ev.pos, _palette_picker_rects_cache)
-        elif stage1 in ["menu", "lobby", "mode1", "mode2", "mode_tutorial", "leaderboard"] and stage2 == "settings" and stage3 == "controls" and _controls_rects_cache:
+        elif stage1 in ["menu", "lobby", "mode1", "mode2", "mode3", "mode_tutorial", "leaderboard"] and stage2 == "settings" and stage3 == "controls" and _controls_rects_cache:
             res = handle_controls_click(ev.pos, _controls_rects_cache, gamepad)
             if res and res.startswith("gp_connected_"):
                 stage2 = "" ; stage3 = "" # close controls & settings to confirm connection
@@ -824,7 +824,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                 elif js.get_button(7) and not has_pending_connection(): # + -> host
                     setup = get_game_setup()
                     _start_host_connection(my_id, setup, my_car, is_host_flag_ref)
-        elif stage1 in ["lobby", "mode1", "mode2", "mode_tutorial", "leaderboard"]: # in game
+        elif stage1 in ["lobby", "mode1", "mode2", "mode3", "mode_tutorial", "leaderboard"]: # in game
             if stage2 == "": # main game screen
                 if js.get_button(8): # left stick press -> open settings (esc)
                     stage2 = "settings"
