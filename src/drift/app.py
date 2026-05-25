@@ -1105,7 +1105,7 @@ def main():
         sys.exit(0)
 
     def leave_room(sock, code, my_id, remotes):
-        nonlocal host_name, game_mode, _prev_stage1, _return_btn_rect, _local_result_sent, _ai_results_sent, _start_roster
+        nonlocal host_name, game_mode, _prev_stage1, _return_btn_rect, _local_result_sent, _ai_results_sent, _start_roster, _collision_mesh, penguins
         if sock and code:
             try:
                 sock.send(json.dumps({"t": "bye", "code": code, "id": my_id}).encode("utf-8"))
@@ -1130,6 +1130,18 @@ def main():
         # Clear tire marks and chunk cache to free memory
         renderer.clear_tire_marks()
         renderer.clear_chunk_cache()
+        # Clear collision mesh so map collision doesn't carry to menu/lobby
+        try:
+            _collision_mesh = CollisionMesh([])
+            renderer.collision_mesh = _collision_mesh
+        except Exception:
+            pass
+        # Clear any world entities that should not persist in the lobby
+        try:
+            if penguins:
+                penguins.clear()
+        except Exception:
+            pass
         return "menu", "", None, None, remotes # stage, substage sock, code, remotes
     
     def handle_controls():
@@ -2038,6 +2050,9 @@ def main():
         if not skip_physics:
             # Ensure penguins are loaded for this map (lazy-load if needed)
             try:
+                # Clear penguins when leaving map2
+                if const.MAP_NUM != 2 and penguins:
+                    penguins.clear()
                 if const.MAP_NUM == 2 and not penguins:
                     meta_path = asset_path("track", f"map{const.MAP_NUM}", "map_meta.json")
                     try:
