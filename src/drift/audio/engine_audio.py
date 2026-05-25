@@ -92,7 +92,7 @@ class V8EngineAudio:
             current = self._volumes[index]
             smoothed = current + ((target - current) * self.TRACK_BLEND_RESPONSE)
             self._volumes[index] = smoothed
-            coef = audio_volumes.get_value("master_volume") * audio_volumes.get_value("sfx_volume")
+            coef = audio_volumes.get_value("master") * audio_volumes.get_value("sfx")
             channel.set_volume(smoothed * coef)
 
     def get_debug_snapshot(self) -> dict[str, object]:

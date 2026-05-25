@@ -7,13 +7,14 @@ class PlayerRaceState:
                  "finished", "finish_time", "car_type", "name",
                  "best_lap_time", "_lap_start_time")
 
-    def __init__(self, player_id, car_type="911", name=""):
+    def __init__(self, player_id, name=""):
         self.player_id = player_id
         self.current_checkpoint = 0
         self.current_lap = 0
         self.finished = False
         self.finish_time = 0.0
-        self.car_type = car_type
+        self.car_type = const.CAR_ID
+        print("player state car type ?", self.car_type)
         self.name = name
         self.best_lap_time = None   # float | None
         self._lap_start_time = 0.0  # race_time when current lap began
@@ -62,7 +63,6 @@ class BaseGameMode(ABC):
         for pid, info in players.items():
             self.player_states[pid] = PlayerRaceState(
                 pid,
-                car_type=info.get("car_type", "911"),
                 name=info.get("name", pid),
             )
 
@@ -136,12 +136,10 @@ class BaseGameMode(ABC):
             if pid in self.player_states:
                 continue
             name = pid
-            car_type = "911"
             info = players.get(pid) if isinstance(players, dict) else None
             if isinstance(info, dict):
                 name = info.get("name", pid)
-                car_type = info.get("car_type", "911")
-            self.player_states[pid] = PlayerRaceState(pid, car_type=car_type, name=name)
+            self.player_states[pid] = PlayerRaceState(pid, name=name)
 
         # Drop players who left so they don't block completion.
         for pid in list(self.player_states.keys()):
@@ -171,13 +169,11 @@ class BaseGameMode(ABC):
             if pid not in self.player_states:
                 self.player_states[pid] = PlayerRaceState(
                     pid,
-                    car_type=entry.get("car_type", "911"),
                     name=entry.get("name", pid),
                 )
 
             ps = self.player_states[pid]
             ps.name = entry.get("name", ps.name)
-            ps.car_type = entry.get("car_type", ps.car_type)
             # Apply best lap time if present in networked results
             try:
                 if "best_lap" in entry and entry["best_lap"] is not None:
@@ -263,7 +259,7 @@ class BaseGameMode(ABC):
             # else: rank_s = font_medium.render(f"DNF", True, const.WHITE_240)
             rank_s = font_medium.render(f"#{rank}", True, color)
             name_s = font_medium.render(ps.name[:16], True, const.WHITE_240)
-            car_s = font_medium.render(ps.car_type, True, const.GREY_200)
+            car_s = font_medium.render(const.get_car_name(ps.car_type), True, const.GREY_200)
             if ps.best_lap_time is not None:
                 bl_mins = int(ps.best_lap_time) // 60
                 bl_secs = ps.best_lap_time - bl_mins * 60

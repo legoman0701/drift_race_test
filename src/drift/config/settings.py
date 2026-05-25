@@ -44,8 +44,8 @@ controls = {
 physics_controls = SettingsManager(controls)
 
 volumes = {
-    'master_volume': 1.0,
-    'music_volume': 1.0,
-    'sfx_volume': 1.0
+    'master': 1.0,
+    'music': 1.0,
+    'sfx': 1.0
 }
 audio_volumes = SettingsManager(volumes)

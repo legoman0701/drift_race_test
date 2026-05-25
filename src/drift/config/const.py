@@ -85,6 +85,16 @@ VIEW_ANGLE = 70 * math.pi / 180.0  # radians
 AI_RESET_DELAY = 3.0
 
 # ======= CAR SPRITES =======
+def get_car_name(car_id):
+    match car_id:
+        case "AE86": return "AE86"
+        case "911": return "911 SC"
+        case "barracuda": return "Barracuda 440"
+        case "mustang": return "Mustang 289"
+        case "r34": return "GTR R34"
+        case "s1e2": return "Quattro S1 E2"
+        case _: return car_id
+        
 AVAILABLE_CARS = get_available_cars()
 CAR_SPRITES = {}
 for car in AVAILABLE_CARS:
@@ -96,8 +106,7 @@ for car in AVAILABLE_CARS:
             f"cars/{car}/Palette/Image{{i:04}}.png"
         ]
     },
-DEFAULT_CAR_ID = "AE86"
-DEFAULT_CAR_NAME = "AE86"
+CAR_ID = "AE86"
 
 # ======= CONTROLS =======
 # Menu controls
@@ -140,6 +149,19 @@ KEY_REPEAT_INTERVAL = 35
 DEBUG = False
 CURSOR_FOLLOW = False
 AI_PATH_FOLLOW = False
+
+# ======= STATS =======
+GAME_PLAYED = 0
+PBS = [None, None] # [acres fields, snow]
+# CARS_USE = [0, 0, 0, 0, 0, 0] # ae86, 289, 911, 440, r34, s1e2
+CARS_USE = {
+    "ae86": 0,
+    "289": 0,
+    "911": 0,
+    "440": 0,
+    "r34": 0,
+    "s1e2": 0
+}
 
 # ======= FLAGS =======
 MODE_CLICKED = False

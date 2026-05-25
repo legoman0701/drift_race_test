@@ -82,18 +82,13 @@ def poll_pending_connection():
     result = conn["result"]
     clear_error_message()
 
-    # Sync game options car index with the selected car
-    opts = get_game_options()
-    selected_car = setup.get("selected_car", "")
-    if selected_car in const.AVAILABLE_CARS:
-        opts["selected_car_index"] = const.AVAILABLE_CARS.index(selected_car)
-
     if mode == "host":
         # result: ("lobby", my_name, code, sock, is_host, host_name, track_image, chunked_map, _cp_rects)
         stage1, my_name, code, sock, is_host, host_name, track_image, chunked_map, checkpoints = result
         is_host_flag_ref[0] = is_host
         my_car.name = my_name
-        my_car.set_car_type(setup["selected_car"])
+        my_car.set_car_type(const.CAR_ID)
+        print(f"const.CAR_ID : {const.CAR_ID}")
         set_palette_colors_from_car(my_car.palette_colors)
         invalidate_palette_cache()
         _pad = 100
@@ -108,7 +103,8 @@ def poll_pending_connection():
             set_error_message(error)
             return None  # stay in menu, error shown
         my_car.name = my_name
-        my_car.set_car_type(setup["selected_car"])
+        my_car.set_car_type(const.CAR_ID)
+        print(f"const.CAR_ID : {const.CAR_ID}")
         set_palette_colors_from_car(my_car.palette_colors)
         invalidate_palette_cache()
         _pad = 100
@@ -655,7 +651,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
     
     return world_surf, button_results, menu_bar_rects, palette_picker_rects, game_options_rects
 
-def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref, host_name=None, new_game_rects=None, track_image=None, chunked_map=None, checkpoints=None):
+def handle_game_events(screen, ev, stage1, stage2, stage3, save_manager, gamepad, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref, host_name=None, new_game_rects=None, track_image=None, chunked_map=None, checkpoints=None):
     """Handle game events including new game UI interactions."""
     global _menu_bar_rects_cache, _palette_picker_rects_cache
 
@@ -700,6 +696,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                         stage3 = ""
                 elif stage3 == "" and ev.key == const.ESCAPE_KEY:
                     stage2 = ""
+                    save_manager.save_settings(audio_volumes, physics_controls)
         elif stage1 in ["lobby", "mode1", "mode2", "mode_tutorial", "leaderboard"]: # in game
             if stage2 == "" and ev.key == const.ESCAPE_KEY: 
                 stage2 = "settings" # open settings
@@ -724,6 +721,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                         stage3 = ""  # Go back to settings menu
                 elif stage3 == "" and ev.key == const.ESCAPE_KEY:
                     stage2 = "" # close settings
+                    save_manager.save_settings(audio_volumes, physics_controls)
             elif stage2 == "":  # In game, not in settings
                 # Handle palette picker key controls
                 handle_palette_picker_keypress(ev)
@@ -745,7 +743,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
             spawnx = random.uniform(const.WINDOW_WIDTH*0.3, const.WINDOW_WIDTH*0.7)
             spawny = random.uniform(const.WINDOW_HEIGHT*0.3, const.WINDOW_HEIGHT*0.7)
             import drift.core.car as car
-            my_car = car.Car(spawnx, spawny, my_name, is_ai=False, car_type="ae86")
+            my_car = car.Car(spawnx, spawny, my_name, is_ai=False)
     
     # Handle mouse clicks
     elif ev.type == pygame.MOUSEBUTTONDOWN:
@@ -799,8 +797,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, gamepad, remotes, ai_
                 action = handle_game_options_click(ev.pos, _game_options_rects_cache, is_host_flag_ref[0], room_count)
                 if action in ("car_prev", "car_next"):
                     opts = get_game_options()
-                    new_car = const.AVAILABLE_CARS[opts["selected_car_index"]]
-                    my_car.set_car_type(new_car)
+                    my_car.set_car_type(const.CAR_ID)
                     invalidate_palette_cache()
 
         elif stage1.startswith("mode") and stage2 == "" and _palette_picker_rects_cache:

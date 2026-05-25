@@ -135,7 +135,7 @@ def handle_network_messages(sock, remotes: Dict[str, Any], dt: float, my_id: str
                 tvx, tvy = float(d.get("vx", 0.0)), float(d.get("vy", 0.0))
                 thg = d.get("has_grip", [1.0, 1.0, 1.0, 1.0])
                 name = d.get("name", f"Player{pid}")
-                car_type = d.get("car_type", "ae86")
+                car_type = d.get("car_type", const.CAR_ID)
                 raw_palette = d.get("palette")
                 palette = tuple(tuple(c) for c in raw_palette) if raw_palette and len(raw_palette) == 3 else None
 
@@ -262,7 +262,7 @@ def send_network_state(sock, code: str, my_id: str, my_car, palette=None):
         "vy": round(my_car.vy, 2),
         "has_grip": [round(v, 3) for v in my_car.has_grip],
         "name": my_car.name,
-        "car_type": getattr(my_car, "car_type", "ae86"),
+        "car_type": getattr(my_car, "car_type", const.CAR_ID),
         "ts": round(time.time(), 4),
         "ps": round(my_car.ping_ms, 1) if my_car.ping_ms is not None else None,
         "pl": round(my_car.pl_pct, 1) if my_car.pl_pct is not None else None,
@@ -290,7 +290,7 @@ def send_ai_states(sock, code: str, ai_cars):
             "vy": round(ai.vy, 2),
             "has_grip": [round(v, 3) for v in ai.has_grip],
             "name": ai.name,
-            "car_type": getattr(ai, "car_type", "ae86"),
+            "car_type": getattr(ai, "car_type", const.CAR_ID),
             "ts": round(time.time(), 4),
         }
         palette = getattr(ai, "palette_colors", None)

@@ -4,15 +4,13 @@ from typing import Optional, Dict
 import drift.config.const as const
 
 
-def read_inputs(gamepad, car, cam, mouse_follow_mode: bool, ai_path_mode: bool) -> Dict[str, float]:
+def read_inputs(gamepad, car, cam) -> Dict[str, float]:
     """Read player inputs from keyboard, mouse, and joystick.
     
     Args:
         gamepad: Gamepad object
         car: Player car object (for mouse following mode)
         cam: Camera object (for mouse following mode)
-        mouse_follow_mode: If True, use mouse position for steering
-        ai_path_mode: If True, joystick overrides are disabled
     
     Returns:
         Dictionary with 'th' (throttle), 'st' (steering), 'br' (brake) keys
@@ -37,7 +35,7 @@ def read_inputs(gamepad, car, cam, mouse_follow_mode: bool, ai_path_mode: bool) 
     st = raw_st
 
     # --- Mouse following mode ---
-    if mouse_follow_mode:
+    if const.CURSOR_FOLLOW:
         # Mouse steering is handled directly in car.step() by setting target_angle
         # Set steering to 0 to avoid interfering with direct angle control
         st = 0.0
@@ -50,7 +48,7 @@ def read_inputs(gamepad, car, cam, mouse_follow_mode: bool, ai_path_mode: bool) 
         handbrake = js.get_button(5)  # RB : handbrake
 
         # Override keyboard inputs if joystick is active (except in AI path mode)
-        if not ai_path_mode:
+        if not const.AI_PATH_FOLLOW:
             st = steering if abs(steering) > 0.1 else st  # Deadzone
             th = throttle if abs(throttle) > 0.1 else th
             br = handbrake if handbrake > 0.1 else br
