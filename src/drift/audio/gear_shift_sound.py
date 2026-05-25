@@ -223,7 +223,7 @@ class GearShiftSound:
             
             # Play the selected shift sound
             selected_sound = self.shift_sounds[sound_index]
-            coef = audio_volumes.get_value("master_volume") * audio_volumes.get_value("sfx_volume")
+            coef = audio_volumes.get_value("master") * audio_volumes.get_value("sfx")
             selected_sound.set_volume(volume*0.02 * coef)
             selected_sound.play()
             
@@ -252,7 +252,7 @@ class GearShiftSound:
             drift_factor = 1.0 + (drift_ratio * 0.5)
             
             # Calculate final volume
-            coef = audio_volumes.get_value("master_volume") * audio_volumes.get_value("sfx_volume")
+            coef = audio_volumes.get_value("master") * audio_volumes.get_value("sfx")
             final_volume = base_volume * throttle_factor * rpm_factor * drift_factor * coef
             final_volume = max(0.0, min(1.0, final_volume))  # Ensure audible but not too loud
             
@@ -295,7 +295,7 @@ class GearShiftSound:
                 volume = min(volume, self.shift_up_volume)
             
             try:
-                coef = audio_volumes.get_value("master_volume") * audio_volumes.get_value("sfx_volume")
+                coef = audio_volumes.get_value("master") * audio_volumes.get_value("sfx")
                 selected_sound = self.shift_sounds[sound_index]
                 selected_sound.set_volume(volume * coef)
                 selected_sound.play()

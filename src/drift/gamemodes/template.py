@@ -7,7 +7,7 @@ class PlayerRaceState:
                  "finished", "finish_time", "car_type", "name",
                  "best_lap_time", "_lap_start_time")
 
-    def __init__(self, player_id, car_type="911", name=""):
+    def __init__(self, player_id, name="", car_type=const.CAR_ID):
         self.player_id = player_id
         self.current_checkpoint = 0
         self.current_lap = 0
@@ -41,6 +41,10 @@ class BaseGameMode(ABC):
         self.race_time = 0.0 # seconds since the GO
         self.player_states: dict[str, PlayerRaceState] = {} # player_id -> _PlayerRaceState
         self.leaderboard: list[PlayerRaceState] = []  # should be sorted
+        self.countdown_start = 0.0 # timer for GO
+        self.cooldown_start = 0.0 # timer for leaderboard
+        self.countdown_duration = 3.0 # countdown in seconds before GO
+        self.cooldown_duration = 3.0 # countdown in seconds for leaderboard
 
         # Optional spawn coordinates from map_meta.json -> "start"
         # expected format: [{"x":..., "y":..., "a":...}, ...]
@@ -62,15 +66,18 @@ class BaseGameMode(ABC):
         for pid, info in players.items():
             self.player_states[pid] = PlayerRaceState(
                 pid,
-                car_type=info.get("car_type", "911"),
                 name=info.get("name", pid),
+                car_type=info.get("car_type", const.CAR_ID)
             )
 
         # Ensure the local player key exists even if caller forgot to include it.
         if local_player_id not in self.player_states:
-            self.player_states[local_player_id] = PlayerRaceState(local_player_id, name="You")
+            self.player_states[local_player_id] = PlayerRaceState(local_player_id, name="You", car_type=const.CAR_ID)
 
-    def on_exit(self):
+    def on_exit(self, save_manager):
+        local_ps = self.player_states.get(self.local_player_id)
+        # print(f"local_ps.best_lap_time : {local_ps.best_lap_time if local_ps else 'N/A'}")
+        if local_ps: save_manager.record_race_stats(self.race_time, local_ps.best_lap_time, const.MAP_NUM)
         self.active = False
         self.leaderboard.clear()
         self.player_states.clear()
@@ -136,12 +143,13 @@ class BaseGameMode(ABC):
             if pid in self.player_states:
                 continue
             name = pid
-            car_type = "911"
             info = players.get(pid) if isinstance(players, dict) else None
             if isinstance(info, dict):
                 name = info.get("name", pid)
-                car_type = info.get("car_type", "911")
-            self.player_states[pid] = PlayerRaceState(pid, car_type=car_type, name=name)
+                car_type = info.get("car_type", const.CAR_ID)
+            else:
+                car_type = const.CAR_ID
+            self.player_states[pid] = PlayerRaceState(pid, name=name, car_type=car_type)
 
         # Drop players who left so they don't block completion.
         for pid in list(self.player_states.keys()):
@@ -171,8 +179,8 @@ class BaseGameMode(ABC):
             if pid not in self.player_states:
                 self.player_states[pid] = PlayerRaceState(
                     pid,
-                    car_type=entry.get("car_type", "911"),
                     name=entry.get("name", pid),
+                    car_type=entry.get("car_type", const.CAR_ID)
                 )
 
             ps = self.player_states[pid]
@@ -263,7 +271,7 @@ class BaseGameMode(ABC):
             # else: rank_s = font_medium.render(f"DNF", True, const.WHITE_240)
             rank_s = font_medium.render(f"#{rank}", True, color)
             name_s = font_medium.render(ps.name[:16], True, const.WHITE_240)
-            car_s = font_medium.render(ps.car_type, True, const.GREY_200)
+            car_s = font_medium.render(const.get_car_name(ps.car_type), True, const.GREY_200)
             if ps.best_lap_time is not None:
                 bl_mins = int(ps.best_lap_time) // 60
                 bl_secs = ps.best_lap_time - bl_mins * 60

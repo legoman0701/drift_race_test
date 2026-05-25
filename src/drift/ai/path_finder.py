@@ -306,7 +306,6 @@ def discover_track_visual(map_path, start_pos=None, start_angle=None, sample_rat
 
         screen.blit(pygame.transform.scale_by(tmp_surf, 0.5), (0, 0))
         pygame.display.flip()
-        #print(pos, angle, state["track_width"])
         #pygame.time.wait(500)
         if state["done"]:
             print("Loop completed — stopping discovery.")

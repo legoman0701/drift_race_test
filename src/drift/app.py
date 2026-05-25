@@ -8,11 +8,12 @@ from collections import deque
 # local imports
 from drift.tools.paths import asset_path, chdir_to_exe_folder_if_frozen, normalize_asset_path, get_available_sprite_layers, get_track_base_image_path
 import drift.config.const as const
+from drift.config.settings import audio_volumes, physics_controls
+from drift.config.store_data import SaveManager
 import drift.render.camera as camera
 from drift.render.renderer import WorldRenderer
 from drift.render.map_chunks import ChunkedMap, ensure_all_maps_sliced
-import drift.core.car as car
-from drift.core.car import get_car_engine_sound_id, CollisionMesh
+from drift.core.car import get_car_engine_sound_id, CollisionMesh, Car
 from drift.core.helpers import clamp, rand_name
 from drift.core.path_utils import is_path_closed
 from drift.core.tutorial_controller import TutorialController, load_tutorial_steps_for_map
@@ -22,6 +23,7 @@ from drift.core.rpm import calc_engine_rpm
 from drift.core.gamepad import Gamepad
 import drift.ui.button as btn
 from drift.ui.ui import handle_game_events, draw_stage_ui, draw_scoreboard, invalidate_ui_text_cache, invalidate_palette_cache, draw_car, poll_pending_connection
+# from drift.ui.ui_helpers import StatsPanel
 from drift.ui.draw_stage import set_palette_colors_from_car, get_palette_colors, get_game_options, get_game_setup, set_game_option
 from drift.ai.ai import ai_algorithme
 import drift.ai.path_finder as path_finder
@@ -266,7 +268,6 @@ def load_shift_sound_system(audio_initialized):
 
     return shift_sound
 
-
 def load_engine_audio_system(audio_initialized, engine_sound_id):
     engine_audio = None
     try:
@@ -281,7 +282,6 @@ def load_engine_audio_system(audio_initialized, engine_sound_id):
 
     return engine_audio
 
-
 def reload_engine_audio_system(current_engine_audio, audio_initialized, engine_sound_id):
     if current_engine_audio is not None:
         try:
@@ -289,7 +289,6 @@ def reload_engine_audio_system(current_engine_audio, audio_initialized, engine_s
         except Exception:
             pass
     return load_engine_audio_system(audio_initialized, engine_sound_id)
-
 
 def sync_engine_audio_system(current_engine_audio, audio_initialized, current_engine_sound_id, active_car):
     next_engine_sound_id = getattr(active_car, "engine_sound_id", current_engine_sound_id)
@@ -299,7 +298,6 @@ def sync_engine_audio_system(current_engine_audio, audio_initialized, current_en
         reload_engine_audio_system(current_engine_audio, audio_initialized, next_engine_sound_id),
         next_engine_sound_id,
     )
-
 
 # ─── Frame profiler ──────────────────────────────────────────────────────────
 class FrameProfiler:
@@ -349,7 +347,6 @@ class FrameProfiler:
         """Call once per frame after all begin/end pairs."""
         self.history.append(dict(self._frame))
         self._frame.clear()
-
 
 def draw_frame_analysis(surface: pygame.Surface, profiler: 'FrameProfiler'):
     """Draw a rolling stacked-bar frame-time graph at the bottom-right."""
@@ -415,7 +412,6 @@ def draw_frame_analysis(surface: pygame.Surface, profiler: 'FrameProfiler'):
 
     surface.blit(panel, (PANEL_X, PANEL_Y))
 
-
 def draw_engine_audio_debug(surface, engine_audio):
     """Compact audio debug strip anchored to bottom-left."""
     if engine_audio is None or not const.DEBUG:
@@ -444,7 +440,7 @@ def draw_engine_audio_debug(surface, engine_audio):
     group_order = [g for g in ("eng", "exh") if g in groups] or list(groups.keys())
     for gname in group_order:
         g = groups[gname]
-        lines.append(f"--- {gname.upper()} vol={g.get('master_volume',0):.2f}")
+        lines.append(f"--- {gname.upper()} vol={g.get('master',0):.2f}")
         for tr in g.get("tracks", [])[:6]:
             lines.append((gname, tr))
 
@@ -480,7 +476,6 @@ def draw_engine_audio_debug(surface, engine_audio):
         y += row_h
 
     surface.blit(panel, (4, panel_y))
-
 
 def draw_minimap(surface, path_poly, world_size, my_car, remotes, ai_cars, stage1):
     """Bottom-left minimap: shows track path and car positions during gameplay."""
@@ -579,7 +574,6 @@ def draw_minimap(surface, path_poly, world_size, my_car, remotes, ai_cars, stage
 draw_minimap._panel = None
 draw_minimap._track_surf = None
 draw_minimap._track_key = None
-
 
 def draw_tutorial_overlay(surface, font_small, frame_state):
     if frame_state is None or not getattr(frame_state, "active", False):
@@ -681,7 +675,6 @@ def draw_tutorial_overlay(surface, font_small, frame_state):
 
     surface.blit(panel, (x, y))
 
-
 def _tutorial_bootstrap_ai_controls(my_car, tutorial_ctrl):
     """Fallback AI while path discovery is pending in tutorial mode."""
     controls = {"th": 1.0, "st": 0.0, "br": 0.0}
@@ -711,7 +704,6 @@ def _tutorial_bootstrap_ai_controls(my_car, tutorial_ctrl):
         pass
 
     return controls
-
 
 def draw_chunk_minimap(surface, renderer):
     """Top-right debug minimap: shows tire-mark chunks vs camera viewport."""
@@ -781,7 +773,12 @@ def main():
 
     pygame.init()
     pygame.joystick.init()
-    
+
+    # ----- Load data -----
+    save_manager = SaveManager()
+    save_manager.apply_settings(audio_volumes, physics_controls)
+
+    # ----- GPU Display -----
     gpu_display = None
     use_gpu = True  # Set to True to enable GPU rendering with texture reuse
     
@@ -807,7 +804,7 @@ def main():
     # Fullscreen state tracking
     is_fullscreen = False
 
-    default_engine_sound_id = get_car_engine_sound_id(const.DEFAULT_CAR_ID)
+    default_engine_sound_id = get_car_engine_sound_id(const.CAR_ID)
     
     # Show loading screen and load assets
     loaded_assets = load_assets_with_progress(screen, clock, default_engine_sound_id, gpu_display)
@@ -828,6 +825,7 @@ def main():
     shift_sound = loaded_assets["shift_sound"]
 
     stage1 = "menu" # menu | lobby | error | mode1 | mode2 | mode_tutorial
+    stage1plus = "" # stats
     stage2 = "" # settings
     stage3 = "" # controls | audio | modes
     error_msg = ""
@@ -870,10 +868,12 @@ def main():
     host_name = None  # Will be set when hosting or joining
 
     lights_on = False
+    
+    # stats_panel = StatsPanel(font_medium, font_small)
 
     spawnx = random.uniform(const.WINDOW_WIDTH*0.3, const.WINDOW_WIDTH*0.7)
     spawny = random.uniform(const.WINDOW_HEIGHT*0.3, const.WINDOW_HEIGHT*0.7)
-    my_car = car.Car(spawnx, spawny, my_name, is_ai=False, car_type=const.DEFAULT_CAR_ID, car_name=const.DEFAULT_CAR_NAME)
+    my_car = Car(spawnx, spawny, my_name, is_ai=False, me=True)
     current_engine_sound_id = my_car.engine_sound_id
     # Set palette colors from car specs
     set_palette_colors_from_car(my_car.palette_colors)
@@ -1092,13 +1092,13 @@ def main():
     def stop_race(sock, code, my_id): # flag1
         nonlocal stage2
         stage2 = ""
-        # print("hi from stop_race located in app.py")
         if not send_stop_race(sock, code, my_id):
             game_mode.force_end_race()
             # game_mode.phase = game_mode.PHASE_COOLDOWN
             # game_mode.cooldown_start = time.monotonic()
 
     def quit_game():
+        save_manager.save_settings(audio_volumes=audio_volumes, physics_controls=physics_controls)
         pygame.quit()
         sys.exit(0)
 
@@ -1117,7 +1117,7 @@ def main():
         host_name = None
         host_ref[0] = False
         if game_mode is not None:
-            game_mode.on_exit()
+            game_mode.on_exit(save_manager)
             game_mode = None
         _prev_stage1 = "menu"
         _return_btn_rect = None
@@ -1137,12 +1137,10 @@ def main():
     def handle_audio():
         nonlocal stage3
         stage3 = "audio"
-        # print("hi from handle_audio located in app.py")
     
     def handle_modes():
         nonlocal stage3
         stage3 = "modes"
-        # print("hi from handle_modes located in app.py")
 
     settings_buttons = [ # todo : be able to use '*' like '*/settings' for key binds
     btn.Button("Stop Race", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.25, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, 
@@ -1257,7 +1255,7 @@ def main():
                 else:
                     sx, sy, sa = 400.0, 400.0, 0.0
                 ai_car_type = random.choice(const.AVAILABLE_CARS)
-                ai_inst = car.Car(
+                ai_inst = Car(
                     sx, sy,
                     name=f"AI-{len(ai_cars)+1}", is_ai=True, car_type=ai_car_type,
                 )
@@ -1314,8 +1312,8 @@ def main():
                 try:
                     if engine_audio: engine_audio.stop_all()
                     if shift_sound: shift_sound.stop_all()
-                except Exception:
-                    pass
+                except Exception: pass
+                save_manager.save_settings(audio_volumes=audio_volumes, physics_controls=physics_controls)
                 pygame.quit(); sys.exit(0)
 
             # Keyboard shortcuts (global)
@@ -1334,7 +1332,7 @@ def main():
                     if stage1.startswith("mode") and len(remotes) == 0:
                         # Restart race (solo player only, AI don't count)
                         if game_mode is not None:
-                            game_mode.on_exit(); game_mode = None
+                            game_mode.on_exit(save_manager); game_mode = None
                         renderer.clear_tire_marks()
                         my_car.last_checkpoint_coordinates = None
                         _local_result_sent = False
@@ -1370,9 +1368,9 @@ def main():
                     _try_spawn_ai()
 
             # Camera controls (mouse)
-            if ev.type == pygame.MOUSEWHEEL:
-                cam.zoom *= 1.1 if ev.y > 0 else 0.9
-                cam.zoom = clamp(cam.zoom, 1, 3.0)
+            # if ev.type == pygame.MOUSEWHEEL:
+            #     cam.zoom *= 1.1 if ev.y > 0 else 0.9
+            #     cam.zoom = clamp(cam.zoom, 1, 3.0)
             if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 2:
                 dragging = True
             if ev.type == pygame.MOUSEBUTTONUP and ev.button == 2:
@@ -1381,17 +1379,15 @@ def main():
                 cam.offset[0] -= ev.rel[0] / cam.zoom
                 cam.offset[1] -= ev.rel[1] / cam.zoom
 
-            # print(f"stage3 before handle_game_events: {stage3}")
             map_num_before_ui = const.MAP_NUM
             # Delegate to UI event handler (menus, menu, lobby setup)
-            ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map, checkpoints = handle_game_events(
-                screen, ev, stage1, stage2, stage3, gp, remotes, ai_cars, sock, code,
-                my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name,
+            ev, stage1, stage1plus, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map, checkpoints = handle_game_events(
+                screen, ev, stage1, stage1plus, stage2, stage3, save_manager, gp, remotes, ai_cars, sock, code,
+                my_name, my_id, my_car, cam, font_small, error_msg, host_ref, host_name,
                 track_image=track_image, chunked_map=chunked_map, checkpoints=checkpoints,
             )
             if const.MAP_NUM != map_num_before_ui:
                 _reload_current_map_assets()
-            # print(f"stage3 after: {stage3}")
             I_AM_HOST = host_ref[0]
             engine_audio, current_engine_sound_id = sync_engine_audio_system(
                 engine_audio, audio_initialized, current_engine_sound_id, my_car,
@@ -1403,7 +1399,7 @@ def main():
                     and _return_btn_rect is not None
                     and _return_btn_rect.collidepoint(ev.pos)):
                 if game_mode is not None:
-                    game_mode.on_exit(); game_mode = None
+                    game_mode.on_exit(save_manager); game_mode = None
                 stage1 = "lobby"; _prev_stage1 = "lobby"
                 _return_btn_rect = None; _local_result_sent = False; _ai_results_sent = {}; _start_roster = None
                 my_car.x, my_car.y = random.randint(100, const.WINDOW_WIDTH - 100), random.randint(100, const.WINDOW_HEIGHT - 100)
@@ -1461,7 +1457,7 @@ def main():
             if stage1 == "mode_tutorial":
                 # In tutorial mode, base controls should always come from the player;
                 # tutorial AI may still take over explicitly via force_ai_drive.
-                controls = read_inputs(gp, my_car, cam, const.CURSOR_FOLLOW, False)
+                controls = read_inputs(gp, my_car, cam)
                 if tutorial_allow_ai_takeover:
                     if tutorial_ctrl is not None and path_poly:
                         try:
@@ -1488,7 +1484,7 @@ def main():
                     except Exception:
                         pass
                 if not ai_controls_ok:
-                    controls = read_inputs(gp, my_car, cam, const.CURSOR_FOLLOW, const.AI_PATH_FOLLOW)
+                    controls = read_inputs(gp, my_car, cam)
 
             # Tutorial should be AI-driven immediately on entry, even before
             # the controller instance is created later in the frame lifecycle.
@@ -1548,7 +1544,7 @@ def main():
                 elif new_mode == "lobby":
                     if stage1 != "lobby":
                         if game_mode is not None:
-                            game_mode.on_exit(); game_mode = None
+                            game_mode.on_exit(save_manager); game_mode = None
                         tutorial_ctrl = None
                         tutorial_frame_state = None
                         time_scale = 1.0
@@ -1686,7 +1682,7 @@ def main():
         if stage1 != _prev_stage1:
             if _prev_stage1.startswith("mode") and game_mode is not None:
                 if stage1 != "leaderboard":
-                    game_mode.on_exit(); game_mode = None
+                    game_mode.on_exit(save_manager); game_mode = None
             if _prev_stage1.startswith("mode") and stage1 != _prev_stage1:
                 tutorial_ctrl = None
                 tutorial_frame_state = None
@@ -1714,7 +1710,6 @@ def main():
                 mode_classes = {0: ClassicRace, 1: BestLap, 2: DriftAngleRace}
                 game_mode = mode_classes.get(const.MODE_INDEX)
                 if game_mode:
-                    # print(get_game_options()["choice"])
                     game_mode = game_mode(renderer.checkpoints or [], start_grid=_start_grid, choice_index=get_game_options()["choice"], 
                                           lines=_lines, local_player_id=my_id, path_poly=path_poly)
 
@@ -1722,7 +1717,7 @@ def main():
                 _ai_results_sent = {}
                 _mode_players = {my_id: {"car_type": my_car.car_type, "name": my_car.name}}
                 for pid, rd in remotes.items():
-                    _mode_players[pid] = {"car_type": rd.get("car_type", "ae86"), "name": rd.get("name", pid)}
+                    _mode_players[pid] = {"car_type": rd.get("car_type", "AE86"), "name": rd.get("name", pid)}
                 for i, ai in enumerate(ai_cars, start=1):
                     _mode_players[f"AI-{i}"] = {"car_type": ai.car_type, "name": ai.name}
                 game_mode.on_enter(_mode_players)
@@ -1763,7 +1758,7 @@ def main():
                 _init_tutorial_runtime(reset_variant=True)
 
             if _prev_stage1 == "leaderboard" and game_mode is not None:
-                game_mode.on_exit(); game_mode = None
+                game_mode.on_exit(save_manager); game_mode = None
 
             _prev_stage1 = stage1
 
@@ -2062,11 +2057,10 @@ def main():
         ui_checkpoints = renderer.checkpoints
         if game_mode is not None and (stage1.startswith("mode") or stage1 == "leaderboard"):
             ui_checkpoints = []
-            
-        # print(f"stage3 before: {stage3}")
+
         world_surf, button_results, menu_bar_rects, palette_picker_rects, game_options_rects = draw_stage_ui(
-            ui_surf, stage1 if stage1 != "leaderboard" else "mode1",
-            stage2, stage3, code, world_surf, world_size, ui_checkpoints,
+            ui_surf, stage1 if stage1 != "leaderboard" else "mode1", stage1plus, stage2,
+            stage3, save_manager, code, world_surf, world_size, ui_checkpoints,
             settings_buttons, error_msg, my_car, cam, gp, font_big, font_medium, font_small,
             controls, engine_state, fps, dt, I_AM_HOST, host_name, car_sprites_cache,
             room_clients_count=1 + len(remotes),

@@ -2,7 +2,7 @@ import pygame, string, math
 from drift.tools.paths import get_available_cars, get_track_folders
 
 # ======= APPLICATION INFO =======
-VERSION = "0.7.2"
+VERSION = "0.7.3"
 
 # ======= NETWORK =======
 RELAY_PUBLIC_ENDPOINT = "william-allow.gl.at.ply.gg:4800"
@@ -41,6 +41,7 @@ WHITE = (255, 255, 255)
 RED = (200, 0, 0)
 GREEN = (50, 200, 50)
 BLUE = (0, 0, 200)
+BLUE_MAT = (70, 120, 230)
 NAVY_BLUE = (5, 15, 28)
 
 # Car colors
@@ -49,6 +50,9 @@ COLOR_NOSE_DEFAULT = (255, 120, 120)
 COLOR_BODY_REMOTE = (255, 200, 120)
 COLOR_MY_CAR = (200, 230, 255)
 HEADLIGHT_COLOR = (200, 200, 200)
+
+# palettes
+PALETTES = {}
 
 # Track colors
 TRACK_COLOR = (35, 40, 50)
@@ -69,7 +73,7 @@ MODES_CHOICES = {
 }
 
 # ======= MAP & TRACK =======
-MAP_NUM = 3
+MAP_NUM = 1
 TOTAL_MAPS = max(1, len(get_track_folders()))  # Numbered tracks map to map_index order
 TILE_SIZE = 512  # Tile size for map chunks
 TRACK_MARGIN = 40
@@ -78,14 +82,19 @@ TRACK_BORDER_WIDTH = 4
 # ======= CAR PHYSICS =======
 CAR_LEN = 38.0
 CAR_WID = 20.0
-# physics_controls = {
-#     'steer_bias': 1.0
-# }
-# STEER_BIAS = 1.0  # how much the car automatically steers into the drift
 VIEW_ANGLE = 70 * math.pi / 180.0  # radians
 AI_RESET_DELAY = 3.0
 
 # ======= CAR SPRITES =======
+def get_car_name(car_id):
+    match car_id:
+        case "AE86": return "AE86"
+        case "911": return "911 SC"
+        case "barracuda": return "Barracuda 440"
+        case "mustang": return "Mustang 289"
+        case "r34": return "GTR R34"
+        case "s1e2": return "Quattro S1 E2"
+        case _: return car_id
 AVAILABLE_CARS = get_available_cars()
 CAR_SPRITES = {}
 for car in AVAILABLE_CARS:
@@ -97,8 +106,7 @@ for car in AVAILABLE_CARS:
             f"cars/{car}/Palette/Image{{i:04}}.png"
         ]
     },
-DEFAULT_CAR_ID = "AE86"
-DEFAULT_CAR_NAME = "AE86"
+CAR_ID = "AE86"
 
 # ======= CONTROLS =======
 # Menu controls
@@ -144,6 +152,9 @@ AI_PATH_FOLLOW = False
 
 # ======= FLAGS =======
 MODE_CLICKED = False
+
+# ======= STATS =======
+USERNAME = None
 
 # ======= TUTORIAL =======
 TUTORIAL_MIN_TIME_SCALE = 0.0

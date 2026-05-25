@@ -99,7 +99,6 @@ class SpatialHash:
         """Return polygon indices whose cell contains this point."""
         return self.cells.get((int(x * self.inv_cell), int(y * self.inv_cell)), ())
 
-
 class CollisionMesh:
     """Wraps a list of polygons with a spatial hash for fast broadphase."""
     __slots__ = ('polygons', 'spatial_hash')
@@ -127,7 +126,6 @@ class CollisionMesh:
                 seen.add(idx)
                 yield polys[idx]
 
-
 def _point_in_polygon(px, py, polygon):
     """Ray-casting point-in-polygon test."""
     n = len(polygon)
@@ -140,7 +138,6 @@ def _point_in_polygon(px, py, polygon):
             inside = not inside
         j = i
     return inside
-
 
 def _wall_pushout(px, py, polygon):
     """If point is inside polygon, return (push_x, push_y, depth) toward nearest edge.
@@ -172,7 +169,6 @@ def _wall_pushout(px, py, polygon):
     dy = nearest_y - py
     depth = math.sqrt(min_dist_sq)
     return dx, dy, depth
-
 
 def extract_specs_values(specs: dict) -> dict:
     """Extract physics values from new specs format with fallback to defaults."""
@@ -226,7 +222,7 @@ def extract_specs_values(specs: dict) -> dict:
         engine_sound_id = specs.get("engine", {}).get("sound_id", "v8")
         
         # Extract palette colors
-        palette_colors = specs.get("specs", {}).get("default_pallet", [[255, 0, 0], [0, 255, 0], [0, 0, 255]])
+        palette_colors = specs.get("specs", {}).get("default_palette", [[255, 0, 0], [0, 255, 0], [0, 0, 255]])
         palette_tuple = (tuple(palette_colors[0]), tuple(palette_colors[1]), tuple(palette_colors[2]))
         
         return {
@@ -278,7 +274,7 @@ def get_car_engine_sound_id(car_type: str) -> str:
     return str(specs.get("engine", {}).get("sound_id", "v8"))
 
 class Car:
-    def __init__(self, x, y, name, is_ai=False, car_type="911", car_name="911 SC"):
+    def __init__(self, x, y, name, is_ai=False, car_type=None, me=False):
         self.x, self.y = float(x), float(y)
         self.vx, self.vy = 0.0, 0.0
         self.angle = 0.0
@@ -289,8 +285,8 @@ class Car:
         self.drift_multiplier = 1.0
         self.last_impact_speed = 0.0
         self.is_ai = is_ai
-        self.car_type = car_type
-        self.car_name = car_name
+        self.car_type = car_type if car_type is not None else const.CAR_ID
+        self.car_name = const.get_car_name(const.CAR_ID)
         self.drift_points = [(0,0),(0,0),(0,0),(0,0)]
         self.drift_points_old = [(0,0),(0,0),(0,0),(0,0)]
         self.has_grip = (1.0, 1.0, 1.0, 1.0)  # wheel grip coefficient (FL, FR, RL, RR)
@@ -325,6 +321,11 @@ class Car:
         )
         self.engine_sound_id = specs_vals["ENGINE_SOUND_ID"]
         self.palette_colors = specs_vals["PALETTE_COLORS"]
+        if me and self.car_type in const.PALETTES:
+            custom_palette = const.PALETTES[self.car_type]
+            if custom_palette is not None:
+                self.palette_colors = tuple(custom_palette)
+
         self._init_spring_points(specs_vals)
 
     def _init_spring_points(self, specs_vals=None):
@@ -371,6 +372,11 @@ class Car:
         )
         self.engine_sound_id = specs_vals["ENGINE_SOUND_ID"]
         self.palette_colors = specs_vals["PALETTE_COLORS"]
+        if self.car_type in const.PALETTES:
+            custom_palette = const.PALETTES[self.car_type]
+            if custom_palette is not None:
+                self.palette_colors = tuple(custom_palette)
+        
         self._init_spring_points(specs_vals)
 
     def step(self, inputs, dt, players, bounds, cam=None, collision_mesh=None):        

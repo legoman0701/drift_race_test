@@ -9,18 +9,17 @@ from drift.ui.slider import Slider
 from drift.config.settings import physics_controls, audio_volumes
 from drift.tools.paths import asset_path, normalize_asset_path, get_track_base_image_path, get_track_folders
 
-AVAILABLE_CARS = const.AVAILABLE_CARS
-
 # Game setup state (shared across new_game and join_game UI)
 _game_setup = {
     "username": "",
     "username_active": False,
-    "selected_car": const.AVAILABLE_CARS[0] if const.AVAILABLE_CARS else "AE86",  # Default car
     "selected_track": "track1",  # Default track
     "selected_mode": "mode1",  # Default mode
     "room_code": "",  # For join game
     "code_active": False,  # For join game code input
     "error_message": None,  # For displaying errors
+    "scroll_y": 0, # scroll position for stats panel
+    "max_scroll": 0 # max scroll_y position
 }
 
 # Controls state
@@ -47,11 +46,10 @@ _palette_initialized_for_car = None
 _game_options = {
     "panel_open": False,
     "panel_page": "main",   # "main", "mode", "ai"
-    "selected_car_index": 0,
     "selected_map_index": 0,
     "selected_mode_index": 0,
     "choice": 2,
-    "ai_amount": 0,
+    "ai_amount": 1,
     "ai_difficulty": "Random",
 }
 
@@ -150,24 +148,13 @@ def _get_illustration_thumbnail(key, thumb_w=120, thumb_h=65):
 
     return None
 
-
 def _resolve_car_folder(car_type):
     """Resolve car folder using case-insensitive lookup from available cars."""
     car_str = str(car_type)
-    for car in AVAILABLE_CARS:
+    for car in const.AVAILABLE_CARS:
         if str(car).lower() == car_str.lower():
             return car
     return car_str
-
-
-def _normalize_selected_car(selected_car):
-    """Return a selected car value guaranteed to match AVAILABLE_CARS casing."""
-    if AVAILABLE_CARS:
-        resolved = _resolve_car_folder(selected_car)
-        if resolved in AVAILABLE_CARS:
-            return resolved
-        return AVAILABLE_CARS[0]
-    return selected_car
 
 def set_palette_colors_from_car(palette_colors):
     """Set palette colors from car specs.
@@ -190,17 +177,15 @@ def _load_car_specs(car_type):
             specs = json.load(fh)
         metadata = specs.get("metadata", {}) or {}
         # manufacturer = metadata.get("manufacturer", specs.get("manufacturer", "Unknown"))
-        model = metadata.get("short", specs.get("short", "Unknown"))
+        model = metadata.get("model", specs.get("short", "Unknown"))
         return model
     except Exception as e:
         print(f"Warning: Could not load specs for {car_type}: {e}")
         return "Unknown"
 
-
 def _init_palette_for_selected_car(car_type, force=False):
     """Initialize shared palette from selected car default palette in specs."""
     global _palette_initialized_for_car
-
     car_folder = _resolve_car_folder(car_type)
     if not force and _palette_initialized_for_car == car_folder:
         return
@@ -209,7 +194,10 @@ def _init_palette_for_selected_car(car_type, force=False):
         spec_path = normalize_asset_path("cars", car_folder, "specs.json")
         with open(spec_path, "r", encoding="utf-8") as fh:
             specs = json.load(fh)
-        palette = specs.get("specs", {}).get("default_pallet")
+        palette = specs.get("specs", {}).get("default_palette")
+        if car_type in const.PALETTES:
+            custom_palette = const.PALETTES[car_type]
+            if custom_palette is not None: palette = tuple(custom_palette)
         if isinstance(palette, (list, tuple)) and len(palette) >= 3:
             set_palette_colors_from_car(palette)
             from drift.ui.ui import invalidate_palette_cache
@@ -326,6 +314,7 @@ def handle_palette_picker_click(pos, rects):
             _color_palette[color_key] = random_color
             _color_palette["active_picker"] = color_num
             invalidate_palette_cache()  # Clear cache so changes are visible
+            const.PALETTES[const.CAR_ID] = get_palette_colors()
             return color_num
     return None
 
@@ -371,8 +360,9 @@ def handle_palette_picker_keypress(ev):
     if color_changed:
         _color_palette[color_key] = (r, g, b)
         invalidate_palette_cache()  # Clear cache so changes are visible immediately
+        const.PALETTES[const.CAR_ID] = get_palette_colors()
 
-def draw_menu(ui_surf, font_big, font_medium, is_host):
+def draw_lobby(ui_surf, font_big, font_medium, is_host):
     """Draw the game lobby/waiting room with start button (host only)."""
     
     btn_width = const.BTN_WIDTH
@@ -507,7 +497,6 @@ def draw_game_options_panel(ui_surf, font_big, font_medium, font_small, is_host,
 
     return rects
 
-
 def _draw_options_main_page(ui_surf, font_big, font_medium, font_small,
                             is_host, car_sprites_cache, px, py, rects):
     """Draw the main options page content (Car, Map, Mode, AI)."""
@@ -516,8 +505,8 @@ def _draw_options_main_page(ui_surf, font_big, font_medium, font_small,
 
     # ── Car section ──
     y = _draw_item_selector(ui_surf, font_medium, font_small, car_sprites_cache,
-                            "Car", _game_options["selected_car_index"],
-                            AVAILABLE_CARS, px, y, rects, "car", show_car=True)
+                            "Car", const.AVAILABLE_CARS.index(const.CAR_ID),
+                            const.AVAILABLE_CARS, px, y, rects, "car", show_car=True)
 
     if is_host:
         # ── Map section ──
@@ -557,7 +546,6 @@ def _draw_options_main_page(ui_surf, font_big, font_medium, font_small,
                            ai_rect.centery - arr.get_height() // 2))
         rects["nav_ai"] = ai_rect
 
-
 def _draw_item_selector(ui_surf, font_medium, font_small, car_sprites_cache,
                         label, index, items, px, y, rects, prefix,
                         show_car=False, show_map=False, show_illustration=False, car_id_override=None):
@@ -587,6 +575,7 @@ def _draw_item_selector(ui_surf, font_medium, font_small, car_sprites_cache,
     # Draw content inside the box
     if show_car and car_sprites_cache:
         car_id = car_id_override if car_id_override else items[safe_index]
+        # print(car_id)
         text_over = items[safe_index] if car_id_override else None
         _draw_rotating_car(ui_surf, car_id, box_rect, font_small, car_sprites_cache, _car_rotation_angle, text_override=text_over)
     elif show_map:
@@ -635,7 +624,6 @@ def _draw_item_selector(ui_surf, font_medium, font_small, car_sprites_cache,
 
     return y + _SECTION_BOX_H + 8
 
-
 def _draw_options_mode_page(ui_surf, font_big, font_medium, font_small,
                             car_sprites_cache, px, py, rects):
     """Draw Mode Options sub-page content."""
@@ -643,11 +631,10 @@ def _draw_options_mode_page(ui_surf, font_big, font_medium, font_small,
     y = py + _CONTENT_PAD
 
     # Mode selector with decorative current car
-    current_car = AVAILABLE_CARS[_game_options["selected_car_index"] % len(AVAILABLE_CARS)] if AVAILABLE_CARS else None
     y = _draw_item_selector(ui_surf, font_medium, font_small, car_sprites_cache,
                             "Mode", _game_options["selected_mode_index"],
                             const.MODES_NAMES, px, y, rects, "mode",
-                            show_car=False, show_illustration=True, car_id_override=current_car)
+                            show_car=False, show_illustration=True)
 
     # Choice section
     y += 5
@@ -681,7 +668,6 @@ def _draw_options_mode_page(ui_surf, font_big, font_medium, font_small,
     ui_surf.blit(p_sym, (plus_rect.centerx - p_sym.get_width() // 2,
                           plus_rect.centery - p_sym.get_height() // 2))
     rects["choice_plus"] = plus_rect
-
 
 def _draw_options_ai_page(ui_surf, font_big, font_medium, font_small,
                           px, py, room_clients_count, rects):
@@ -746,7 +732,6 @@ def _draw_options_ai_page(ui_surf, font_big, font_medium, font_small,
                                  btn_rect.centery - btn_text.get_height() // 2))
         rects[f"diff_{diff.lower()}"] = btn_rect
 
-
 def handle_game_options_click(click_pos, rects, is_host, room_clients_count=1):
     """Handle clicks on the game options panel.
 
@@ -779,18 +764,16 @@ def handle_game_options_click(click_pos, rects, is_host, room_clients_count=1):
 
         # Car selection
         if name == "car_up":
-            total = len(AVAILABLE_CARS)
+            total = len(const.AVAILABLE_CARS)
             if total > 0:
-                _game_options["selected_car_index"] = (_game_options["selected_car_index"] - 1) % total
-                _game_setup["selected_car"] = AVAILABLE_CARS[_game_options["selected_car_index"]]
-                _init_palette_for_selected_car(_game_setup["selected_car"], force=True)
+                const.CAR_ID = const.AVAILABLE_CARS[(const.AVAILABLE_CARS.index(const.CAR_ID) - 1) % total]
+                _init_palette_for_selected_car(const.CAR_ID, force=True)
             return "car_prev"
         if name == "car_down":
-            total = len(AVAILABLE_CARS)
+            total = len(const.AVAILABLE_CARS)
             if total > 0:
-                _game_options["selected_car_index"] = (_game_options["selected_car_index"] + 1) % total
-                _game_setup["selected_car"] = AVAILABLE_CARS[_game_options["selected_car_index"]]
-                _init_palette_for_selected_car(_game_setup["selected_car"], force=True)
+                const.CAR_ID = const.AVAILABLE_CARS[(const.AVAILABLE_CARS.index(const.CAR_ID) + 1) % total]
+                _init_palette_for_selected_car(const.CAR_ID, force=True)
             return "car_next"
 
         # Map selection (host only)
@@ -882,10 +865,10 @@ def _draw_rotating_car(ui_surf, car_id, rect, font_medium, car_sprites_cache, ro
     text_y = rect.top + text_surf.get_height() - 5
     ui_surf.blit(text_surf, (text_x, text_y))
 
-def draw_menu_connection_bar(ui_surf, font_medium):
+def draw_menu(ui_surf, font_medium, stage1plus, save_data):
     """Draw horizontal connection bar at bottom center of menu screen.
 
-    Layout: [Username] [margin] [Code] [Action Button]
+    Layout: [Username] [Code | Button] [Tutorial]
     Action button is orange "Host" when code is empty, green "Join" when code has text.
     Returns dict of rects for click detection.
     """
@@ -946,7 +929,7 @@ def draw_menu_connection_bar(ui_surf, font_medium):
     # 4. Tutorial button (always available, local/offline flow)
     x += action_btn_w + margin
     tutorial_rect = pygame.Rect(x, bar_y, tutorial_btn_w, bar_height)
-    pygame.draw.rect(ui_surf, (70, 120, 230), tutorial_rect)
+    pygame.draw.rect(ui_surf, const.BLUE_MAT, tutorial_rect)
     tutorial_text = font_medium.render("Tutorial", True, const.WHITE_240)
     ui_surf.blit(tutorial_text, (tutorial_rect.centerx - tutorial_text.get_width() // 2,
                                   tutorial_rect.centery - tutorial_text.get_height() // 2))
@@ -956,6 +939,59 @@ def draw_menu_connection_bar(ui_surf, font_medium):
     if _game_setup["error_message"]:
         error_surf = font_medium.render(_game_setup["error_message"], True, (255, 100, 100))
         ui_surf.blit(error_surf, (center_x - error_surf.get_width() // 2, bar_y - 30))
+
+    # Stats button (top right corner, always visible)
+    w, h = 100, 40
+    x, y = const.WINDOW_WIDTH - w - 10, const.TOP_LINE_Y + 10
+    stats_rect = pygame.Rect(x, y, w, h)
+    col = const.BLUE_MAT if not stage1plus else const.RED
+    pygame.draw.rect(ui_surf, col, stats_rect)
+    txt = "Stats" if not stage1plus else "Close"
+    stats_text = font_medium.render(txt, True, const.WHITE_240)
+    ui_surf.blit(stats_text, (stats_rect.centerx - stats_text.get_width() // 2,
+                              stats_rect.centery - stats_text.get_height() // 2))
+    rects["stats_btn"] = stats_rect
+
+    if stage1plus == "stats":
+        scroll_y = _game_setup["scroll_y"]
+        lines = get_stats(save_data)
+        panel_rect = pygame.Rect(const.WINDOW_WIDTH - 310, const.TOP_LINE_Y + 60, 300, 400)
+        rects["stats_panel"] = panel_rect
+
+        # background
+        pygame.draw.rect(ui_surf, const.GREY_20, panel_rect)
+        pygame.draw.rect(ui_surf, const.WHITE, panel_rect, 1)
+        
+        # clip text
+        old_clip = ui_surf.get_clip()
+        ui_surf.set_clip(panel_rect)
+
+        line_height = 26
+        total_content_height = len(lines) * line_height
+        max_scroll = max(0, total_content_height - panel_rect.height + 20)
+        _game_setup["max_scroll"] = max_scroll
+
+        y_offset = panel_rect.y + 10 - scroll_y
+        x_offset = panel_rect.x + 10
+
+        for line in lines:
+            if y_offset > panel_rect.bottom:
+                break
+            if y_offset > panel_rect.top - line_height:
+                color = const.WHITE_240 if not line.startswith("  >") else const.GREY_180
+                txt_surf = font_medium.render(line, True, color)
+                ui_surf.blit(txt_surf, (x_offset, y_offset))
+            y_offset += line_height
+
+        ui_surf.set_clip(old_clip)
+
+        # Draw Scrollbar
+        if max_scroll > 0:
+            bar_rect = pygame.Rect(panel_rect.right - 8, panel_rect.y, 8, panel_rect.height)
+            pygame.draw.rect(ui_surf, (40, 40, 40), bar_rect)
+            thumb_h = max(30, (panel_rect.height / total_content_height) * panel_rect.height)
+            thumb_y = panel_rect.y + (scroll_y / max_scroll) * (panel_rect.height - thumb_h)
+            pygame.draw.rect(ui_surf, (150, 150, 150), (bar_rect.x, thumb_y, bar_rect.width, thumb_h))
 
     return rects
 
@@ -975,7 +1011,15 @@ def handle_menu_bar_click(click_pos, rects):
         return "host_game"
     elif "tutorial_btn" in rects and rects["tutorial_btn"].collidepoint(click_pos):
         return "start_tutorial"
+    elif "stats_btn" in rects and rects["stats_btn"].collidepoint(click_pos):
+        return "toggle_stats"
     return None
+
+def scroll_stats_panel(amount, scroll_speed=30):
+    sy = _game_setup["scroll_y"]
+    sy -= amount * scroll_speed # scroll up : amount > 0, scroll down : amount < 0
+    sy = max(0, min(sy, _game_setup["max_scroll"])) # clamp between 0 and max_scroll
+    _game_setup["scroll_y"] = sy
 
 def handle_menu_bar_keypress(event):
     """Handle keyboard input for username and code fields in menu bar."""
@@ -1008,10 +1052,45 @@ def handle_menu_bar_keypress(event):
                 if len(_game_setup["room_code"]) < 4:
                     _game_setup["room_code"] += event.unicode.upper()
 
+def _format_time(seconds):
+        if seconds is None: return "--"
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        if h > 0: return f"{h}h{m:02d}"
+        elif m > 0: return f"{m}m{int(seconds % 60):02d}"
+        return f"{seconds:.2f}s"
+
+def get_stats(save_data):
+    map_names = {"1": "Acres Fields", "2": "Map 2", "3": "Tutorial"}
+    car_names = {"911": "911 SC", "AE86": "AE86 Sprinter", "barracuda": "Barracuda 440", "mustang": "Mustang 289", "r34": "GTR R34"}
+
+    # --- lines ---
+    lines = []
+    stats = save_data.get("stats", {})
+    lines.append(f"Total Races : {stats.get('total_races', 0)}")
+    lines.append(f"Total Playtime : {_format_time(stats.get('total_playtime', 0))}")
+
+    lines.append("")
+    lines.append("Maps:")
+    for m_id, m_data in save_data.get("maps", {}).items():
+        name = map_names.get(m_id, f"Map {m_id}")
+        lines.append(f"  {name}")
+        lines.append(f"  > Races : {m_data.get('games_played', 0)}")
+        bt = m_data.get('best_time')
+        lines.append(f"  > Best Lap : {f'{bt:.2f}s' if bt else '--'}")
+
+    lines.append("")
+    lines.append("Cars:")
+    for c_id, c_data in save_data.get("cars", {}).items():
+        name = car_names.get(c_id, c_id)
+        lines.append(f"  {name}")
+        lines.append(f"  > Races : {c_data.get('games_played', 0)}")
+
+    return lines
+
 def get_game_setup():
     """Get current game setup configuration."""
     return _game_setup.copy()
-
 
 def update_game_setup(mode=None, track=None):
     """Update selected mode/track in shared game setup state."""
@@ -1028,17 +1107,15 @@ def reset_game_setup():
     """Reset game setup to defaults."""
     _game_setup["username"] = ""
     _game_setup["username_active"] = True
-    _game_setup["selected_car"] = AVAILABLE_CARS[0] if AVAILABLE_CARS else "ae86"
     _game_setup["selected_track"] = "track1"
     _game_setup["selected_mode"] = "mode1"
     _game_setup["room_code"] = ""
     _game_setup["code_active"] = False
     _game_setup["error_message"] = None
-    _init_palette_for_selected_car(_game_setup["selected_car"], force=True)
+    _init_palette_for_selected_car(const.CAR_ID, force=True)
     # Reset game options panel
     _game_options["panel_open"] = False
     _game_options["panel_page"] = "main"
-    _game_options["selected_car_index"] = 0
     _game_options["selected_map_index"] = 0
     _game_options["selected_mode_index"] = 0
     _game_options["choice"] = 2
@@ -1073,7 +1150,7 @@ def host_new_game(my_id):
             "code": code,
             "name": my_name,
             "id": my_id,
-            "car_type": _game_setup["selected_car"],
+            "car_type": const.CAR_ID,
             "track": _game_setup["selected_track"],
             "mode": _game_setup["selected_mode"]
         }
@@ -1095,7 +1172,6 @@ def host_new_game(my_id):
         "mode": "host",
     }
 
-
 def join_new_game(my_id):
     """
     Initiate joining an existing game (non-blocking).
@@ -1114,7 +1190,7 @@ def join_new_game(my_id):
             "code": code,
             "name": my_name,
             "id": my_id,
-            "car_type": _game_setup["selected_car"]
+            "car_type": const.CAR_ID,
         }
         sock.send(json.dumps(join_pkt).encode("utf-8"))
     except Exception as e:
@@ -1136,7 +1212,6 @@ def join_new_game(my_id):
         "deadline": time.time() + 1.0,
         "mode": "join",
     }
-
 
 def poll_connection(conn):
     """Poll a pending connection state (non-blocking, call each frame).
@@ -1197,7 +1272,6 @@ def poll_connection(conn):
         return conn
 
     return conn
-
 
 def _finalize_connection(my_name, code, sock, is_host, host_name, error, is_host_mode=True):
     """Load track assets and return the final result tuple."""
@@ -1474,27 +1548,27 @@ def handle_controls_keypress(event):
 
 def draw_audio_sliders(ui_surf, font_small):
     # (self, x, y, width, height, min_val, max_val, current_val, label, font)
-    if 'master_volume' not in audio_volumes.sliders:
+    if 'master' not in audio_volumes.sliders:
         master_slider = Slider(
             x=const.WINDOW_WIDTH // 2 - 100, y=int(const.WINDOW_HEIGHT * 0.4),
-            width=200, height=30, min_val=0.0, max_val=1.0, current_val=audio_volumes.get_value("master_volume"),
+            width=200, height=30, min_val=0.0, max_val=1.0, current_val=audio_volumes.get_value("master"),
             label="Master Volume:", font=font_small
         )
-        audio_volumes.add_slider('master_volume', master_slider)
-    if 'music_volume' not in audio_volumes.sliders:
+        audio_volumes.add_slider('master', master_slider)
+    if 'music' not in audio_volumes.sliders:
         music_slider = Slider(
             x=const.WINDOW_WIDTH // 2 - 100, y=int(const.WINDOW_HEIGHT * 0.5),
-            width=200, height=30, min_val=0.0, max_val=1.0, current_val=audio_volumes.get_value("music_volume"),
+            width=200, height=30, min_val=0.0, max_val=1.0, current_val=audio_volumes.get_value("music"),
             label="Music Volume:", font=font_small
         )
-        audio_volumes.add_slider('music_volume', music_slider)
-    if 'sfx_volume' not in audio_volumes.sliders:
+        audio_volumes.add_slider('music', music_slider)
+    if 'sfx' not in audio_volumes.sliders:
         sfx_slider = Slider(
             x=const.WINDOW_WIDTH // 2 - 100, y=int(const.WINDOW_HEIGHT * 0.6),
-            width=200, height=30, min_val=0.0, max_val=1.0, current_val=audio_volumes.get_value("sfx_volume"),
+            width=200, height=30, min_val=0.0, max_val=1.0, current_val=audio_volumes.get_value("sfx"),
             label="SFX Volume:", font=font_small
         )
-        audio_volumes.add_slider('sfx_volume', sfx_slider)
+        audio_volumes.add_slider('sfx', sfx_slider)
     
     audio_volumes.draw_sliders(ui_surf)
 

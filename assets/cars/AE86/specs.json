@@ -3,7 +3,7 @@
     "metadata": {
         "year": 1983,
         "manufacturer": "Toyota",
-        "model": "AE86 Sprinter Trueno GT-APEX",
+        "model": "AE86 Trueno",
         "short": "AE86",
         "country": "Japan"
     },
@@ -17,7 +17,7 @@
             "height": 1335,
             "wheelbase": 2400
         },
-        "default_pallet": [[157, 157, 157], [10, 10, 10], [10, 10, 10]]
+        "default_palette": [[157, 157, 157], [10, 10, 10], [10, 10, 10]]
     },
     "engine": {
         "type": "1.6L 4A-GE I4",
