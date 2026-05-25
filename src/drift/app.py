@@ -42,68 +42,40 @@ flags = const.FLAGS
 # ======= LOADING SCREEN =======
 
 def draw_loading_screen(screen, progress, total_steps, current_task="Loading...", gpu_display=None):
-    """Draw a loading screen with circular progress bar from 7π/4 to π/4"""
-    screen.fill(const.GREY_20)  # Dark background
-    
-    # Create fonts for loading screen
+    screen.fill(const.GREY_20)
     title_font = pygame.font.SysFont(None, 72)
     task_font = pygame.font.SysFont(None, 36)
-    
-    # Calculate center
     center_x = const.WINDOW_WIDTH // 2
     center_y = const.WINDOW_HEIGHT // 2
-    
-    # Draw title
     title_text = title_font.render(f"drift_race_v{const.VERSION}", True, (255, 255, 255))
     title_rect = title_text.get_rect(center=(center_x, center_y - 100))
     screen.blit(title_text, title_rect)
-    
-    # Draw current task
     task_text = task_font.render(current_task, True, (200, 200, 200))
     task_rect = task_text.get_rect(center=(center_x, center_y + 80))
     screen.blit(task_text, task_rect)
-    
-    # Draw circular progress bar
     radius = 50
     thickness = 8
-    
-    # Background circle (darker)
     pygame.draw.circle(screen, (60, 60, 80), (center_x, center_y), radius, thickness)
-    
-    # Calculate progress angle
-    # From 7π/4 (315°) to π/4 (45°) = 90° total sweep
-    # 7π/4 = -π/4 in standard position
-    start_angle = -5*math.pi / 4  # 7π/4 in standard position
-    end_angle = math.pi / 4     # π/4
-    total_sweep = end_angle - start_angle  # π/2 radians (90°)
-    
+    start_angle = -5*math.pi / 4
+    end_angle = math.pi / 4
+    total_sweep = end_angle - start_angle
     if total_steps > 0:
         progress_ratio = min(progress / total_steps, 1.0)
-        
-        # Draw progress arc
         if progress_ratio > 0:
-            # Create points for the arc
             arc_points = []
-            num_segments = max(1, int(progress_ratio * 50))  # More segments for smoother arc
-            
+            num_segments = max(1, int(progress_ratio * 50))
             for i in range(num_segments + 1):
                 angle = start_angle + (total_sweep * progress_ratio * i / num_segments)
                 x = center_x + (radius - thickness // 2) * math.cos(angle)
                 y = center_y + (radius - thickness // 2) * math.sin(angle)
                 arc_points.append((x, y))
-            
-            # Draw the progress arc as a thick line
             if len(arc_points) > 1:
                 for i in range(len(arc_points) - 1):
                     pygame.draw.line(screen, (100, 200, 255), arc_points[i], arc_points[i + 1], thickness)
-    
-    # Draw percentage text
     percentage = int((progress / max(total_steps, 1)) * 100)
     percent_text = task_font.render(f"{percentage}%", True, (255, 255, 255))
     percent_rect = percent_text.get_rect(center=(center_x, center_y))
     screen.blit(percent_text, percent_rect)
-    
-    # Present the loading screen (GPU or software path)
     if gpu_display is not None:
         try:
             gpu_display.present(screen)
@@ -113,9 +85,6 @@ def draw_loading_screen(screen, progress, total_steps, current_task="Loading..."
         pygame.display.flip()
 
 def load_assets_with_progress(screen, clock, engine_sound_id, gpu_display=None):
-    """Load all game assets with progress tracking"""
-    
-    # Define loading steps
     loading_steps = [
         ("Initializing audio...", "audio"),
         ("Loading car sprites...", "sprites"),
@@ -125,75 +94,49 @@ def load_assets_with_progress(screen, clock, engine_sound_id, gpu_display=None):
         ("Loading shift audio...", "shift_audio"),
         ("Finalizing...", "final")
     ]
-    
     total_steps = len(loading_steps)
     loaded_data = {}
-    
     for step, (task_name, step_key) in enumerate(loading_steps):
-        # Update loading screen
         draw_loading_screen(screen, step, total_steps, task_name, gpu_display)
-        clock.tick(60)  # Maintain smooth animation
-        
-        # Handle pygame events to prevent "not responding"
+        clock.tick(60)
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit(0)
-        
-        # Perform actual loading
         if step_key == "audio":
             loaded_data["audio_initialized"] = load_audio_system()
-            time.sleep(0.1)  # Small delay to show progress
-            
+            time.sleep(0.1)
         elif step_key == "sprites":
             loaded_data["car_sprites_cache"] = load_all_car_sprites()
             time.sleep(0.2)
-            
         elif step_key == "track":
-            ensure_all_maps_sliced()  # Slice all map chunks once at startup
+            ensure_all_maps_sliced()
             loaded_data["track_image"] = pygame.image.load(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png")).convert()
             loaded_data["chunk_map"] = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=const.TILE_SIZE)
             time.sleep(0.1)
-            
         elif step_key == "systems":
-            loaded_data["path_poly"] = []  # Will be initialized later
+            loaded_data["path_poly"] = []
             time.sleep(0.1)
-
         elif step_key == "engine_audio":
             loaded_data["engine_audio"] = load_engine_audio_system(loaded_data["audio_initialized"], engine_sound_id)
-            
         elif step_key == "shift_audio":
             loaded_data["shift_sound"] = load_shift_sound_system(loaded_data["audio_initialized"])
-
         elif step_key == "final":
             time.sleep(0.1)
-    
-    # Show 100% completion briefly
     draw_loading_screen(screen, total_steps, total_steps, "Complete!", gpu_display)
     pygame.time.wait(500)
-    
     return loaded_data
 
 def load_audio_system():
-    """Load audio system with fallback configurations"""
     audio_configs = [
-        # High quality (try first)
         {"freq": 44100, "size": -16, "channels": 2, "buffer": 1024},
-        # Medium quality (fallback 1)
         {"freq": 22050, "size": -16, "channels": 2, "buffer": 2048},
-        # Low quality (fallback 2 - for very low-end devices)
         {"freq": 22050, "size": -16, "channels": 1, "buffer": 4096},
     ]
-    
     audio_initialized = False
     for i, config in enumerate(audio_configs):
         try:
-            pygame.mixer.pre_init(
-                frequency=config["freq"],
-                size=config["size"], 
-                channels=config["channels"], 
-                buffer=config["buffer"]
-            )
+            pygame.mixer.pre_init(frequency=config["freq"], size=config["size"], channels=config["channels"], buffer=config["buffer"])
             pygame.mixer.init()
             print(f"Audio initialized with config {i+1}: {config['freq']}Hz, {config['channels']}ch, buffer={config['buffer']}")
             audio_initialized = True
@@ -204,23 +147,17 @@ def load_audio_system():
                 pygame.mixer.quit()
             except:
                 pass
-    
     if not audio_initialized:
         print("Warning: All audio configurations failed - audio will be disabled")
-    
     return audio_initialized
 
 def load_all_car_sprites():
-    """Load sprites for all car types"""
     def load_car_sprites(car_type):
-        """Load sprites for a specific car type."""
         sprite_layers = get_available_sprite_layers(car_type)
         if not sprite_layers:
-            # Fallback to first available car if this one has no sprites
             fallback = const.AVAILABLE_CARS[0] if const.AVAILABLE_CARS else None
             if fallback and fallback != car_type:
                 sprite_layers = get_available_sprite_layers(fallback)
-        
         car_sprites = []
         for path_template in sprite_layers:
             sprite_list = []
@@ -231,16 +168,13 @@ def load_all_car_sprites():
                 except Exception as e:
                     print(f"Warning: Could not load {path_template.format(i=i)}: {e}")
                     placeholder = pygame.Surface((32, 32), pygame.SRCALPHA)
-                    placeholder.fill((255, 0, 255, 128))  # Magenta placeholder
+                    placeholder.fill((255, 0, 255, 128))
                     sprite_list.append(placeholder)
             car_sprites.append(sprite_list)
         return car_sprites
-    
-    # Load all car type sprites
     car_sprites_cache = {}
     for car_type in const.CAR_SPRITES.keys():
         car_sprites_cache[car_type] = load_car_sprites(car_type)
-    
     return car_sprites_cache
 
 def load_shift_sound_system(audio_initialized):
@@ -254,9 +188,7 @@ def load_shift_sound_system(audio_initialized):
     except Exception as e:
         print("Shift audio init failed:", e)
         shift_sound = None
-
     return shift_sound
-
 
 def load_engine_audio_system(audio_initialized, engine_sound_id):
     engine_audio = None
@@ -269,9 +201,7 @@ def load_engine_audio_system(audio_initialized, engine_sound_id):
     except Exception as e:
         print("Engine audio init failed:", e)
         engine_audio = None
-
     return engine_audio
-
 
 def reload_engine_audio_system(current_engine_audio, audio_initialized, engine_sound_id):
     if current_engine_audio is not None:
@@ -280,7 +210,6 @@ def reload_engine_audio_system(current_engine_audio, audio_initialized, engine_s
         except Exception:
             pass
     return load_engine_audio_system(audio_initialized, engine_sound_id)
-
 
 def sync_engine_audio_system(current_engine_audio, audio_initialized, current_engine_sound_id, active_car):
     next_engine_sound_id = getattr(active_car, "engine_sound_id", current_engine_sound_id)
@@ -291,34 +220,13 @@ def sync_engine_audio_system(current_engine_audio, audio_initialized, current_en
         next_engine_sound_id,
     )
 
-
 # ─── Frame profiler ──────────────────────────────────────────────────────────
 class FrameProfiler:
-    """Lightweight rolling-window frame timer.
-
-    Usage:
-        profiler.begin('physics')
-        ...code...
-        profiler.end('physics')
-
-    Then each frame call profiler.commit() to store the snapshot.
-    draw_frame_analysis(surface, profiler) draws the overlay.
-    """
-    HISTORY = 120  # frames kept
-    # Warm display colours per segment
+    HISTORY = 120
     COLOURS = [
-        (100, 200, 255),  # physics
-        (255, 180,  60),  # render_world
-        (160, 255, 120),  # camera
-        (255, 100, 120),  # ui
-        (200, 140, 255),  # gamemode
-        (255, 220,  80),  # present
-        ( 80, 200, 200),  # network
-        (220, 220, 220),  # other
-        ( 60,  80, 100),  # p.clear
-        (255, 160,  50),  # p.world
-        (120, 220, 255),  # p.ui
-        (255, 255, 130),  # p.flip
+        (100, 200, 255), (255, 180, 60), (160, 255, 120), (255, 100, 120),
+        (200, 140, 255), (255, 220, 80), (80, 200, 200), (220, 220, 220),
+        (60, 80, 100), (255, 160, 50), (120, 220, 255), (255, 255, 130),
     ]
 
     def __init__(self):
@@ -337,49 +245,37 @@ class FrameProfiler:
             self._frame[label] = self._frame.get(label, 0.0) + (time.perf_counter() - self._t0.pop(label))
 
     def commit(self):
-        """Call once per frame after all begin/end pairs."""
         self.history.append(dict(self._frame))
         self._frame.clear()
 
 
 def draw_frame_analysis(surface: pygame.Surface, profiler: 'FrameProfiler'):
-    """Draw a rolling stacked-bar frame-time graph at the bottom-right."""
     if not profiler.history:
         return
-
     if not hasattr(draw_frame_analysis, "_font"):
         draw_frame_analysis._font = pygame.font.SysFont(None, 12)
     font = draw_frame_analysis._font
-
     labels  = profiler.labels
     colours = {lbl: profiler.COLOURS[i % len(profiler.COLOURS)] for i, lbl in enumerate(labels)}
-
     BAR_W   = 4
     GRAPH_H = 80
     LEGEND_H = len(labels) * 12 + 4
     PANEL_W  = max(160, len(profiler.history) * BAR_W + 4)
-    PANEL_H  = GRAPH_H + LEGEND_H + 18   # 18 = header
+    PANEL_H  = GRAPH_H + LEGEND_H + 18
     PANEL_X  = const.WINDOW_WIDTH  - PANEL_W - 6
     PANEL_Y  = const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y - PANEL_H - 4
-
     panel = pygame.Surface((PANEL_W, PANEL_H), pygame.SRCALPHA)
     panel.fill((8, 10, 14, 200))
     pygame.draw.rect(panel, (80, 110, 160, 180), panel.get_rect(), 1)
-
-    # Header: current total frame ms
     last = profiler.history[-1]
     total_ms = sum(last.values()) * 1000
     avg_ms   = sum(sum(f.values()) for f in profiler.history) / len(profiler.history) * 1000
     hdr = font.render(f"frame {total_ms:.1f}ms  avg {avg_ms:.1f}ms", True, (190, 210, 240))
     panel.blit(hdr, (3, 2))
-
-    # Target line at 16.7 ms (60 fps)
     TARGET_MS = 1000 / 60
-    SCALE     = GRAPH_H / max(TARGET_MS * 2, total_ms * 1.2, 1)  # px per ms
+    SCALE     = GRAPH_H / max(TARGET_MS * 2, total_ms * 1.2, 1)
     target_py = 18 + GRAPH_H - int(TARGET_MS * SCALE)
     pygame.draw.line(panel, (120, 120, 120, 180), (2, target_py), (PANEL_W - 2, target_py))
-
-    # Stacked bars (newest on right)
     frames = list(profiler.history)
     for fi, frame in enumerate(frames):
         bx = 2 + fi * BAR_W
@@ -389,8 +285,6 @@ def draw_frame_analysis(surface: pygame.Surface, profiler: 'FrameProfiler'):
             h   = max(1, int(ms * SCALE))
             by -= h
             pygame.draw.rect(panel, colours[lbl], (bx, by, max(1, BAR_W - 1), h))
-
-    # Legend
     ly = 18 + GRAPH_H + 4
     for lbl in labels:
         ms = last.get(lbl, 0.0) * 1000
@@ -398,34 +292,27 @@ def draw_frame_analysis(surface: pygame.Surface, profiler: 'FrameProfiler'):
         txt = font.render(f"{lbl}  {ms:.1f}ms", True, (200, 210, 220))
         panel.blit(txt, (14, ly))
         ly += 12
-
     surface.blit(panel, (PANEL_X, PANEL_Y))
 
 
 def draw_engine_audio_debug(surface, engine_audio):
-    """Compact audio debug strip anchored to bottom-left."""
     if engine_audio is None or not const.DEBUG:
         return
-
     snapshot = engine_audio.get_debug_snapshot()
     groups = snapshot.get("groups", {})
     if not groups:
         return
-
     if not hasattr(draw_engine_audio_debug, "_font"):
         draw_engine_audio_debug._font = pygame.font.SysFont(None, 13)
-
     font = draw_engine_audio_debug._font
     rpm  = snapshot.get("rpm", 0.0)
     th   = snapshot.get("throttle", 0.0)
-
     row_h = 13
     bar_w = 80
     col_label = 4
     col_bar   = 90
     col_pct   = col_bar + bar_w + 3
     panel_w   = col_pct + 36
-
     lines = [f"SND  rpm={rpm:.0f}  th={th:.2f}"]
     group_order = [g for g in ("eng", "exh") if g in groups] or list(groups.keys())
     for gname in group_order:
@@ -433,13 +320,11 @@ def draw_engine_audio_debug(surface, engine_audio):
         lines.append(f"--- {gname.upper()} vol={g.get('master_volume',0):.2f}")
         for tr in g.get("tracks", [])[:6]:
             lines.append((gname, tr))
-
     panel_h = len(lines) * row_h + 4
     panel_y = const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y - panel_h - 4
     panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
     panel.fill((8, 10, 14, 180))
     pygame.draw.rect(panel, (80, 110, 160, 160), panel.get_rect(), 1)
-
     y = 2
     for line in lines:
         if isinstance(line, str):
@@ -460,12 +345,10 @@ def draw_engine_audio_debug(surface, engine_audio):
             pct = font.render(f"{vol*100:4.0f}%", True, (200, 210, 220))
             panel.blit(pct, (col_pct, y))
         y += row_h
-
     surface.blit(panel, (4, panel_y))
 
 
 def draw_chunk_minimap(surface, renderer):
-    """Top-right debug minimap: shows tire-mark chunks vs camera viewport."""
     if not const.DEBUG:
         return
     if renderer is None or not hasattr(renderer, "tire_mark_grid") or renderer.tire_mark_grid is None:
@@ -473,12 +356,10 @@ def draw_chunk_minimap(surface, renderer):
     if not hasattr(draw_chunk_minimap, "_font"):
         draw_chunk_minimap._font = pygame.font.SysFont(None, 12)
     font = draw_chunk_minimap._font
-
     grid = renderer.tire_mark_grid
     marks = grid._marks
     if not marks:
         return
-
     all_keys = list(marks.keys())
     min_ix = min(k[0] for k in all_keys)
     max_ix = max(k[0] for k in all_keys)
@@ -486,39 +367,33 @@ def draw_chunk_minimap(surface, renderer):
     max_iy = max(k[1] for k in all_keys)
     cols = max_ix - min_ix + 1
     rows = max_iy - min_iy + 1
-
     cell = max(4, min(14, 120 // max(cols, rows, 1)))
     map_w = cols * cell + 2
-    map_h = rows * cell + 14  # 14px header
+    map_h = rows * cell + 14
     panel_x = const.WINDOW_WIDTH - map_w - 6
     panel_y = const.TOP_LINE_Y + 6
-
     panel = pygame.Surface((map_w, map_h), pygame.SRCALPHA)
     panel.fill((10, 12, 18, 200))
     pygame.draw.rect(panel, (80, 110, 160, 180), panel.get_rect(), 1)
-
     hdr = font.render(f"chunks {len(marks)}", True, (170, 195, 230))
     panel.blit(hdr, (2, 1))
-
     for (ix, iy), surf in marks.items():
         cx = (ix - min_ix) * cell + 1
         cy = (iy - min_iy) * cell + 14
-        # Sample alpha of centre pixel to estimate mark intensity
         try:
             px = surf.get_at((grid.tile_size // 2, grid.tile_size // 2))
-            intensity = 255 - px[3]  # transparent = no marks
+            intensity = 255 - px[3]
         except Exception:
             intensity = 128
         brightness = max(40, 255 - intensity)
         color = (brightness // 2, brightness, brightness // 2)
         pygame.draw.rect(panel, color, (cx, cy, cell - 1, cell - 1))
-
     surface.blit(panel, (panel_x, panel_y))
 
 # ======= MAIN LOOP =======
-  
+
 def main():
-    global I_AM_HOST  # ensure all references/assignments in this function use the module global
+    global I_AM_HOST
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["host", "join"])
     parser.add_argument("--code")
@@ -527,43 +402,35 @@ def main():
 
     pygame.init()
     pygame.joystick.init()
-    
+
     gpu_display = None
-    use_gpu = True  # Set to True to enable GPU rendering with texture reuse
-    
+    use_gpu = True
+
     if use_gpu:
         try:
             from drift.render.gpu_display import GPUDisplay
             gpu_display = GPUDisplay((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), f"drift_race_v{const.VERSION}")
             print("✓ GPU display initialized via pygame._sdl2")
-            # With the SDL2 Renderer pipeline the window is owned by GPUDisplay.
-            # We still need a scratch Surface for loading screens / fallback blits.
             screen = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
         except Exception as e:
             print(f"✗ GPU display initialization failed: {e}")
             print("  Using software rendering fallback")
             gpu_display = None
-    
+
     if gpu_display is None:
         pygame.display.set_caption(f"drift_race_v{const.VERSION}")
         screen = pygame.display.set_mode((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
-    
+
     clock = pygame.time.Clock()
-    
-    # Fullscreen state tracking
     is_fullscreen = False
 
     default_engine_sound_id = get_car_engine_sound_id(const.DEFAULT_CAR_ID)
-    
-    # Show loading screen and load assets
     loaded_assets = load_assets_with_progress(screen, clock, default_engine_sound_id, gpu_display)
-    
-    # Create fonts after pygame.init()
+
     font_small = pygame.font.SysFont(None, const.FONT_SMALL_SIZE)
     font_medium = pygame.font.SysFont(None, const.FONT_MEDIUM_SIZE)
     font_big = pygame.font.SysFont(None, const.FONT_BIG_SIZE)
-    
-    # Extract loaded assets
+
     audio_initialized = loaded_assets["audio_initialized"]
     car_sprites_cache = loaded_assets["car_sprites_cache"]
     track_image = loaded_assets["track_image"]
@@ -571,19 +438,19 @@ def main():
     engine_audio = loaded_assets["engine_audio"]
     shift_sound = loaded_assets["shift_sound"]
 
-    stage1 = "lobby" # lobby | game | error | mode1 | mode2
-    stage2 = "" # new_game | join_game | settings
-    stage3 = "" # controls
+    stage1 = "lobby"
+    stage2 = ""
+    stage3 = ""
     error_msg = ""
     remotes = {}
     ai_cars = []
     path_poly = []
     checkpoints = []
-    game_mode = None           # active BaseGameMode instance (SimpleRace, etc.)
-    _collision_mesh = CollisionMesh([])  # collision polygons from map_meta.json (with spatial hash)
-    _path_future = None        # Future for async track discovery
-    _prev_stage1 = "lobby"     # detect stage1 transitions
-    _return_btn_rect = None    # leaderboard button rect from previous frame
+    game_mode = None
+    _collision_mesh = CollisionMesh([])
+    _path_future = None
+    _prev_stage1 = "lobby"
+    _return_btn_rect = None
     _local_result_sent = False
 
     my_name = rand_name()
@@ -592,7 +459,7 @@ def main():
     sock = None
     last_state_send = 0.0
     last_ping = 0.0
-    host_name = None  # Will be set when hosting or joining
+    host_name = None
 
     lights_on = False
 
@@ -600,26 +467,20 @@ def main():
     spawny = random.uniform(const.WINDOW_HEIGHT*0.3, const.WINDOW_HEIGHT*0.7)
     my_car = car.Car(spawnx, spawny, my_name, is_ai=False, car_type=const.DEFAULT_CAR_ID, car_name=const.DEFAULT_CAR_NAME)
     current_engine_sound_id = my_car.engine_sound_id
-    # Set palette colors from car specs
     set_palette_colors_from_car(my_car.palette_colors)
-    # Ensure palette cache is fresh and pre-warm colored sprites to avoid runtime stutter
     invalidate_palette_cache()
     try:
-        # Pre-render one frame for the player's car to populate the palette cache
         temp_surf = pygame.Surface((128, 128), pygame.SRCALPHA)
         car_sprites = loaded_assets.get("car_sprites_cache", {}).get(my_car.car_type, [])
         draw_car(temp_surf, 64, 64, my_car.angle, my_car.name, car_sprites_list=car_sprites, palette_colors=get_palette_colors())
         del temp_surf
     except Exception:
         pass
-    # Local player's engine state (avoid mutating Car which may use __slots__)
     engine_state = {"gear": 0, "last_rpm": None}
 
-    # controller cooldowns
-    ctlr_btn2_time = 0.0 # i'll store last time.time() the X button was pressed (change car)
-    ctlr_btn3_time = 0.0 # same for the Y button (spawn ai car)
+    ctlr_btn2_time = 0.0
+    ctlr_btn3_time = 0.0
 
-    # CLI connection state (non-blocking; polled each frame before main loop)
     _cli_conn = None
 
     if args.mode == "host" and args.code and args.name:
@@ -654,17 +515,14 @@ def main():
         except Exception as e:
             print(f"Failed to connect to relay - starting in offline mode: {e!r}")
             sock = None; code = "Offline"; stage1 = "game"; I_AM_HOST = False
-    
-    # Renderer handles track, cars, and drift marks
+
     renderer = WorldRenderer(track_image, flags, chunked_map=chunked_map)
 
-    # connect first available gamepad (if any)
     gp = Gamepad()
     gp.joystick = pygame.joystick.Joystick(0) if pygame.joystick.get_count() > 0 else None
     gp.selected_index = gp.joystick.get_id() if gp.joystick else None
     if gp.joystick: gp.connect_gamepad(gp.selected_index)
 
-    # Create a camera object; mouse wheel will adjust zoom and middle mouse drag will pan.
     cam = camera.Camera(const.WINDOW_WIDTH, const.WINDOW_HEIGHT, zoom=1.0)
     dragging = False
     host_ref = [I_AM_HOST]
@@ -693,45 +551,39 @@ def main():
         _prev_stage1 = "lobby"
         _return_btn_rect = None
         _local_result_sent = False
-        invalidate_ui_text_cache('room')  # Clear cached room code text
-        # Clear tire marks and chunk cache to free memory
+        invalidate_ui_text_cache('room')
         renderer.clear_tire_marks()
         renderer.clear_chunk_cache()
-        return "lobby", "", None, None, remotes # stage, substage sock, code, remotes
-    
+        return "lobby", "", None, None, remotes
+
     def handle_controls():
         nonlocal stage3
         stage3 = "controls"
-        
+
     def switch_cursor_follow_mode(stage1):
         const.CURSOR_FOLLOW = not const.CURSOR_FOLLOW
         if const.CURSOR_FOLLOW: const.AI_PATH_FOLLOW = False
-        # stage, substage sock, code, remotes
         try: return stage1, "", sock, code, remotes
         except Exception: return stage1, "", None, None, {}
 
     def switch_ai_path_mode(stage1):
         const.AI_PATH_FOLLOW = not const.AI_PATH_FOLLOW
         if const.AI_PATH_FOLLOW: const.CURSOR_FOLLOW = False
-        # stage, substage sock, code, remotes
         try: return stage1, "", sock, code, remotes
         except Exception: return stage1, "", None, None, {}
 
-    settings_buttons = [ # todo : be able to use '*' like '*/settings' for key binds
-    btn.Button("Quit Game", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["lobby", "settings"]] ,lambda: quit_game()),
-    btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["leaderboard", "settings"]] ,lambda: leave_room(sock, code, my_id, remotes)),
-    btn.Button("Controls", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, [["lobby", "settings"], ["game", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["leaderboard", "settings"]], handle_controls),
-    btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["mode1", "settings"], ["mode2", "settings"]], lambda: switch_cursor_follow_mode(stage1)),
-    btn.Button("AI Path Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.65, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["mode1", "settings"], ["mode2", "settings"]], lambda: switch_ai_path_mode(stage1)),
+    settings_buttons = [
+        btn.Button("Quit Game", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["lobby", "settings"]], lambda: quit_game()),
+        btn.Button("Leave Room", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.35, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["game", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["leaderboard", "settings"]], lambda: leave_room(sock, code, my_id, remotes)),
+        btn.Button("Controls", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, const.BLUE, [["lobby", "settings"], ["game", "settings"], ["mode1", "settings"], ["mode2", "settings"], ["leaderboard", "settings"]], handle_controls),
+        btn.Button("Cursor Follow Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["mode1", "settings"], ["mode2", "settings"]], lambda: switch_cursor_follow_mode(stage1)),
+        btn.Button("AI Path Mode", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.65, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, [["mode1", "settings"], ["mode2", "settings"]], lambda: switch_ai_path_mode(stage1)),
     ]
-    
+
     profiler = FrameProfiler()
     show_frame_analysis = False
-
-    # Reusable UI surface (avoid per-frame allocation)
     ui_surf = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), pygame.SRCALPHA)
 
-    # ── Helper: cycle car type (shared by keyboard & gamepad) ──
     def _cycle_car_type():
         nonlocal engine_audio, current_engine_sound_id
         available_types = list(const.CAR_SPRITES.keys())
@@ -747,7 +599,6 @@ def main():
         set_palette_colors_from_car(my_car.palette_colors)
         invalidate_palette_cache()
 
-    # ── Helper: spawn AI car (shared by keyboard & gamepad) ──
     def _try_spawn_ai():
         _max_p = game_mode.max_players if game_mode else 6
         if I_AM_HOST and stage1 in ["game", "mode1", "mode2"] and stage2 == "" and 1 + len(remotes) + len(ai_cars) < _max_p:
@@ -757,31 +608,29 @@ def main():
                 random.randint(const.TRACK_MARGIN + 120, const.WINDOW_HEIGHT - const.TRACK_MARGIN - 120),
                 name=f"AI-{len(ai_cars)+1}", is_ai=True, car_type=ai_car_type,
             )
+            ai_inst.ai_difficulty = getattr(const, "AI_DIFFICULTY", "medium")
             ai_cars.append(ai_inst)
 
     # ══════════════════════════════════════════════════════════
-    #  MAIN LOOP  —  strict  Input → Update → Draw  ordering
+    #  MAIN LOOP
     # ══════════════════════════════════════════════════════════
 
     while True:
         dt = clock.tick(const.FPS) / 1000.0
 
-        # ── Poll pending CLI connection (non-blocking) ──
         if _cli_conn is not None and _cli_conn["status"] == "pending":
             from drift.ui.draw_stage import poll_connection
             poll_connection(_cli_conn)
             if _cli_conn["status"] == "done":
                 _cli_sock = _cli_conn.get("sock")
                 _cli_mode = _cli_conn["mode"]
-                # For CLI, we only care about getting the socket; track assets already loaded
                 if _cli_mode == "host":
-                    # Check if we got a live socket or fell back offline
                     if _cli_sock and _cli_conn.get("result") and _cli_conn["result"][3] is not None:
                         sock = _cli_conn["result"][3]
                     else:
                         sock = None; code = "Offline"
                     stage1 = "game"; I_AM_HOST = True
-                else:  # join
+                else:
                     result = _cli_conn.get("result")
                     if result and result[0] == "game" and result[3] is not None:
                         sock = result[3]; code = result[2]
@@ -792,12 +641,11 @@ def main():
                 _cli_conn = None
 
         # ────────────────────────────────────────────────────
-        # PHASE 1 · INPUT  —  collect all events & controls
+        # PHASE 1 · INPUT
         # ────────────────────────────────────────────────────
 
         profiler.begin("input")
 
-        # 1a. Pump SDL events
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
                 if sock and code:
@@ -810,7 +658,6 @@ def main():
                     pass
                 pygame.quit(); sys.exit(0)
 
-            # Keyboard shortcuts (global)
             if ev.type == pygame.KEYDOWN:
                 if ev.key == pygame.K_l:
                     lights_on = not lights_on
@@ -824,7 +671,6 @@ def main():
                         my_car.v_angle = 0.0
                 elif ev.key == const.RESTART_KEY:
                     if stage1.startswith("mode") and len(remotes) == 0:
-                        # Restart race (solo player only, AI don't count)
                         if game_mode is not None:
                             game_mode.on_exit(); game_mode = None
                         renderer.clear_tire_marks()
@@ -851,10 +697,16 @@ def main():
                         const.WINDOW_WIDTH, const.WINDOW_HEIGHT = const.WINDOW_WIDTH_W, const.WINDOW_HEIGHT_W
                         screen = pygame.display.set_mode((const.WINDOW_WIDTH, const.WINDOW_HEIGHT))
                         cam.zoom = 1.0
+                # ── A) Touches difficulté ──
                 elif ev.key == const.AI_KEY:
                     _try_spawn_ai()
+                elif ev.key == pygame.K_1:
+                    const.AI_DIFFICULTY = "easy"
+                elif ev.key == pygame.K_2:
+                    const.AI_DIFFICULTY = "medium"
+                elif ev.key == pygame.K_3:
+                    const.AI_DIFFICULTY = "hard"
 
-            # Camera controls (mouse)
             if ev.type == pygame.MOUSEWHEEL:
                 cam.zoom *= 1.1 if ev.y > 0 else 0.9
                 cam.zoom = clamp(cam.zoom, 1, 3.0)
@@ -866,7 +718,6 @@ def main():
                 cam.offset[0] -= ev.rel[0] / cam.zoom
                 cam.offset[1] -= ev.rel[1] / cam.zoom
 
-            # Delegate to UI event handler (menus, lobby, game setup)
             ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map, checkpoints = handle_game_events(
                 screen, ev, stage1, stage2, stage3, gp, remotes, ai_cars, sock, code,
                 my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name,
@@ -877,7 +728,6 @@ def main():
                 engine_audio, audio_initialized, current_engine_sound_id, my_car,
             )
 
-            # Leaderboard "Return to Lobby" button click
             if (ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1
                     and stage1 == "leaderboard" and I_AM_HOST
                     and _return_btn_rect is not None
@@ -894,7 +744,6 @@ def main():
                     except Exception:
                         pass
 
-        # ── Per-frame: apply completed non-blocking connection (runs once/frame, not per-event) ──
         conn_result = poll_pending_connection()
         if conn_result is not None:
             stage1, stage2, sock, code, my_name, is_host, host_name, _err, track_image, chunked_map, checkpoints = conn_result
@@ -902,13 +751,10 @@ def main():
             engine_audio, current_engine_sound_id = sync_engine_audio_system(
                 engine_audio, audio_initialized, current_engine_sound_id, my_car
             )
-
-            # Sync renderer with any map changes from UI
             if renderer and track_image and renderer.track_image != track_image: renderer.track_image = track_image
             if renderer and chunked_map and renderer.chunked_map != chunked_map: renderer.chunked_map = chunked_map
             if renderer and checkpoints: renderer.checkpoints = checkpoints
 
-        # 1b. Gamepad buttons (outside event loop — polled)
         if gp and gp.joystick:
             js = gp.joystick
             if js.get_button(2) and time.time() - ctlr_btn2_time > 0.2:
@@ -918,18 +764,26 @@ def main():
                 ctlr_btn3_time = time.time()
                 _try_spawn_ai()
 
-        # 1c. Compute authoritative controls for this frame (single source of truth)
+        # ── B) Contrôles joueur — indentation corrigée ──
         skip_physics = stage2 in ["new_game", "join_game"] or stage3 == "controls"
         controls = {"th": 0.0, "st": 0.0, "br": 0.0}
         ai_debug_surface = None
         if not skip_physics:
             ai_controls_ok = False
-            if const.AI_PATH_FOLLOW and path_poly:
+            _path_ready = (
+                isinstance(path_poly, dict) and len(path_poly.get("polyline", []) or []) > 0
+            ) or (
+                isinstance(path_poly, list) and len(path_poly) > 0
+            )
+            if const.AI_PATH_FOLLOW and _path_ready:
                 try:
                     controls, ai_debug_surface = ai_algorithme(
-                        path_poly, my_car, ai_path_mode=True,
+                        path_poly,
+                        my_car,
+                        ai_path_mode=True,
                         surface=pygame.Surface((track_image.get_width(), track_image.get_height()), pygame.SRCALPHA),
                         font_small=font_small,
+                        difficulty=getattr(const, "AI_DIFFICULTY", "medium"),
                     )
                     ai_controls_ok = True
                 except Exception:
@@ -1086,7 +940,6 @@ def main():
         if not skip_physics:
             movement_locked = bool(mode_result.get("movement_locked"))
 
-            # Build remote views once for collision queries
             remotes_with_ai_for_player = dict(remotes)
             if I_AM_HOST:
                 for i, ai in enumerate(ai_cars, start=1):
@@ -1100,7 +953,6 @@ def main():
             else:
                 my_car.step(controls, dt, remotes_with_ai_for_player, world_size, compute_debug=const.DEBUG, cursor_follow=const.CURSOR_FOLLOW, cam=cam, collision_mesh=_collision_mesh)
 
-            # Engine audio (single RPM computation, shared with UI HUD)
             try:
                 if audio_initialized and (engine_audio is not None or shift_sound is not None):
                     speed_units = math.hypot(my_car.vx, my_car.vy)
@@ -1124,7 +976,7 @@ def main():
             except Exception:
                 pass
 
-            # AI cars
+            # ── C) Boucle IA — corrigée ──
             if I_AM_HOST and ai_cars:
                 remotes_with_ai_for_ais = dict(remotes)
                 remotes_with_ai_for_ais[f"PLAYER-{my_id}"] = {"x": my_car.x, "y": my_car.y, "a": my_car.angle, "vx": my_car.vx, "vy": my_car.vy, "drift_ratio": my_car.drift_ratio, "name": my_car.name}
@@ -1136,7 +988,11 @@ def main():
                         ai.v_angle = 0.0
                     else:
                         try:
-                            ai_controls = ai_algorithme(path_poly, ai)
+                            ai_controls = ai_algorithme(
+                                path_poly,
+                                ai,
+                                difficulty=getattr(ai, "ai_difficulty", getattr(const, "AI_DIFFICULTY", "medium")),
+                            )
                         except Exception:
                             ai_controls = {"th": 0.0, "st": 0.0, "br": 0.0}
                         ai.step(ai_controls, dt, remotes_with_ai_for_ais, world_size, compute_debug=const.DEBUG, collision_mesh=_collision_mesh)
@@ -1155,11 +1011,18 @@ def main():
             if resized and not is_viewport and _path_future is None:
                 _path_future = path_finder.discover_track_async(normalize_asset_path("track", f"map{const.MAP_NUM}", "main.png"))
 
-            # Poll for async path discovery result
+            # ── D) Poll async path — résultat unique dans render_world ──
             if _path_future is not None and _path_future.done():
                 try:
                     path_poly = _path_future.result()
-                except Exception:
+                    if isinstance(path_poly, dict):
+                        print(
+                            f"[AI] path ready map={path_poly.get('map_num')} "
+                            f"points={len(path_poly.get('polyline', []))} "
+                            f"traj={len(path_poly.get('trajectory', []) or [])}"
+                        )
+                except Exception as e:
+                    print(f"[AI] path discovery failed: {e}")
                     path_poly = []
                 _path_future = None
 
@@ -1194,7 +1057,6 @@ def main():
         draw_chunk_minimap(ui_surf, renderer)
         profiler.end("ui")
 
-        # Game mode overlays
         _return_btn_rect = None
         if game_mode is not None:
             if stage1 == "leaderboard":
@@ -1206,12 +1068,10 @@ def main():
         if show_frame_analysis:
             draw_frame_analysis(ui_surf, profiler)
 
-        # Apply settings button results
         for res in button_results:
             if isinstance(res, tuple) and len(res) == 5:
                 stage1, stage2, sock, code, remotes = res
 
-        # AI path debug overlay
         if const.AI_PATH_FOLLOW and stage1 == "game" and ai_debug_surface is not None:
             try:
                 top_left = cam.x - (const.WINDOW_WIDTH / 2) / cam.zoom, cam.y - (const.WINDOW_HEIGHT / 2) / cam.zoom

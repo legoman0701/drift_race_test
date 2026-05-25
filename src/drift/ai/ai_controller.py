@@ -1,43 +1,65 @@
 import math
 import random
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 from drift.core.helpers import clamp
 from drift.ai.ai_difficulty import get_profile
 from drift.ai.learned import apply_learned_controls
 
 
-def _extract_path(path_data: Any):
-    if isinstance(path_data, list):
-        return path_data, None, 1
+def _extract_path(path_data: Any) -> Tuple[list, Any, int]:
     if isinstance(path_data, dict):
         poly = path_data.get("polyline", []) or []
-        traj = path_data.get("trajectory", []) or None
+        traj = path_data.get("trajectory")
+        if not traj:
+            traj = None
         map_num = int(path_data.get("map_num", 1))
         return poly, traj, map_num
+    if isinstance(path_data, list):
+        return path_data, None, 1
     return [], None, 1
 
 
+def _read_traj_point(p, angle_diff: float, profile) -> Tuple[float, float, bool, float]:
+    if isinstance(p, dict):
+        return (
+            float(p.get("kappa", 0.0)),
+            float(p.get("v_target", 180.0)) * profile.speed_scale,
+            bool(p.get("drift_zone", False)),
+            float(p.get("drift_intensity", 0.0)),
+        )
+    v_ref = 180.0 - min(120.0, abs(math.degrees(angle_diff)) * 1.2)
+    v_ref = clamp(v_ref, 60.0, 240.0) * profile.speed_scale
+    return 0.0, v_ref, False, 0.0
+
+
 def _closest_index_on_poly(poly, px, py):
-    best_idx = 0
-    best_d2 = float("inf")
-    for i, (x, y) in enumerate(poly):
+    best_idx, best_d2 = 0, float("inf")
+    for i, point in enumerate(poly):
+        if isinstance(point, dict):
+            x, y = float(point["x"]), float(point["y"])
+        else:
+            x, y = float(point[0]), float(point[1])
         d2 = (x - px) ** 2 + (y - py) ** 2
         if d2 < best_d2:
-            best_d2 = d2
-            best_idx = i
+            best_d2, best_idx = d2, i
     return best_idx
 
 
+def _poly_xy(poly, i):
+    point = poly[i % len(poly)]
+    if isinstance(point, dict):
+        return float(point["x"]), float(point["y"])
+    return float(point[0]), float(point[1])
+
+
 def _lookahead_target(poly, idx, lookahead):
-    n = len(poly)
-    i = idx
-    remaining = lookahead
-    tx, ty = poly[i]
+    n, i, remaining = len(poly), idx, lookahead
+    tx, ty = _poly_xy(poly, i)
     while remaining > 0 and n > 1:
         j = (i + 1) % n
-        ax, ay = poly[i]
-        bx, by = poly[j]
+        ax, ay = _poly_xy(poly, i)
+        bx, by = _poly_xy(poly, j)
         seg = math.hypot(bx - ax, by - ay)
         if seg < 1e-6:
             i = j
@@ -56,12 +78,10 @@ def _lookahead_target(poly, idx, lookahead):
 def _smooth_controls(car, controls: Dict[str, float], reaction_delay: float) -> Dict[str, float]:
     if reaction_delay <= 0.0:
         return controls
-
     prev = getattr(car, "_ai_prev_controls", None)
     if prev is None:
         car._ai_prev_controls = dict(controls)
         return controls
-
     alpha = clamp(1.0 - reaction_delay, 0.2, 1.0)
     out = {
         "th": prev["th"] * (1.0 - alpha) + controls["th"] * alpha,
@@ -98,18 +118,11 @@ def compute_path_controls(
     car.target_angle = angle_to_target
     angle_diff = ((angle_to_target - car.angle + math.pi) % (2 * math.pi)) - math.pi
 
-    kappa = 0.0
-    v_ref = 180.0
-    drift_zone = False
-    drift_intensity = 0.0
-
     if traj:
         p = traj[i % len(traj)]
-        kappa = float(p.get("kappa", 0.0))
-        v_ref = float(p.get("v_target", 180.0)) * profile.speed_scale
-        drift_zone = bool(p.get("drift_zone", False))
-        drift_intensity = float(p.get("drift_intensity", 0.0))
+        kappa, v_ref, drift_zone, drift_intensity = _read_traj_point(p, angle_diff, profile)
     else:
+        kappa, drift_zone, drift_intensity = 0.0, False, 0.0
         v_ref = 180.0 - min(120.0, abs(math.degrees(angle_diff)) * 1.2)
         v_ref = clamp(v_ref, 60.0, 240.0) * profile.speed_scale
 
@@ -117,14 +130,11 @@ def compute_path_controls(
     steer_penalty = clamp(abs(angle_diff) * 1.2, 0.0, 1.0)
 
     th = clamp((0.85 - steer_penalty * 0.55 - abs(kappa) * 0.45) * profile.throttle_scale, 0.05, 1.0)
-    br = clamp((abs(kappa) * 0.15) * profile.brake_scale, 0.0, 0.35)
+    br = clamp(abs(kappa) * 0.15 * profile.brake_scale, 0.0, 0.35)
 
     if over_speed > 0:
-        excess_ratio = clamp(over_speed / max(v_ref, 1.0), 0.0, 1.0)
-        th = clamp(th * (1.0 - excess_ratio), 0.0, 1.0)
-        # br is intentionally NOT overridden here; the kappa-based br above is sufficient.
-        # Setting br high (handbrake/wheel-lock) overwhelms the engine force and prevents
-        # the car from accelerating at all: lock_strength * speed >> engine force.
+        br = clamp((over_speed / max(v_ref, 1.0)) * 1.5 * profile.brake_scale, 0.0, 1.0)
+        th = clamp(0.15 * profile.throttle_scale, 0.0, 0.4)
 
     if drift_zone:
         drift_error = profile.drift_target - car.drift_ratio
@@ -138,11 +148,6 @@ def compute_path_controls(
     controls = {"th": th, "st": 0.0, "br": br}
 
     if use_learned:
-        controls = apply_learned_controls(
-            car=car,
-            base_controls=controls,
-            map_num=map_num,
-            difficulty=difficulty,
-        )
+        controls = apply_learned_controls(car, controls, map_num, difficulty)
 
     return _smooth_controls(car, controls, profile.reaction_delay)

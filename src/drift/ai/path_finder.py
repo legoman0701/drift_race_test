@@ -10,7 +10,6 @@ _executor = ThreadPoolExecutor(max_workers=1)
 
 
 def _load_map_meta_for_map(map_path: str) -> dict:
-    """Try to load map_meta.json next to main.png."""
     p = normalize_asset_path(map_path)
     meta_path = p.parent / "map_meta.json"
     try:
@@ -21,10 +20,6 @@ def _load_map_meta_for_map(map_path: str) -> dict:
 
 
 def _build_driveable_mask(map_path: str, meta: dict) -> np.ndarray:
-    """
-    Return bool mask where True = drivable.
-    Heuristic: green grass is obstacle (g high), road is less green.
-    """
     img = Image.open(normalize_asset_path(map_path)).convert("RGB")
     arr = np.asarray(img, dtype=np.uint8)
     driveable = arr[:, :, 1] < 170
@@ -92,7 +87,6 @@ def _smooth_closed_polyline(points, passes=3):
 
 
 def _project_to_driveable(points, driveable):
-    """Snap each point to nearest drivable pixel in small radius."""
     h, w = driveable.shape
     out = []
     for x, y in points:
@@ -106,7 +100,7 @@ def _project_to_driveable(points, driveable):
         for ry in range(max(0, iy - R), min(h, iy + R + 1)):
             for rx in range(max(0, ix - R), min(w, ix + R + 1)):
                 if driveable[ry, rx]:
-                    d2 = (rx - ix) * (rx - ix) + (ry - iy) * (ry - iy)
+                    d2 = (rx - ix) ** 2 + (ry - iy) ** 2
                     if d2 < best_d2:
                         best_d2 = d2
                         best = (rx, ry)
@@ -122,13 +116,9 @@ def _compute_curvature_and_speed(points, a_lat_max=180.0, vmin=40.0, vmax=360.0)
     if n < 5:
         return [
             {
-                "x": p[0],
-                "y": p[1],
-                "heading": 0.0,
-                "kappa": 0.0,
-                "v_target": 120.0,
-                "drift_zone": False,
-                "drift_intensity": 0.0,
+                "x": p[0], "y": p[1], "heading": 0.0,
+                "kappa": 0.0, "v_target": 120.0,
+                "drift_zone": False, "drift_intensity": 0.0,
             }
             for p in points
         ]
@@ -158,17 +148,11 @@ def _compute_curvature_and_speed(points, a_lat_max=180.0, vmin=40.0, vmax=360.0)
         drift_zone = kappa > 0.012
         drift_intensity = min(1.0, kappa * 80.0) if drift_zone else 0.0
 
-        traj.append(
-            {
-                "x": x,
-                "y": y,
-                "heading": heading,
-                "kappa": kappa,
-                "v_target": v_target,
-                "drift_zone": drift_zone,
-                "drift_intensity": drift_intensity,
-            }
-        )
+        traj.append({
+            "x": x, "y": y, "heading": heading,
+            "kappa": kappa, "v_target": v_target,
+            "drift_zone": drift_zone, "drift_intensity": drift_intensity,
+        })
     return traj
 
 
@@ -179,33 +163,23 @@ def discover_track(
     sample_rate=8,
     max_iterations=10000,
 ):
-    """
-    Build AI trajectory from map + map_meta.
-    Returns:
-      {
-        "polyline": [(x,y), ...],
-        "trajectory": [{x,y,heading,kappa,v_target,drift_zone,drift_intensity}, ...],
-        "map_id": str,
-        "map_num": int,
-      }
-    """
     meta = _load_map_meta_for_map(map_path)
     driveable = _build_driveable_mask(map_path, meta)
 
     cps = _ordered_checkpoint_centers(meta)
     if len(cps) < 3:
         r = 220.0
-        pts = []
-        for i in range(36):
-            a = (i / 36.0) * 2.0 * math.pi
-            pts.append((start_pos[0] + math.cos(a) * r, start_pos[1] + math.sin(a) * r))
+        pts = [
+            (start_pos[0] + math.cos(i / 36.0 * 2 * math.pi) * r,
+             start_pos[1] + math.sin(i / 36.0 * 2 * math.pi) * r)
+            for i in range(36)
+        ]
     else:
         pts = cps
 
     pts = _densify_closed_polyline(pts, step=20.0)
     pts = _project_to_driveable(pts, driveable)
     pts = _smooth_closed_polyline(pts, passes=4)
-
     trajectory = _compute_curvature_and_speed(pts)
 
     p = normalize_asset_path(map_path)
@@ -218,7 +192,7 @@ def discover_track(
         pass
 
     return {
-        "polyline": [(p["x"], p["y"]) for p in trajectory],
+        "polyline": [(pt["x"], pt["y"]) for pt in trajectory],
         "trajectory": trajectory,
         "map_id": meta.get("map_name", f"map{map_num}"),
         "map_num": map_num,
@@ -233,10 +207,5 @@ def discover_track_async(
     max_iterations=10000,
 ):
     return _executor.submit(
-        discover_track,
-        map_path,
-        start_pos,
-        start_angle,
-        sample_rate,
-        max_iterations,
+        discover_track, map_path, start_pos, start_angle, sample_rate, max_iterations,
     )

@@ -1,16 +1,18 @@
 from dataclasses import dataclass
 
+
 @dataclass(frozen=True)
 class AIDifficultyProfile:
     name: str
-    speed_scale: float          # vitesse cible
-    lookahead_scale: float      # distance de visée
-    brake_scale: float            # freinage
+    speed_scale: float
+    lookahead_scale: float
+    brake_scale: float
     throttle_scale: float
-    drift_target: float           # drift_ratio visé en virage (0..1)
-    drift_brake_boost: float      # frein main en virage
-    steering_noise: float         # imprécision (easy > hard)
-    reaction_delay: float         # 0..1 (simule retard)
+    drift_target: float
+    drift_brake_boost: float
+    steering_noise: float
+    reaction_delay: float
+
 
 PROFILES = {
     "easy": AIDifficultyProfile(
@@ -47,6 +49,7 @@ PROFILES = {
         reaction_delay=0.00,
     ),
 }
+
 
 def get_profile(level: str) -> AIDifficultyProfile:
     return PROFILES.get(level, PROFILES["medium"])
