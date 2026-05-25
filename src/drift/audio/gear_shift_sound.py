@@ -56,17 +56,15 @@ class GearShiftSound:
         
         # Load default gear shift samples if none provided
         if gear_shift_samples is None:
-            gear_shift_samples = [
-                asset_path("engines", "gear_shift_1.wav"),
-                asset_path("engines", "gear_shift_2.wav"), 
-                asset_path("engines", "gear_shift_3.wav")
-            ]
+            # Default to a larger pool of shift samples for variety
+            gear_shift_samples = [asset_path("engines", f"gear_shift_{i}.wav") for i in range(1, 10)]
         
+        # Store tuples of (pygame.Sound, path) so we can log which sample played
         self.shift_sounds = []
         for sample_path in gear_shift_samples:
             try:
                 sound = pygame.mixer.Sound(sample_path)
-                self.shift_sounds.append(sound)
+                self.shift_sounds.append((sound, sample_path))
                 print(f"Loaded gear shift sound: {sample_path}")
             except Exception as e:
                 print(f"Warning: Could not load gear shift sound {sample_path}: {e}")
@@ -100,12 +98,12 @@ class GearShiftSound:
             # Shift sound 1: Quick burst
             shift_array = array.array('h', [int(random.randint(-32767, 32767) * 0.3) for _ in range(samples)])
             shift_sound = pygame.sndarray.make_sound(shift_array)
-            self.shift_sounds.append(shift_sound)
+            self.shift_sounds.append((shift_sound, "<synthetic_1>"))
             
             # Shift sound 2: Longer grind
             grind_array = array.array('h', [int(random.randint(-32767, 32767) * 0.2) for _ in range(int(samples * 1.5))])
             grind_sound = pygame.sndarray.make_sound(grind_array)
-            self.shift_sounds.append(grind_sound)
+            self.shift_sounds.append((grind_sound, "<synthetic_2>"))
             
             print("Created synthetic gear shift sounds")
             
@@ -141,6 +139,11 @@ class GearShiftSound:
                 
                 # Only trigger shift sound if enough time has passed
                 if time_since_last_shift >= self.shift_cooldown:
+                    # Debug print for each gear change (helps when audio not heard)
+                    try:
+                        print(f"[GearShiftSound] Gear change: {self.last_gear} -> {current_gear}, RPM={rpm:.0f}, Throttle={throttle:.2f}, Samples={len(self.shift_sounds)}")
+                    except Exception:
+                        pass
                     # Check for powershift (throttle held during shift)
                     is_powershift = throttle >= self.powershift_throttle_threshold
                     
@@ -218,17 +221,25 @@ class GearShiftSound:
         
         try:
             # Stop any currently playing shift sound
-            for sound in self.shift_sounds:
-                sound.stop()
-            
-            # Play the selected shift sound
-            selected_sound = self.shift_sounds[sound_index]
+            for snd, _path in self.shift_sounds:
+                try:
+                    snd.stop()
+                except Exception:
+                    pass
+
+            # Select a random sample from the loaded pool for variety
+            import random
+            selected_sound, selected_path = random.choice(self.shift_sounds)
             coef = audio_volumes.get_value("master") * audio_volumes.get_value("sfx")
-            selected_sound.set_volume(volume*0.02 * coef)
-            selected_sound.play()
-            
-            # print(f"Gear shift: {old_gear} -> {new_gear}, RPM: {rpm:.0f}, Volume: {volume:.2f}")
-            
+            # Increase scaling so shift sounds are audible; keep volume clamped
+            play_vol = max(0.0, min(1.0, volume * coef))
+            try:
+                selected_sound.set_volume(play_vol)
+                selected_sound.play()
+                print(f"[GearShiftSound] Playing sample {selected_path}, vol={play_vol:.3f}")
+            except Exception:
+                print(f"[GearShiftSound] Failed to play sample {selected_path}")
+
         except Exception as e:
             print(f"Error playing gear shift sound: {e}")
     
@@ -285,21 +296,22 @@ class GearShiftSound:
         
         with self._shift_lock:
             if shift_type == "grind":
-                sound_index = min(len(self.shift_sounds) - 1, 2)
                 volume = min(volume, self.gear_grind_volume)
             elif shift_type == "down":
-                sound_index = min(len(self.shift_sounds) - 1, 1)
                 volume = min(volume, self.shift_down_volume)
             else:  # "up"
-                sound_index = 0
                 volume = min(volume, self.shift_up_volume)
-            
+
             try:
                 coef = audio_volumes.get_value("master") * audio_volumes.get_value("sfx")
-                selected_sound = self.shift_sounds[sound_index]
-                selected_sound.set_volume(volume * coef)
+                # pick a random sample for manual triggers too
+                import random
+                selected_sound, selected_path = random.choice(self.shift_sounds)
+                play_vol = max(0.0, min(1.0, volume * coef))
+                selected_sound.set_volume(play_vol)
                 selected_sound.play()
                 self.last_shift_time = current_time
+                print(f"[GearShiftSound] force_shift_sound playing {selected_path}, vol={play_vol:.3f}")
             except Exception as e:
                 print(f"Error playing manual shift sound: {e}")
     
