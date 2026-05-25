@@ -140,10 +140,10 @@ class GearShiftSound:
                 # Only trigger shift sound if enough time has passed
                 if time_since_last_shift >= self.shift_cooldown:
                     # Debug print for each gear change (helps when audio not heard)
-                    try:
-                        print(f"[GearShiftSound] Gear change: {self.last_gear} -> {current_gear}, RPM={rpm:.0f}, Throttle={throttle:.2f}, Samples={len(self.shift_sounds)}")
-                    except Exception:
-                        pass
+                    # try:
+                    #     print(f"[GearShiftSound] Gear change: {self.last_gear} -> {current_gear}, RPM={rpm:.0f}, Throttle={throttle:.2f}, Samples={len(self.shift_sounds)}")
+                    # except Exception:
+                    #     pass
                     # Check for powershift (throttle held during shift)
                     is_powershift = throttle >= self.powershift_throttle_threshold
                     
@@ -236,9 +236,10 @@ class GearShiftSound:
             try:
                 selected_sound.set_volume(play_vol)
                 selected_sound.play()
-                print(f"[GearShiftSound] Playing sample {selected_path}, vol={play_vol:.3f}")
+                # print(f"[GearShiftSound] Playing sample {selected_path}, vol={play_vol:.3f}")
             except Exception:
-                print(f"[GearShiftSound] Failed to play sample {selected_path}")
+                pass
+                # print(f"[GearShiftSound] Failed to play sample {selected_path}")
 
         except Exception as e:
             print(f"Error playing gear shift sound: {e}")
@@ -311,7 +312,7 @@ class GearShiftSound:
                 selected_sound.set_volume(play_vol)
                 selected_sound.play()
                 self.last_shift_time = current_time
-                print(f"[GearShiftSound] force_shift_sound playing {selected_path}, vol={play_vol:.3f}")
+                # print(f"[GearShiftSound] force_shift_sound playing {selected_path}, vol={play_vol:.3f}")
             except Exception as e:
                 print(f"Error playing manual shift sound: {e}")
     

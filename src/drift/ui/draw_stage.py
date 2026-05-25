@@ -1358,7 +1358,7 @@ def _format_time(seconds):
         return f"{seconds:.2f}s"
 
 def get_stats(save_data):
-    map_names = {"1": "Acres Fields", "2": "Cherry Island", "3": "Tutorial"}
+    map_names = {"1": "Acres Fields", "2": "Arctic Apex", "3": "Tutorial"}
     car_names = {"911": "911 SC", "AE86": "AE86 Sprinter", "barracuda": "Barracuda 440", "mustang": "Mustang 289", "r34": "GTR R34", "quattro": "Quattro S1 E2"}
 
     # --- lines ---
