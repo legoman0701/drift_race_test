@@ -1214,6 +1214,7 @@ def main():
         """Reload base track assets and map-scoped caches for the current MAP_NUM."""
         nonlocal track_image, chunked_map, chunked_map_bg, chunked_map_fg
         nonlocal checkpoints, _path_future, _path_future_map_num, _path_poly_map_num, path_poly
+        nonlocal _collision_mesh, penguins
 
         track_image = pygame.image.load(get_track_base_image_path(f"map{const.MAP_NUM}")).convert()
         chunked_map = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=const.TILE_SIZE)
@@ -1231,6 +1232,13 @@ def main():
                 _cp_rects.append(pygame.Rect(cp.get("x", 0), cp.get("y", 0), cp.get("width", 0), cp.get("height", 0)))
             # Load penguin spawns for this map (if any)
             _raw_peng = meta.get("penguins", []) or []
+            # Load collision mesh for this map
+            _raw_mesh = meta.get("collision_mesh", []) or []
+            try:
+                _collision_mesh = CollisionMesh(_raw_mesh) if _raw_mesh else CollisionMesh([])
+                renderer.collision_mesh = _collision_mesh
+            except Exception:
+                _collision_mesh = CollisionMesh([])
             # Try to locate a sprite for penguins in common asset locations
             peng_sprite = None
             try:
@@ -1250,6 +1258,12 @@ def main():
                             peng_sprite = None
             except Exception:
                 peng_sprite = None
+
+            # Debug info about what was loaded for this map
+            try:
+                print(f"[reload_map] map{const.MAP_NUM}: checkpoints={len(_cp_rects)}, penguins={len(_raw_peng)}, collision_polys={len(_raw_mesh)}")
+            except Exception:
+                pass
 
             penguins.clear()
             for p in _raw_peng:
@@ -1281,6 +1295,13 @@ def main():
         if I_AM_HOST and (stage1 == "lobby" or stage1.startswith("mode")) and stage2 == "" and 1 + len(remotes) + len(ai_cars) < _max_p:
             from drift.ui.draw_stage import set_game_option
             set_game_option("ai_amount", len(ai_cars) + 1)
+
+    # Ensure map metadata is loaded now that helper functions are defined
+    try:
+        _reload_current_map_assets()
+        print(f"[MapAssets] Loaded on helpers defined: map{const.MAP_NUM}, penguins={len(penguins)}")
+    except Exception as e:
+        print(f"[MapAssets] Failed to reload current map assets after helpers defined: {e}")
 
     def _sync_ai_count():
         """Spawn or remove AI cars to match game_options ai_amount."""
@@ -1594,6 +1615,16 @@ def main():
                         time_scale = 1.0
                         rewind_history.clear()
                         _prev_stage1 = "lobby"; _return_btn_rect = None; _local_result_sent = False; _ai_results_sent = {}; _start_roster = None
+                        # Clear map runtime state when going to lobby
+                        try:
+                            _collision_mesh = CollisionMesh([])
+                            renderer.collision_mesh = _collision_mesh
+                        except Exception:
+                            pass
+                        try:
+                            penguins.clear()
+                        except Exception:
+                            pass
                         my_car.x, my_car.y = random.randint(100, const.WINDOW_WIDTH - 100), random.randint(100, const.WINDOW_HEIGHT - 100)
                         my_car.vx, my_car.vy = 0.0, 0.0
                         renderer.clear_tire_marks()
@@ -1621,16 +1652,11 @@ def main():
                             new_map_num = const.MAP_NUM
                         if new_map_num != const.MAP_NUM:
                             const.MAP_NUM = new_map_num
-                            track_image = pygame.image.load(get_track_base_image_path(f"map{const.MAP_NUM}")).convert()
-                            chunked_map = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=const.TILE_SIZE)
-                            _bg_root = normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks_bg")
-                            chunked_map_bg = ChunkedMap(root=_bg_root, tile_size=const.TILE_SIZE) if os.path.isdir(_bg_root) else None
-                            _fg_root = normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks_fg")
-                            chunked_map_fg = ChunkedMap(root=_fg_root, tile_size=const.TILE_SIZE, use_alpha=True) if os.path.isdir(_fg_root) else None
-                            renderer.track_image = track_image
-                            renderer.chunked_map = chunked_map
-                            renderer.chunked_map_bg = chunked_map_bg
-                            renderer.chunked_map_fg = chunked_map_fg
+                            # Reload all map-scoped assets and metadata (checkpoints, collision mesh, penguins, start grid)
+                            try:
+                                _reload_current_map_assets()
+                            except Exception:
+                                pass
                             _path_future = None
                             _path_future_map_num = None
                             _path_poly_map_num = None
@@ -1696,16 +1722,11 @@ def main():
 
                 if new_map_num != const.MAP_NUM:
                     const.MAP_NUM = new_map_num
-                    track_image = pygame.image.load(get_track_base_image_path(f"map{const.MAP_NUM}")).convert()
-                    chunked_map = ChunkedMap(root=normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks"), tile_size=const.TILE_SIZE)
-                    _bg_root = normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks_bg")
-                    chunked_map_bg = ChunkedMap(root=_bg_root, tile_size=const.TILE_SIZE) if os.path.isdir(_bg_root) else None
-                    _fg_root = normalize_asset_path("track", f"map{const.MAP_NUM}", "chunks_fg")
-                    chunked_map_fg = ChunkedMap(root=_fg_root, tile_size=const.TILE_SIZE, use_alpha=True) if os.path.isdir(_fg_root) else None
-                    renderer.track_image = track_image
-                    renderer.chunked_map = chunked_map
-                    renderer.chunked_map_bg = chunked_map_bg
-                    renderer.chunked_map_fg = chunked_map_fg
+                    # Reload all map-scoped assets and metadata (checkpoints, collision mesh, penguins, start grid)
+                    try:
+                        _reload_current_map_assets()
+                    except Exception:
+                        pass
                     _path_future = None
                     _path_future_map_num = None
                     _path_poly_map_num = None
@@ -1736,6 +1757,17 @@ def main():
                 rewind_playback = []
                 rewind_playback_idx = 0
                 rewind_playback_active = False
+                # Clear map-specific runtime data when leaving a gameplay mode
+                try:
+                    _collision_mesh = CollisionMesh([])
+                    renderer.collision_mesh = _collision_mesh
+                except Exception:
+                    pass
+                try:
+                    if penguins:
+                        penguins.clear()
+                except Exception:
+                    pass
 
             if stage1.startswith("mode") and game_mode is None:
                 _start_grid = []; _lines = []; _collision_mesh = CollisionMesh([])
@@ -1751,6 +1783,13 @@ def main():
                     pass
 
                 renderer.collision_mesh = _collision_mesh
+                # Force-reload map assets right before creating the game mode to avoid stale metadata
+                try:
+                    _reload_current_map_assets()
+                    print(f"[GameMode] Creating game mode for map{const.MAP_NUM}: start_grid={len(_start_grid)}, checkpoints={len(renderer.checkpoints)}, penguins={len(penguins)}")
+                except Exception:
+                    print(f"[GameMode] Warning: failed to reload map assets prior to game_mode creation for map{const.MAP_NUM}")
+
                 mode_classes = {0: ClassicRace, 1: BestLap, 2: DriftAngleRace}
                 game_mode = mode_classes.get(const.MODE_INDEX)
                 if game_mode:
@@ -1759,12 +1798,24 @@ def main():
 
                 _local_result_sent = False
                 _ai_results_sent = {}
+                # Ensure AI list is up-to-date before constructing the player roster
+                try:
+                    _sync_ai_count()
+                except Exception:
+                    pass
+
                 _mode_players = {my_id: {"car_type": my_car.car_type, "name": my_car.name}}
                 for pid, rd in remotes.items():
                     _mode_players[pid] = {"car_type": rd.get("car_type", "AE86"), "name": rd.get("name", pid)}
                 for i, ai in enumerate(ai_cars, start=1):
                     _mode_players[f"AI-{i}"] = {"car_type": ai.car_type, "name": ai.name}
                 game_mode.on_enter(_mode_players)
+
+                # Ensure AI count is synchronized now (create AI before we assign start positions)
+                try:
+                    _sync_ai_count()
+                except Exception:
+                    pass
 
                 # Use the relay-provided roster for spawn slot assignment so
                 # every client (host & non-host) computes identical positions,
@@ -1776,15 +1827,55 @@ def main():
                     if my_id not in sorted_spawn_ids:
                         sorted_spawn_ids.append(my_id)
                         sorted_spawn_ids.sort()
+                    # Ensure AI and any local mode players are present in the roster
+                    # (relay may omit AI entries; append missing keys deterministically)
+                    try:
+                        for key in sorted(_mode_players.keys()):
+                            if key not in sorted_spawn_ids:
+                                sorted_spawn_ids.append(key)
+                    except Exception:
+                        pass
                 else:
                     sorted_spawn_ids = sorted(_mode_players.keys())
 
+                # Debug: show spawn roster and map start grid
+                try:
+                    print(f"[SpawnDebug] sorted_spawn_ids={sorted_spawn_ids}")
+                    print(f"[SpawnDebug] _mode_players_keys={list(_mode_players.keys())}")
+                    print(f"[SpawnDebug] ai_cars_count={len(ai_cars)}; ai_keys={[f'AI-{i+1}' for i in range(len(ai_cars))]}")
+                    print(f"[SpawnDebug] _start_grid={_start_grid}")
+                except Exception:
+                    pass
+
+                # Force-reload map assets and clear penguins before computing start positions
+                try:
+                    _reload_current_map_assets()
+                except Exception:
+                    pass
+                try:
+                    if penguins:
+                        penguins.clear()
+                except Exception:
+                    pass
+                print(f"[Spawn] Computing start positions for map{const.MAP_NUM}: start_grid={len(_start_grid)}, checkpoints={len(renderer.checkpoints)}, penguins={len(penguins)}")
                 start_positions = game_mode.get_start_positions(sorted_spawn_ids)
+                try:
+                    print(f"[SpawnDebug] start_positions_count={len(start_positions)}")
+                    # Print each assigned start position for the roster
+                    for pid in sorted_spawn_ids:
+                        sp = start_positions.get(pid)
+                        print(f"[SpawnDebug] pid={pid} -> {sp}")
+                except Exception:
+                    pass
                 if my_id in start_positions:
                     sx, sy, sa = start_positions[my_id]
                     my_car.x, my_car.y, my_car.angle = sx, sy, sa
                     my_car.target_angle = sa
                     my_car.vx, my_car.vy = 0.0, 0.0
+                    try:
+                        print(f"[SpawnDebug] Assigned local player {my_id} -> {(sx,sy,sa)}")
+                    except Exception:
+                        pass
                 for i, ai in enumerate(ai_cars, start=1):
                     key = f"AI-{i}"
                     if key in start_positions:
@@ -1792,6 +1883,10 @@ def main():
                         ai.x, ai.y, ai.angle = sx, sy, sa
                         ai.target_angle = sa
                         ai.vx, ai.vy = 0.0, 0.0
+                        try:
+                            print(f"[SpawnDebug] Assigned {key} -> {(sx,sy,sa)}")
+                        except Exception:
+                            pass
 
             if stage1 == "mode_tutorial":
                 tutorial_car_type = "AE86"
@@ -2053,7 +2148,8 @@ def main():
                 # Clear penguins when leaving map2
                 if const.MAP_NUM != 2 and penguins:
                     penguins.clear()
-                if const.MAP_NUM == 2 and not penguins:
+                # Only lazy-load penguins during active gameplay modes, not in lobby/menu
+                if const.MAP_NUM == 2 and not penguins and stage1.startswith("mode"):
                     meta_path = asset_path("track", f"map{const.MAP_NUM}", "map_meta.json")
                     try:
                         with open(meta_path, "r", encoding="utf-8") as fh:
@@ -2079,6 +2175,8 @@ def main():
                         except Exception:
                             peng_sprite = None
 
+                        if _raw_peng:
+                            print(f"[Penguins] Lazy-loading {len(_raw_peng)} penguins for map{const.MAP_NUM} in stage {stage1}")
                         for p in _raw_peng:
                             try:
                                 px = float(p.get("x", 0))
