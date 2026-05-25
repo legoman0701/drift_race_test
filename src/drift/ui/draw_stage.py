@@ -1358,8 +1358,8 @@ def _format_time(seconds):
         return f"{seconds:.2f}s"
 
 def get_stats(save_data):
-    map_names = {"1": "Acres Fields", "2": "Map 2", "3": "Tutorial"}
-    car_names = {"911": "911 SC", "AE86": "AE86 Sprinter", "barracuda": "Barracuda 440", "mustang": "Mustang 289", "r34": "GTR R34"}
+    map_names = {"1": "Acres Fields", "2": "Cherry Island", "3": "Tutorial"}
+    car_names = {"911": "911 SC", "AE86": "AE86 Sprinter", "barracuda": "Barracuda 440", "mustang": "Mustang 289", "r34": "GTR R34", "quattro": "Quattro S1 E2"}
 
     # --- lines ---
     lines = []
@@ -1375,6 +1375,8 @@ def get_stats(save_data):
         lines.append(f"  > Races : {m_data.get('games_played', 0)}")
         bt = m_data.get('best_time')
         lines.append(f"  > Best Lap : {f'{bt:.2f}s' if bt else '--'}")
+        bs = m_data.get('best_score')
+        lines.append(f"  > Best Score : {f'{bs:.2f}/s' if bs else '--'}")
 
     lines.append("")
     lines.append("Cars:")
