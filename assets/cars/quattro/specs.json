@@ -17,7 +17,7 @@
             "height": 1344,
             "wheelbase": 2224
         },
-        "default_pallet": [[231, 231, 231], [242, 183, 5], [120, 83, 60]]
+        "default_palette": [[231, 231, 231], [242, 183, 5], [120, 83, 60]]
     },
     "engine": {
         "type": "2.1L Turbo I5",

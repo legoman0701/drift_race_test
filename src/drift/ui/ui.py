@@ -18,6 +18,7 @@ from drift.ui.draw_stage import (
     set_palette_colors_from_car, handle_audio_keypress, draw_modes_panel,
     handle_modes_keypress,
     get_tutorial_track_key, update_game_setup,
+    draw_palette_editor, handle_palette_editor_event,
 )
 from drift.config.settings import physics_controls, audio_volumes
 
@@ -556,6 +557,8 @@ def draw_stage_ui(ui_surf, stage1, stage1plus, stage2, stage3, save_manager, cod
         else: # Main menu with connection bar at the bottom
             menu_bar_rects = draw_menu(ui_surf, font_medium, stage1plus, save_manager.build_data(audio_volumes, physics_controls))
             _menu_bar_rects_cache = menu_bar_rects
+            if stage1plus == "palette" and car_sprites_cache:
+                draw_palette_editor(ui_surf, font_big, font_medium, font_small, car_sprites_cache, dt)
             draw_header(ui_surf, font_big, font_small, "Menu", fps, host_name, ping_ms)
         draw_footer(ui_surf, font_small)
 
@@ -649,6 +652,14 @@ def handle_game_events(screen, ev, stage1, stage1plus, stage2, stage3, save_mana
                     new_game_rects=None, track_image=None, chunked_map=None, checkpoints=None):
     """Handle game events including new game UI interactions."""
     global _menu_bar_rects_cache, _palette_picker_rects_cache
+
+    # Palette editor — handle all mouse events when the editor is open
+    if stage1 == "menu" and stage1plus == "palette" and stage2 == "":
+        if ev.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEMOTION, pygame.MOUSEBUTTONUP):
+            pal_result = handle_palette_editor_event(ev)
+            if pal_result == "close":
+                stage1plus = ""
+            # Don't return early; let header-button clicks fall through below.
 
     # handle key presses
     if ev.type == pygame.KEYDOWN: # press a key
@@ -765,7 +776,10 @@ def handle_game_events(screen, ev, stage1, stage1plus, stage2, stage3, save_mana
                 stage3 = ""
                 clear_error_message()
             elif action == "toggle_stats":
-                stage1plus = "stats" if not stage1plus else ""
+                stage1plus = "" if stage1plus == "stats" else "stats"
+                clear_error_message()
+            elif action == "toggle_palette":
+                stage1plus = "" if stage1plus == "palette" else "palette"
                 clear_error_message()
         elif stage1 == "lobby" and stage2 == "":
             if _game_rects_cache:

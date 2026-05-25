@@ -42,6 +42,18 @@ _color_palette = {
 }
 _palette_initialized_for_car = None
 
+# ── Palette Editor Panel ──
+_palette_editor_state = {
+    "dragging": None,  # (ckey, channel_str, track_x, track_w) or None
+    "rects": {},
+}
+_PEDIT_W = 820        # panel width
+_PEDIT_H = 480        # panel height
+_PEDIT_PREVIEW_W = 260  # left preview section width
+_PEDIT_SL_W = 280     # slider track width
+_PEDIT_SL_H = 6       # slider track height
+_PEDIT_HL_R = 8       # slider handle radius
+
 # Game options panel state (lobby slide-out menu)
 _game_options = {
     "panel_open": False,
@@ -361,6 +373,276 @@ def handle_palette_picker_keypress(ev):
         _color_palette[color_key] = (r, g, b)
         invalidate_palette_cache()  # Clear cache so changes are visible immediately
         const.PALETTES[const.CAR_ID] = get_palette_colors()
+
+
+# ── Palette Editor Panel ──
+
+def _pedit_apply_value(mx, ckey, channel, track_x, track_w):
+    """Update a single RGB channel from mouse x position on the slider track."""
+    from drift.ui.ui import invalidate_palette_cache as _inval
+    prog = max(0.0, min(1.0, (mx - track_x) / max(1, track_w)))
+    val = int(round(prog * 255))
+    r, g, b = _color_palette[ckey]
+    if channel == "r":
+        _color_palette[ckey] = (val, g, b)
+    elif channel == "g":
+        _color_palette[ckey] = (r, val, b)
+    else:
+        _color_palette[ckey] = (r, g, val)
+    _inval()
+    const.PALETTES[const.CAR_ID] = get_palette_colors()
+
+
+def draw_palette_editor(ui_surf, font_big, font_medium, font_small, car_sprites_cache, dt):
+    """Draw the full-screen palette editor panel over the menu.
+
+    Shows a rotating car preview on the left and RGB sliders for each of the
+    three palette colours on the right.  Returns a rects dict used by
+    handle_palette_editor_event().
+    """
+    from drift.ui.ui import draw_car as _draw_car
+    _update_car_rotation(dt)
+
+    rects = {}
+    PW, PH = _PEDIT_W, _PEDIT_H
+    px = const.WINDOW_WIDTH // 2 - PW // 2
+    py = const.WINDOW_HEIGHT // 2 - PH // 2
+
+    # Translucent full-screen overlay
+    overlay = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 160))
+    ui_surf.blit(overlay, (0, 0))
+
+    # Panel background
+    panel_bg = pygame.Surface((PW, PH), pygame.SRCALPHA)
+    panel_bg.fill((16, 16, 24, 252))
+    ui_surf.blit(panel_bg, (px, py))
+    pygame.draw.rect(ui_surf, (100, 100, 120), (px, py, PW, PH), 1)
+
+    # Title
+    title_surf = font_big.render("Palette Editor", True, (255, 220, 80))
+    ui_surf.blit(title_surf, (px + PW // 2 - title_surf.get_width() // 2, py + 8))
+
+    # Close button (top-right corner of panel)
+    cl_w, cl_h = 80, 28
+    close_rect = pygame.Rect(px + PW - cl_w - 10, py + 8, cl_w, cl_h)
+    pygame.draw.rect(ui_surf, (160, 50, 50), close_rect, border_radius=4)
+    pygame.draw.rect(ui_surf, const.WHITE, close_rect, 1, border_radius=4)
+    cl_lbl = font_small.render("Close", True, const.WHITE_240)
+    ui_surf.blit(cl_lbl, (close_rect.centerx - cl_lbl.get_width() // 2,
+                           close_rect.centery - cl_lbl.get_height() // 2))
+    rects["close"] = close_rect
+
+    # ── Left: rotating car preview ──
+    content_y = py + 44
+    content_h = PH - 50
+    prev_rect = pygame.Rect(px + 16, content_y, _PEDIT_PREVIEW_W, content_h)
+    pygame.draw.rect(ui_surf, (24, 24, 34), prev_rect)
+    pygame.draw.rect(ui_surf, (60, 60, 75), prev_rect, 1)
+
+    # Reset button (top-right of preview box)
+    rst_w, rst_h = 70, 22
+    reset_rect = pygame.Rect(prev_rect.right - rst_w - 4, prev_rect.y + 4, rst_w, rst_h)
+    pygame.draw.rect(ui_surf, (80, 55, 30), reset_rect, border_radius=3)
+    pygame.draw.rect(ui_surf, (180, 130, 60), reset_rect, 1, border_radius=3)
+    rst_lbl = font_small.render("Reset", True, (255, 210, 120))
+    ui_surf.blit(rst_lbl, (reset_rect.centerx - rst_lbl.get_width() // 2,
+                            reset_rect.centery - rst_lbl.get_height() // 2))
+    rects["reset"] = reset_rect
+
+    car_id = _resolve_car_folder(const.CAR_ID)
+    # ── Car selector row at bottom of preview (◀  Name  ▶) ──
+    car_name = _load_car_specs(const.CAR_ID)
+    name_surf = font_medium.render(car_name, True, const.WHITE_240)
+    arr_w, arr_h = 32, 28
+    arr_y = prev_rect.bottom - arr_h - 6
+    # Prev button
+    car_prev_rect = pygame.Rect(prev_rect.x + 4, arr_y, arr_w, arr_h)
+    pygame.draw.rect(ui_surf, (70, 70, 85), car_prev_rect, border_radius=4)
+    pygame.draw.rect(ui_surf, (150, 150, 160), car_prev_rect, 1, border_radius=4)
+    lbl_prev = font_medium.render("<", True, const.WHITE_240)
+    ui_surf.blit(lbl_prev, (car_prev_rect.centerx - lbl_prev.get_width() // 2,
+                             car_prev_rect.centery - lbl_prev.get_height() // 2))
+    rects["car_prev"] = car_prev_rect
+    # Next button
+    car_next_rect = pygame.Rect(prev_rect.right - arr_w - 4, arr_y, arr_w, arr_h)
+    pygame.draw.rect(ui_surf, (70, 70, 85), car_next_rect, border_radius=4)
+    pygame.draw.rect(ui_surf, (150, 150, 160), car_next_rect, 1, border_radius=4)
+    lbl_next = font_medium.render(">", True, const.WHITE_240)
+    ui_surf.blit(lbl_next, (car_next_rect.centerx - lbl_next.get_width() // 2,
+                             car_next_rect.centery - lbl_next.get_height() // 2))
+    rects["car_next"] = car_next_rect
+    # Car name centred between the two buttons
+    ui_surf.blit(name_surf, (prev_rect.centerx - name_surf.get_width() // 2,
+                              arr_y + arr_h // 2 - name_surf.get_height() // 2))
+
+    if car_sprites_cache and car_id in car_sprites_cache:
+        sprites = car_sprites_cache[car_id]
+        if sprites:
+            # Render car at normal size onto a temp surface, then scale 2×
+            # Reserve space for the selector row (arrow buttons + name) at the bottom
+            selector_h = 28 + 10   # arr_h + padding
+            avail_h = max(40, prev_rect.height - selector_h)
+            tmp_w, tmp_h = prev_rect.width, avail_h
+            tmp = pygame.Surface((tmp_w, tmp_h), pygame.SRCALPHA)
+            _draw_car(tmp, tmp_w // 2, tmp_h // 2,
+                      _car_rotation_angle, None,
+                      car_sprites_list=sprites,
+                      palette_colors=get_palette_colors())
+            scaled = pygame.transform.scale2x(tmp)
+            # Crop the scaled surface (2×tmp_w × 2×avail_h) to the preview area,
+            # centred on where the car was drawn.
+            src_rect = pygame.Rect(tmp_w // 2, tmp_h // 2, tmp_w, avail_h)
+            old_clip = ui_surf.get_clip()
+            ui_surf.set_clip(prev_rect)
+            ui_surf.blit(scaled, (prev_rect.x, prev_rect.y + 8), src_rect)
+            ui_surf.set_clip(old_clip)
+
+    # Vertical divider
+    div_x = prev_rect.right + 10
+    pygame.draw.line(ui_surf, (60, 60, 75), (div_x, py + 44), (div_x, py + PH - 10))
+
+    # ── Right: three colour blocks stacked vertically ──
+    right_x = div_x + 14
+    right_w = PW - (div_x - px) - 14 - 10   # available width for slider section
+    block_h = content_h // 3
+
+    color_keys = ["color1", "color2", "color3"]
+    color_labels = ["Color 1", "Color 2", "Color 3"]
+    ch_defs = [("r", 0, (220, 80, 80)),
+               ("g", 1, (80, 200, 80)),
+               ("b", 2, (80, 130, 220))]
+
+    # Slider geometry (fixed for all channels)
+    LABEL_W = 22    # "R" label width reservation
+    VAL_W = 44      # value text reservation on the right
+    TRACK_X = right_x + LABEL_W
+    TRACK_W = min(_PEDIT_SL_W, right_w - LABEL_W - VAL_W)
+
+    for ci, (ckey, clabel) in enumerate(zip(color_keys, color_labels)):
+        by = content_y + ci * block_h
+        cur = _color_palette[ckey]
+
+        # Horizontal separator between blocks
+        if ci > 0:
+            pygame.draw.line(ui_surf, (50, 50, 65), (right_x, by), (right_x + right_w, by))
+
+        # Colour label
+        c_lbl = font_medium.render(clabel, True, const.WHITE_240)
+        ui_surf.blit(c_lbl, (right_x, by + 4))
+
+        # Colour swatch (next to label)
+        sw_x = right_x + c_lbl.get_width() + 10
+        sw_rect = pygame.Rect(sw_x, by + 4, 38, 26)
+        pygame.draw.rect(ui_surf, cur, sw_rect)
+        pygame.draw.rect(ui_surf, const.WHITE, sw_rect, 1)
+
+        # R / G / B sliders
+        slider_y0 = by + 36
+        slider_step = max(24, (block_h - 40) // 3)
+
+        for ch_i, (ch, ch_idx, ch_color) in enumerate(ch_defs):
+            val = cur[ch_idx]
+            ty = slider_y0 + ch_i * slider_step
+
+            # Channel label
+            ch_lbl = font_small.render(ch.upper(), True, ch_color)
+            ui_surf.blit(ch_lbl, (right_x, ty + 2))
+
+            # Track background
+            track_rect = pygame.Rect(TRACK_X, ty + 5, TRACK_W, _PEDIT_SL_H)
+            pygame.draw.rect(ui_surf, (45, 45, 58), track_rect, border_radius=3)
+
+            # Filled portion
+            fill_w = max(0, int(val / 255 * TRACK_W))
+            if fill_w > 0:
+                pygame.draw.rect(ui_surf, ch_color,
+                                 pygame.Rect(TRACK_X, ty + 5, fill_w, _PEDIT_SL_H),
+                                 border_radius=3)
+
+            # Handle circle
+            hx = TRACK_X + fill_w
+            hy = ty + 5 + _PEDIT_SL_H // 2
+            pygame.draw.circle(ui_surf, (200, 200, 210), (hx, hy), _PEDIT_HL_R)
+            pygame.draw.circle(ui_surf, ch_color, (hx, hy), _PEDIT_HL_R - 2)
+
+            # Value text
+            val_lbl = font_small.render(str(val), True, const.WHITE_240)
+            ui_surf.blit(val_lbl, (TRACK_X + TRACK_W + 6, ty))
+
+            # Clickable rect (wider than track for easy interaction)
+            click_rect = pygame.Rect(
+                TRACK_X - _PEDIT_HL_R, ty - 4,
+                TRACK_W + _PEDIT_HL_R * 2, _PEDIT_SL_H + 16
+            )
+            rects[f"slider_{ckey}_{ch}"] = (click_rect, TRACK_X, TRACK_W)
+
+    _palette_editor_state["rects"] = rects
+    return rects
+
+
+def handle_palette_editor_event(event):
+    """Handle mouse events (DOWN / MOTION / UP) for the palette editor.
+
+    Returns "close" when the Close button is clicked, None otherwise.
+    """
+    rects = _palette_editor_state.get("rects", {})
+
+    if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+        # Close button
+        if "close" in rects and rects["close"].collidepoint(event.pos):
+            _palette_editor_state["dragging"] = None
+            return "close"
+        # Reset to spec default
+        if "reset" in rects and rects["reset"].collidepoint(event.pos):
+            const.PALETTES.pop(const.CAR_ID, None)
+            _init_palette_for_selected_car(const.CAR_ID, force=True)
+            return None
+        # Car navigation
+        if "car_prev" in rects and rects["car_prev"].collidepoint(event.pos):
+            total = len(const.AVAILABLE_CARS)
+            if total > 0:
+                try:
+                    idx = const.AVAILABLE_CARS.index(const.CAR_ID)
+                except ValueError:
+                    idx = 0
+                const.CAR_ID = const.AVAILABLE_CARS[(idx - 1) % total]
+                _init_palette_for_selected_car(const.CAR_ID, force=True)
+            return None
+        if "car_next" in rects and rects["car_next"].collidepoint(event.pos):
+            total = len(const.AVAILABLE_CARS)
+            if total > 0:
+                try:
+                    idx = const.AVAILABLE_CARS.index(const.CAR_ID)
+                except ValueError:
+                    idx = 0
+                const.CAR_ID = const.AVAILABLE_CARS[(idx + 1) % total]
+                _init_palette_for_selected_car(const.CAR_ID, force=True)
+            return None
+        # Slider tracks
+        for key, val in rects.items():
+            if not key.startswith("slider_"):
+                continue
+            click_rect, track_x, track_w = val
+            if click_rect.collidepoint(event.pos):
+                # key format: "slider_colorN_ch"
+                parts = key[len("slider_"):].rsplit("_", 1)
+                ckey, ch = parts[0], parts[1]
+                _palette_editor_state["dragging"] = (ckey, ch, track_x, track_w)
+                _pedit_apply_value(event.pos[0], ckey, ch, track_x, track_w)
+                return None
+
+    elif event.type == pygame.MOUSEMOTION:
+        drag = _palette_editor_state.get("dragging")
+        if drag:
+            ckey, ch, track_x, track_w = drag
+            _pedit_apply_value(event.pos[0], ckey, ch, track_x, track_w)
+
+    elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+        _palette_editor_state["dragging"] = None
+
+    return None
+
 
 def draw_lobby(ui_surf, font_big, font_medium, is_host):
     """Draw the game lobby/waiting room with start button (host only)."""
@@ -944,13 +1226,26 @@ def draw_menu(ui_surf, font_medium, stage1plus, save_data):
     w, h = 100, 40
     x, y = const.WINDOW_WIDTH - w - 10, const.TOP_LINE_Y + 10
     stats_rect = pygame.Rect(x, y, w, h)
-    col = const.BLUE_MAT if not stage1plus else const.RED
+    stats_open = (stage1plus == "stats")
+    col = const.RED if stats_open else const.BLUE_MAT
     pygame.draw.rect(ui_surf, col, stats_rect)
-    txt = "Stats" if not stage1plus else "Close"
+    txt = "Close" if stats_open else "Stats"
     stats_text = font_medium.render(txt, True, const.WHITE_240)
     ui_surf.blit(stats_text, (stats_rect.centerx - stats_text.get_width() // 2,
                               stats_rect.centery - stats_text.get_height() // 2))
     rects["stats_btn"] = stats_rect
+
+    # Colors (palette editor) button – sits immediately left of the Stats button
+    cw, ch = 90, 40
+    colors_rect = pygame.Rect(stats_rect.left - cw - 8, const.TOP_LINE_Y + 10, cw, ch)
+    pal_open = (stage1plus == "palette")
+    col2 = const.RED if pal_open else (110, 55, 170)
+    pygame.draw.rect(ui_surf, col2, colors_rect)
+    pygame.draw.rect(ui_surf, const.WHITE, colors_rect, 1)
+    ctxt = font_medium.render("Close" if pal_open else "Colors", True, const.WHITE_240)
+    ui_surf.blit(ctxt, (colors_rect.centerx - ctxt.get_width() // 2,
+                        colors_rect.centery - ctxt.get_height() // 2))
+    rects["colors_btn"] = colors_rect
 
     if stage1plus == "stats":
         scroll_y = _game_setup["scroll_y"]
@@ -1013,6 +1308,8 @@ def handle_menu_bar_click(click_pos, rects):
         return "start_tutorial"
     elif "stats_btn" in rects and rects["stats_btn"].collidepoint(click_pos):
         return "toggle_stats"
+    elif "colors_btn" in rects and rects["colors_btn"].collidepoint(click_pos):
+        return "toggle_palette"
     return None
 
 def scroll_stats_panel(amount, scroll_speed=30):
