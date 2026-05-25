@@ -8,12 +8,12 @@ from drift.core.car import CAR_LEN, CAR_WID
 from drift.core.helpers import clamp
 from drift.ui.ui_helpers import get_cached_text, invalidate_ui_text_cache
 from drift.ui.draw_stage import (
-    draw_menu_connection_bar, draw_settings, draw_error,
-    handle_menu_bar_click, handle_menu_bar_keypress, host_new_game, draw_controls,
+    draw_menu, draw_settings, draw_error,
+    handle_menu_bar_click, handle_menu_bar_keypress, scroll_stats_panel, host_new_game, draw_controls,
     handle_controls_click, handle_controls_keypress, join_new_game,
     get_game_setup, draw_audio_sliders, set_error_message, clear_error_message,
     handle_palette_picker_click, handle_palette_picker_keypress,
-    draw_color_palette_picker, poll_connection, draw_menu,
+    draw_color_palette_picker, poll_connection, draw_lobby,
     draw_game_options_panel, handle_game_options_click, get_game_options,
     set_palette_colors_from_car, handle_audio_keypress, draw_modes_panel,
     handle_modes_keypress,
@@ -24,10 +24,9 @@ from drift.config.settings import physics_controls, audio_volumes
 _car_name_font_cache = {} # car name cache
 _palette_cache = {} # palette color sprite cache
 _menu_bar_rects_cache = None # menu bar rects cache
-_controls_rects_cache = None # key binds rects cache
+_controls_rects_cache = None # controls rects cache
 _palette_picker_rects_cache = None # palette picker rects cache
 _game_rects_cache = None # game rects cache
-_controls_rects_cache = None # controls rects cache
 _game_options_rects_cache = None # game options panel rects cache
 
 # Pending network connection (non-blocking state machine)
@@ -88,7 +87,6 @@ def poll_pending_connection():
         is_host_flag_ref[0] = is_host
         my_car.name = my_name
         my_car.set_car_type(const.CAR_ID)
-        print(f"const.CAR_ID : {const.CAR_ID}")
         set_palette_colors_from_car(my_car.palette_colors)
         invalidate_palette_cache()
         _pad = 100
@@ -104,7 +102,6 @@ def poll_pending_connection():
             return None  # stay in menu, error shown
         my_car.name = my_name
         my_car.set_car_type(const.CAR_ID)
-        print(f"const.CAR_ID : {const.CAR_ID}")
         set_palette_colors_from_car(my_car.palette_colors)
         invalidate_palette_cache()
         _pad = 100
@@ -208,6 +205,7 @@ def _apply_palette_colors(diffuse_surf, palette_surf, palette_colors, sprite_ind
     cache_key = (id(diffuse_surf), id(palette_surf), sprite_index, palette_colors)
     
     # Return cached result if available
+    # print(_palette_cache)
     if cache_key in _palette_cache:
         return _palette_cache[cache_key]
     
@@ -518,9 +516,9 @@ def draw_footer(surface: str, font_small, code=None):
                                  cache_key=(id(font_small), "room_code", room_label))
     surface.blit(code_text, (10, const.WINDOW_HEIGHT - const.BOTTOM_LINE_Y + 5))
 
-def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size, checkpoints, buttons, 
-                  error_msg, my_car, cam, gamepad, font_big, font_medium, font_small,
-                  ai_path_mode_controls, engine_state, fps, dt, is_host, host_name=None, car_sprites_cache=None, room_clients_count=1, ping_ms=None):
+def draw_stage_ui(ui_surf, stage1, stage1plus, stage2, stage3, save_manager, code, world_surf, world_size, checkpoints, buttons, 
+                  error_msg, my_car, cam, gamepad, font_big, font_medium, font_small, ai_path_mode_controls, engine_state,
+                  fps, dt, is_host, host_name=None, car_sprites_cache=None, room_clients_count=1, ping_ms=None):
     """Draw UI elements based on current stage levels (stage1, stage2, stage3).
     
     Stage levels:
@@ -528,9 +526,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
     - stage2: settings
     - stage3: controls | audio | modes
     """
-    global _menu_bar_rects_cache, _controls_rects_cache, _palette_picker_rects_cache, _game_rects_cache, _controls_rects_cache, _game_options_rects_cache
-
-    # print(f"draw_stage_ui before: '{stage3}'")
+    global _menu_bar_rects_cache, _controls_rects_cache, _palette_picker_rects_cache, _game_rects_cache, _game_options_rects_cache
 
     button_results = []
     # click detection
@@ -557,15 +553,14 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
                 _controls_rects_cache = None
                 world_surf, button_results = draw_settings(ui_surf, world_surf, world_size, buttons, [stage1, stage2], font_small, is_host)
                 draw_header(ui_surf, font_big, font_small, "Settings", fps, host_name, ping_ms)
-        else:
-            # Main menu with connection bar at the bottom
-            menu_bar_rects = draw_menu_connection_bar(ui_surf, font_medium)
+        else: # Main menu with connection bar at the bottom
+            menu_bar_rects = draw_menu(ui_surf, font_medium, stage1plus, save_manager.build_data(audio_volumes, physics_controls))
             _menu_bar_rects_cache = menu_bar_rects
             draw_header(ui_surf, font_big, font_small, "Menu", fps, host_name, ping_ms)
         draw_footer(ui_surf, font_small)
 
     elif stage1 == "lobby":
-        _menu_bar_rects_cache = None  # Clear cache when in game
+        _menu_bar_rects_cache = None # Clear cache when in game
         if stage2 == "settings": 
             if stage3 == "controls":
                 controls_rects = draw_controls(ui_surf, font_small)
@@ -584,7 +579,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
             _game_options_rects_cache = None
         else:
             _controls_rects_cache = None  # Clear cache when not in settings
-            game_rects = draw_menu(ui_surf, font_big, font_medium, is_host)
+            game_rects = draw_lobby(ui_surf, font_big, font_medium, is_host)
             _game_rects_cache = game_rects
             # Draw game options panel
             game_options_rects = draw_game_options_panel(
@@ -596,7 +591,7 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
         draw_footer(ui_surf, font_small, code)
 
     elif stage1.startswith("mode"):
-        _menu_bar_rects_cache = None  # Clear cache when in game
+        _menu_bar_rects_cache = None # Clear cache when in game
         if stage2 == "settings":
             if stage3 == "controls":
                 controls_rects = draw_controls(ui_surf, font_small)
@@ -646,15 +641,16 @@ def draw_stage_ui(ui_surf, stage1, stage2, stage3, code, world_surf, world_size,
         draw_header(ui_surf, font_big, font_small, "Error", fps, ping_ms=ping_ms)
         draw_error(ui_surf, error_msg, font_small)
         draw_footer(ui_surf, font_small, code)
-
-    # print(f"draw_stage_ui after: '{stage3}'")
     
     return world_surf, button_results, menu_bar_rects, palette_picker_rects, game_options_rects
 
-def handle_game_events(screen, ev, stage1, stage2, stage3, save_manager, gamepad, remotes, ai_cars, sock, code, my_name, my_id, my_car, font_big, font_small, error_msg, is_host_flag_ref, host_name=None, new_game_rects=None, track_image=None, chunked_map=None, checkpoints=None):
+def handle_game_events(screen, ev, stage1, stage1plus, stage2, stage3, save_manager, gamepad, remotes, ai_cars, sock, 
+                    code, my_name, my_id, my_car, cam, font_small, error_msg, is_host_flag_ref, host_name=None, 
+                    new_game_rects=None, track_image=None, chunked_map=None, checkpoints=None):
     """Handle game events including new game UI interactions."""
     global _menu_bar_rects_cache, _palette_picker_rects_cache
 
+    # handle key presses
     if ev.type == pygame.KEYDOWN: # press a key
         if stage1 == "menu": # in menu
             if stage2 == "": # main menu with connection bar
@@ -696,7 +692,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, save_manager, gamepad
                         stage3 = ""
                 elif stage3 == "" and ev.key == const.ESCAPE_KEY:
                     stage2 = ""
-                    save_manager.save_settings(audio_volumes, physics_controls)
+                    save_manager.save_settings(audio_volumes=audio_volumes, physics_controls=physics_controls)
         elif stage1 in ["lobby", "mode1", "mode2", "mode_tutorial", "leaderboard"]: # in game
             if stage2 == "" and ev.key == const.ESCAPE_KEY: 
                 stage2 = "settings" # open settings
@@ -721,7 +717,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, save_manager, gamepad
                         stage3 = ""  # Go back to settings menu
                 elif stage3 == "" and ev.key == const.ESCAPE_KEY:
                     stage2 = "" # close settings
-                    save_manager.save_settings(audio_volumes, physics_controls)
+                    save_manager.save_settings(audio_volumes=audio_volumes, physics_controls=physics_controls)
             elif stage2 == "":  # In game, not in settings
                 # Handle palette picker key controls
                 handle_palette_picker_keypress(ev)
@@ -749,14 +745,12 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, save_manager, gamepad
     elif ev.type == pygame.MOUSEBUTTONDOWN:
         if stage1 == "menu" and stage2 == "" and _menu_bar_rects_cache:
             action = handle_menu_bar_click(ev.pos, _menu_bar_rects_cache)
-
             if action == "host_game" and not has_pending_connection():
                 setup = get_game_setup()
                 _start_host_connection(my_id, setup, my_car, is_host_flag_ref)
             elif action == "join_game" and not has_pending_connection():
                 setup = get_game_setup()
-                if not setup["room_code"]:
-                    # Fallback to offline lobby
+                if not setup["room_code"]: # Fallback to offline lobby
                     _start_host_connection(my_id, setup, my_car, is_host_flag_ref)
                 else:
                     clear_error_message()
@@ -764,13 +758,14 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, save_manager, gamepad
             elif action == "start_tutorial":
                 track_key = get_tutorial_track_key()
                 update_game_setup(mode="mode_tutorial", track=track_key)
-                try:
-                    const.MAP_NUM = int(str(track_key)[5:])
-                except Exception:
-                    pass
+                try: const.MAP_NUM = int(str(track_key)[5:])
+                except Exception: pass
                 stage1 = "mode_tutorial"
                 stage2 = ""
                 stage3 = ""
+                clear_error_message()
+            elif action == "toggle_stats":
+                stage1plus = "stats" if not stage1plus else ""
                 clear_error_message()
         elif stage1 == "lobby" and stage2 == "":
             if _game_rects_cache:
@@ -806,6 +801,13 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, save_manager, gamepad
             res = handle_controls_click(ev.pos, _controls_rects_cache, gamepad)
             if res and res.startswith("gp_connected_"):
                 stage2 = "" ; stage3 = "" # close controls & settings to confirm connection
+    
+    # Handle mouse clicks
+    elif ev.type == pygame.MOUSEWHEEL:
+        if stage1 == "menu" and stage1plus == "stats" and _menu_bar_rects_cache and _menu_bar_rects_cache["stats_panel"].collidepoint(pygame.mouse.get_pos()): scroll_stats_panel(ev.y)
+        else:
+            cam.zoom *= 1.1 if ev.y > 0 else 0.9
+            cam.zoom = clamp(cam.zoom, 1, 3.0)
 
     if gamepad and gamepad.joystick:
         js = gamepad.joystick
@@ -838,7 +840,7 @@ def handle_game_events(screen, ev, stage1, stage2, stage3, save_manager, gamepad
         physics_controls.handle_slider_events(ev)
         audio_volumes.handle_slider_events(ev)
 
-    return ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map, checkpoints
+    return ev, stage1, stage1plus, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map, checkpoints
 
 def _get_cached_hud_font(font_small: pygame.font.Font, scale: float) -> pygame.font.Font:
     """Get or create a cached scaled font for HUD elements."""

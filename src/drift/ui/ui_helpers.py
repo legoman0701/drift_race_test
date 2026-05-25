@@ -1,4 +1,5 @@
 import pygame
+import drift.config.const as const
 
 # ======= TEXT RENDERING CACHE FOR HEADER/FOOTER =======
 # Pre-rendered text surfaces to avoid expensive font.render() calls every frame

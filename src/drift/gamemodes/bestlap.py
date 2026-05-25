@@ -8,10 +8,6 @@ class BestLap(BaseGameMode):
     def __init__(self, checkpoints, start_grid=None, choice_index=2, lines=None, local_player_id="local", path_poly=None):
         super().__init__(checkpoints, start_grid)
         self.phase = self.PHASE_COUNTDOWN
-        self.countdown_start = 0.0
-        self.countdown_duration = 3.0 # seconds
-        self.cooldown_start = 0.0
-        self.cooldown_duration = 5.0 # seconds
         self.max_time = const.MODES_CHOICES[const.MODE_INDEX][choice_index]
         self.max_players = 6
         self.local_player_id = str(local_player_id)

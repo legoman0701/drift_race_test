@@ -23,6 +23,7 @@ from drift.core.rpm import calc_engine_rpm
 from drift.core.gamepad import Gamepad
 import drift.ui.button as btn
 from drift.ui.ui import handle_game_events, draw_stage_ui, draw_scoreboard, invalidate_ui_text_cache, invalidate_palette_cache, draw_car, poll_pending_connection
+# from drift.ui.ui_helpers import StatsPanel
 from drift.ui.draw_stage import set_palette_colors_from_car, get_palette_colors, get_game_options, get_game_setup, set_game_option
 from drift.ai.ai import ai_algorithme
 import drift.ai.path_finder as path_finder
@@ -775,8 +776,8 @@ def main():
     # ----- Load data -----
     save_manager = SaveManager()
     save_manager.apply_settings(audio_volumes, physics_controls)
-    # ----- Load data -----
-    
+
+    # ----- GPU Display -----
     gpu_display = None
     use_gpu = True  # Set to True to enable GPU rendering with texture reuse
     
@@ -823,6 +824,7 @@ def main():
     shift_sound = loaded_assets["shift_sound"]
 
     stage1 = "menu" # menu | lobby | error | mode1 | mode2 | mode_tutorial
+    stage1plus = "" # stats
     stage2 = "" # settings
     stage3 = "" # controls | audio | modes
     error_msg = ""
@@ -865,10 +867,12 @@ def main():
     host_name = None  # Will be set when hosting or joining
 
     lights_on = False
+    
+    # stats_panel = StatsPanel(font_medium, font_small)
 
     spawnx = random.uniform(const.WINDOW_WIDTH*0.3, const.WINDOW_WIDTH*0.7)
     spawny = random.uniform(const.WINDOW_HEIGHT*0.3, const.WINDOW_HEIGHT*0.7)
-    my_car = Car(spawnx, spawny, my_name, is_ai=False)
+    my_car = Car(spawnx, spawny, my_name, is_ai=False, me=True)
     current_engine_sound_id = my_car.engine_sound_id
     # Set palette colors from car specs
     set_palette_colors_from_car(my_car.palette_colors)
@@ -1087,14 +1091,13 @@ def main():
     def stop_race(sock, code, my_id): # flag1
         nonlocal stage2
         stage2 = ""
-        # print("hi from stop_race located in app.py")
         if not send_stop_race(sock, code, my_id):
             game_mode.force_end_race()
             # game_mode.phase = game_mode.PHASE_COOLDOWN
             # game_mode.cooldown_start = time.monotonic()
 
     def quit_game():
-        save_manager.save_settings(audio_volumes, physics_controls)
+        save_manager.save_settings(audio_volumes=audio_volumes, physics_controls=physics_controls)
         pygame.quit()
         sys.exit(0)
 
@@ -1113,7 +1116,7 @@ def main():
         host_name = None
         host_ref[0] = False
         if game_mode is not None:
-            game_mode.on_exit()
+            game_mode.on_exit(save_manager)
             game_mode = None
         _prev_stage1 = "menu"
         _return_btn_rect = None
@@ -1133,12 +1136,10 @@ def main():
     def handle_audio():
         nonlocal stage3
         stage3 = "audio"
-        # print("hi from handle_audio located in app.py")
     
     def handle_modes():
         nonlocal stage3
         stage3 = "modes"
-        # print("hi from handle_modes located in app.py")
 
     settings_buttons = [ # todo : be able to use '*' like '*/settings' for key binds
     btn.Button("Stop Race", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.25, const.BTN_WIDTH, const.BTN_HEIGHT, const.RED, 
@@ -1233,7 +1234,6 @@ def main():
     def _try_spawn_ai():
         _max_p = game_mode.max_players if game_mode else 6
         if I_AM_HOST and stage1 in ["lobby", "mode1", "mode2"] and stage2 == "" and 1 + len(remotes) + len(ai_cars) < _max_p:
-            from drift.ui.draw_stage import set_game_option
             set_game_option("ai_amount", len(ai_cars) + 1)
 
     def _sync_ai_count():
@@ -1311,7 +1311,7 @@ def main():
                     if engine_audio: engine_audio.stop_all()
                     if shift_sound: shift_sound.stop_all()
                 except Exception: pass
-                save_manager.save_settings(audio_volumes, physics_controls)
+                save_manager.save_settings(audio_volumes=audio_volumes, physics_controls=physics_controls)
                 pygame.quit(); sys.exit(0)
 
             # Keyboard shortcuts (global)
@@ -1330,7 +1330,7 @@ def main():
                     if stage1.startswith("mode") and len(remotes) == 0:
                         # Restart race (solo player only, AI don't count)
                         if game_mode is not None:
-                            game_mode.on_exit(); game_mode = None
+                            game_mode.on_exit(save_manager); game_mode = None
                         renderer.clear_tire_marks()
                         my_car.last_checkpoint_coordinates = None
                         _local_result_sent = False
@@ -1366,9 +1366,9 @@ def main():
                     _try_spawn_ai()
 
             # Camera controls (mouse)
-            if ev.type == pygame.MOUSEWHEEL:
-                cam.zoom *= 1.1 if ev.y > 0 else 0.9
-                cam.zoom = clamp(cam.zoom, 1, 3.0)
+            # if ev.type == pygame.MOUSEWHEEL:
+            #     cam.zoom *= 1.1 if ev.y > 0 else 0.9
+            #     cam.zoom = clamp(cam.zoom, 1, 3.0)
             if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 2:
                 dragging = True
             if ev.type == pygame.MOUSEBUTTONUP and ev.button == 2:
@@ -1377,17 +1377,15 @@ def main():
                 cam.offset[0] -= ev.rel[0] / cam.zoom
                 cam.offset[1] -= ev.rel[1] / cam.zoom
 
-            # print(f"stage3 before handle_game_events: {stage3}")
             map_num_before_ui = const.MAP_NUM
             # Delegate to UI event handler (menus, menu, lobby setup)
-            ev, stage1, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map, checkpoints = handle_game_events(
-                screen, ev, stage1, stage2, stage3, save_manager, gp, remotes, ai_cars, sock, code,
-                my_name, my_id, my_car, font_big, font_small, error_msg, host_ref, host_name,
+            ev, stage1, stage1plus, stage2, stage3, remotes, sock, code, my_car, error_msg, host_name, track_image, chunked_map, checkpoints = handle_game_events(
+                screen, ev, stage1, stage1plus, stage2, stage3, save_manager, gp, remotes, ai_cars, sock, code,
+                my_name, my_id, my_car, cam, font_small, error_msg, host_ref, host_name,
                 track_image=track_image, chunked_map=chunked_map, checkpoints=checkpoints,
             )
             if const.MAP_NUM != map_num_before_ui:
                 _reload_current_map_assets()
-            # print(f"stage3 after: {stage3}")
             I_AM_HOST = host_ref[0]
             engine_audio, current_engine_sound_id = sync_engine_audio_system(
                 engine_audio, audio_initialized, current_engine_sound_id, my_car,
@@ -1399,7 +1397,7 @@ def main():
                     and _return_btn_rect is not None
                     and _return_btn_rect.collidepoint(ev.pos)):
                 if game_mode is not None:
-                    game_mode.on_exit(); game_mode = None
+                    game_mode.on_exit(save_manager); game_mode = None
                 stage1 = "lobby"; _prev_stage1 = "lobby"
                 _return_btn_rect = None; _local_result_sent = False; _ai_results_sent = {}; _start_roster = None
                 my_car.x, my_car.y = random.randint(100, const.WINDOW_WIDTH - 100), random.randint(100, const.WINDOW_HEIGHT - 100)
@@ -1544,7 +1542,7 @@ def main():
                 elif new_mode == "lobby":
                     if stage1 != "lobby":
                         if game_mode is not None:
-                            game_mode.on_exit(); game_mode = None
+                            game_mode.on_exit(save_manager); game_mode = None
                         tutorial_ctrl = None
                         tutorial_frame_state = None
                         time_scale = 1.0
@@ -1663,7 +1661,7 @@ def main():
         if stage1 != _prev_stage1:
             if _prev_stage1.startswith("mode") and game_mode is not None:
                 if stage1 != "leaderboard":
-                    game_mode.on_exit(); game_mode = None
+                    game_mode.on_exit(save_manager); game_mode = None
             if _prev_stage1.startswith("mode") and stage1 != _prev_stage1:
                 tutorial_ctrl = None
                 tutorial_frame_state = None
@@ -1691,7 +1689,6 @@ def main():
                 mode_classes = {0: ClassicRace, 1: BestLap}
                 game_mode = mode_classes.get(const.MODE_INDEX)
                 if game_mode:
-                    # print(get_game_options()["choice"])
                     game_mode = game_mode(renderer.checkpoints or [], start_grid=_start_grid, choice_index=get_game_options()["choice"], 
                                           lines=_lines, local_player_id=my_id, path_poly=path_poly)
 
@@ -1740,7 +1737,7 @@ def main():
                 _init_tutorial_runtime(reset_variant=True)
 
             if _prev_stage1 == "leaderboard" and game_mode is not None:
-                game_mode.on_exit(); game_mode = None
+                game_mode.on_exit(save_manager); game_mode = None
 
             _prev_stage1 = stage1
 
@@ -2025,11 +2022,10 @@ def main():
         ui_checkpoints = renderer.checkpoints
         if game_mode is not None and stage1 in ["mode1", "leaderboard"]:
             ui_checkpoints = []
-            
-        # print(f"stage3 before: {stage3}")
+
         world_surf, button_results, menu_bar_rects, palette_picker_rects, game_options_rects = draw_stage_ui(
-            ui_surf, stage1 if stage1 != "leaderboard" else "mode1",
-            stage2, stage3, code, world_surf, world_size, ui_checkpoints,
+            ui_surf, stage1 if stage1 != "leaderboard" else "mode1", stage1plus, stage2,
+            stage3, save_manager, code, world_surf, world_size, ui_checkpoints,
             settings_buttons, error_msg, my_car, cam, gp, font_big, font_medium, font_small,
             controls, engine_state, fps, dt, I_AM_HOST, host_name, car_sprites_cache,
             room_clients_count=1 + len(remotes),

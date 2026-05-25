@@ -8,10 +8,6 @@ class ClassicRace(BaseGameMode):
     def __init__(self, checkpoints, start_grid=None, choice_index=2, lines=None, local_player_id="local", path_poly=None):
         super().__init__(checkpoints, start_grid)
         self.phase = self.PHASE_COUNTDOWN
-        self.countdown_start = 0.0
-        self.countdown_duration = 3.0 # seconds
-        self.cooldown_start = 0.0
-        self.cooldown_duration = 5.0 # seconds
         self.total_laps = const.MODES_CHOICES[const.MODE_INDEX][choice_index]
         self.max_time = 60.0 * self.total_laps # seconds (60 seconds per lap)
         self.max_players = 6

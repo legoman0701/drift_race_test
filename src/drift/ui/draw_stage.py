@@ -18,6 +18,8 @@ _game_setup = {
     "room_code": "",  # For join game
     "code_active": False,  # For join game code input
     "error_message": None,  # For displaying errors
+    "scroll_y": 0, # scroll position for stats panel
+    "max_scroll": 0 # max scroll_y position
 }
 
 # Controls state
@@ -132,7 +134,6 @@ def _get_illustration_thumbnail(key, thumb_w=120, thumb_h=65):
     except Exception:
         return None
 
-
 def _resolve_car_folder(car_type):
     """Resolve car folder using case-insensitive lookup from available cars."""
     car_str = str(car_type)
@@ -168,11 +169,9 @@ def _load_car_specs(car_type):
         print(f"Warning: Could not load specs for {car_type}: {e}")
         return "Unknown"
 
-
 def _init_palette_for_selected_car(car_type, force=False):
     """Initialize shared palette from selected car default palette in specs."""
     global _palette_initialized_for_car
-
     car_folder = _resolve_car_folder(car_type)
     if not force and _palette_initialized_for_car == car_folder:
         return
@@ -181,7 +180,10 @@ def _init_palette_for_selected_car(car_type, force=False):
         spec_path = normalize_asset_path("cars", car_folder, "specs.json")
         with open(spec_path, "r", encoding="utf-8") as fh:
             specs = json.load(fh)
-        palette = specs.get("specs", {}).get("default_pallet")
+        palette = specs.get("specs", {}).get("default_palette")
+        if car_type in const.PALETTES:
+            custom_palette = const.PALETTES[car_type]
+            if custom_palette is not None: palette = tuple(custom_palette)
         if isinstance(palette, (list, tuple)) and len(palette) >= 3:
             set_palette_colors_from_car(palette)
             from drift.ui.ui import invalidate_palette_cache
@@ -298,6 +300,7 @@ def handle_palette_picker_click(pos, rects):
             _color_palette[color_key] = random_color
             _color_palette["active_picker"] = color_num
             invalidate_palette_cache()  # Clear cache so changes are visible
+            const.PALETTES[const.CAR_ID] = get_palette_colors()
             return color_num
     return None
 
@@ -343,8 +346,9 @@ def handle_palette_picker_keypress(ev):
     if color_changed:
         _color_palette[color_key] = (r, g, b)
         invalidate_palette_cache()  # Clear cache so changes are visible immediately
+        const.PALETTES[const.CAR_ID] = get_palette_colors()
 
-def draw_menu(ui_surf, font_big, font_medium, is_host):
+def draw_lobby(ui_surf, font_big, font_medium, is_host):
     """Draw the game lobby/waiting room with start button (host only)."""
     
     btn_width = const.BTN_WIDTH
@@ -479,7 +483,6 @@ def draw_game_options_panel(ui_surf, font_big, font_medium, font_small, is_host,
 
     return rects
 
-
 def _draw_options_main_page(ui_surf, font_big, font_medium, font_small,
                             is_host, car_sprites_cache, px, py, rects):
     """Draw the main options page content (Car, Map, Mode, AI)."""
@@ -528,7 +531,6 @@ def _draw_options_main_page(ui_surf, font_big, font_medium, font_small,
         ui_surf.blit(arr, (ai_rect.right - arr.get_width() - 10,
                            ai_rect.centery - arr.get_height() // 2))
         rects["nav_ai"] = ai_rect
-
 
 def _draw_item_selector(ui_surf, font_medium, font_small, car_sprites_cache,
                         label, index, items, px, y, rects, prefix,
@@ -608,7 +610,6 @@ def _draw_item_selector(ui_surf, font_medium, font_small, car_sprites_cache,
 
     return y + _SECTION_BOX_H + 8
 
-
 def _draw_options_mode_page(ui_surf, font_big, font_medium, font_small,
                             car_sprites_cache, px, py, rects):
     """Draw Mode Options sub-page content."""
@@ -653,7 +654,6 @@ def _draw_options_mode_page(ui_surf, font_big, font_medium, font_small,
     ui_surf.blit(p_sym, (plus_rect.centerx - p_sym.get_width() // 2,
                           plus_rect.centery - p_sym.get_height() // 2))
     rects["choice_plus"] = plus_rect
-
 
 def _draw_options_ai_page(ui_surf, font_big, font_medium, font_small,
                           px, py, room_clients_count, rects):
@@ -717,7 +717,6 @@ def _draw_options_ai_page(ui_surf, font_big, font_medium, font_small,
         ui_surf.blit(btn_text, (btn_rect.centerx - btn_text.get_width() // 2,
                                  btn_rect.centery - btn_text.get_height() // 2))
         rects[f"diff_{diff.lower()}"] = btn_rect
-
 
 def handle_game_options_click(click_pos, rects, is_host, room_clients_count=1):
     """Handle clicks on the game options panel.
@@ -852,10 +851,10 @@ def _draw_rotating_car(ui_surf, car_id, rect, font_medium, car_sprites_cache, ro
     text_y = rect.top + text_surf.get_height() - 5
     ui_surf.blit(text_surf, (text_x, text_y))
 
-def draw_menu_connection_bar(ui_surf, font_medium):
+def draw_menu(ui_surf, font_medium, stage1plus, save_data):
     """Draw horizontal connection bar at bottom center of menu screen.
 
-    Layout: [Username] [margin] [Code] [Action Button]
+    Layout: [Username] [Code | Button] [Tutorial]
     Action button is orange "Host" when code is empty, green "Join" when code has text.
     Returns dict of rects for click detection.
     """
@@ -916,7 +915,7 @@ def draw_menu_connection_bar(ui_surf, font_medium):
     # 4. Tutorial button (always available, local/offline flow)
     x += action_btn_w + margin
     tutorial_rect = pygame.Rect(x, bar_y, tutorial_btn_w, bar_height)
-    pygame.draw.rect(ui_surf, (70, 120, 230), tutorial_rect)
+    pygame.draw.rect(ui_surf, const.BLUE_MAT, tutorial_rect)
     tutorial_text = font_medium.render("Tutorial", True, const.WHITE_240)
     ui_surf.blit(tutorial_text, (tutorial_rect.centerx - tutorial_text.get_width() // 2,
                                   tutorial_rect.centery - tutorial_text.get_height() // 2))
@@ -926,6 +925,59 @@ def draw_menu_connection_bar(ui_surf, font_medium):
     if _game_setup["error_message"]:
         error_surf = font_medium.render(_game_setup["error_message"], True, (255, 100, 100))
         ui_surf.blit(error_surf, (center_x - error_surf.get_width() // 2, bar_y - 30))
+
+    # Stats button (top right corner, always visible)
+    w, h = 100, 40
+    x, y = const.WINDOW_WIDTH - w - 10, const.TOP_LINE_Y + 10
+    stats_rect = pygame.Rect(x, y, w, h)
+    col = const.BLUE_MAT if not stage1plus else const.RED
+    pygame.draw.rect(ui_surf, col, stats_rect)
+    txt = "Stats" if not stage1plus else "Close"
+    stats_text = font_medium.render(txt, True, const.WHITE_240)
+    ui_surf.blit(stats_text, (stats_rect.centerx - stats_text.get_width() // 2,
+                              stats_rect.centery - stats_text.get_height() // 2))
+    rects["stats_btn"] = stats_rect
+
+    if stage1plus == "stats":
+        scroll_y = _game_setup["scroll_y"]
+        lines = get_stats(save_data)
+        panel_rect = pygame.Rect(const.WINDOW_WIDTH - 310, const.TOP_LINE_Y + 60, 300, 400)
+        rects["stats_panel"] = panel_rect
+
+        # background
+        pygame.draw.rect(ui_surf, const.GREY_20, panel_rect)
+        pygame.draw.rect(ui_surf, const.WHITE, panel_rect, 1)
+        
+        # clip text
+        old_clip = ui_surf.get_clip()
+        ui_surf.set_clip(panel_rect)
+
+        line_height = 26
+        total_content_height = len(lines) * line_height
+        max_scroll = max(0, total_content_height - panel_rect.height + 20)
+        _game_setup["max_scroll"] = max_scroll
+
+        y_offset = panel_rect.y + 10 - scroll_y
+        x_offset = panel_rect.x + 10
+
+        for line in lines:
+            if y_offset > panel_rect.bottom:
+                break
+            if y_offset > panel_rect.top - line_height:
+                color = const.WHITE_240 if not line.startswith("  >") else const.GREY_180
+                txt_surf = font_medium.render(line, True, color)
+                ui_surf.blit(txt_surf, (x_offset, y_offset))
+            y_offset += line_height
+
+        ui_surf.set_clip(old_clip)
+
+        # Draw Scrollbar
+        if max_scroll > 0:
+            bar_rect = pygame.Rect(panel_rect.right - 8, panel_rect.y, 8, panel_rect.height)
+            pygame.draw.rect(ui_surf, (40, 40, 40), bar_rect)
+            thumb_h = max(30, (panel_rect.height / total_content_height) * panel_rect.height)
+            thumb_y = panel_rect.y + (scroll_y / max_scroll) * (panel_rect.height - thumb_h)
+            pygame.draw.rect(ui_surf, (150, 150, 150), (bar_rect.x, thumb_y, bar_rect.width, thumb_h))
 
     return rects
 
@@ -945,7 +997,15 @@ def handle_menu_bar_click(click_pos, rects):
         return "host_game"
     elif "tutorial_btn" in rects and rects["tutorial_btn"].collidepoint(click_pos):
         return "start_tutorial"
+    elif "stats_btn" in rects and rects["stats_btn"].collidepoint(click_pos):
+        return "toggle_stats"
     return None
+
+def scroll_stats_panel(amount, scroll_speed=30):
+    sy = _game_setup["scroll_y"]
+    sy -= amount * scroll_speed # scroll up : amount > 0, scroll down : amount < 0
+    sy = max(0, min(sy, _game_setup["max_scroll"])) # clamp between 0 and max_scroll
+    _game_setup["scroll_y"] = sy
 
 def handle_menu_bar_keypress(event):
     """Handle keyboard input for username and code fields in menu bar."""
@@ -978,10 +1038,45 @@ def handle_menu_bar_keypress(event):
                 if len(_game_setup["room_code"]) < 4:
                     _game_setup["room_code"] += event.unicode.upper()
 
+def _format_time(seconds):
+        if seconds is None: return "--"
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        if h > 0: return f"{h}h{m:02d}"
+        elif m > 0: return f"{m}m{int(seconds % 60):02d}"
+        return f"{seconds:.2f}s"
+
+def get_stats(save_data):
+    map_names = {"1": "Acres Fields", "2": "Map 2", "3": "Tutorial"}
+    car_names = {"911": "911 SC", "AE86": "AE86 Sprinter", "barracuda": "Barracuda", "mustang": "Mustang 289", "r34": "GTR R34"}
+
+    # --- lines ---
+    lines = []
+    stats = save_data.get("stats", {})
+    lines.append(f"Total Races : {stats.get('total_races', 0)}")
+    lines.append(f"Total Playtime : {_format_time(stats.get('total_playtime', 0))}")
+
+    lines.append("")
+    lines.append("Maps:")
+    for m_id, m_data in save_data.get("maps", {}).items():
+        name = map_names.get(m_id, f"Map {m_id}")
+        lines.append(f"  {name}")
+        lines.append(f"  > Races : {m_data.get('games_played', 0)}")
+        bt = m_data.get('best_time')
+        lines.append(f"  > Best Lap : {f'{bt:.2f}s' if bt else '--'}")
+
+    lines.append("")
+    lines.append("Cars:")
+    for c_id, c_data in save_data.get("cars", {}).items():
+        name = car_names.get(c_id, c_id)
+        lines.append(f"  {name}")
+        lines.append(f"  > Races : {c_data.get('games_played', 0)}")
+
+    return lines
+
 def get_game_setup():
     """Get current game setup configuration."""
     return _game_setup.copy()
-
 
 def update_game_setup(mode=None, track=None):
     """Update selected mode/track in shared game setup state."""
@@ -1063,7 +1158,6 @@ def host_new_game(my_id):
         "mode": "host",
     }
 
-
 def join_new_game(my_id):
     """
     Initiate joining an existing game (non-blocking).
@@ -1104,7 +1198,6 @@ def join_new_game(my_id):
         "deadline": time.time() + 1.0,
         "mode": "join",
     }
-
 
 def poll_connection(conn):
     """Poll a pending connection state (non-blocking, call each frame).
@@ -1165,7 +1258,6 @@ def poll_connection(conn):
         return conn
 
     return conn
-
 
 def _finalize_connection(my_name, code, sock, is_host, host_name, error, is_host_mode=True):
     """Load track assets and return the final result tuple."""
