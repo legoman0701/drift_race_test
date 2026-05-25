@@ -61,6 +61,7 @@ _illustration_cache = {}
 _MODE_OPTIONS = [
     ("mode1", "ClassicRace"),
     ("mode2", "BestLap"),
+    ("mode3", "DriftRace"),
 ]
 
 
@@ -126,13 +127,26 @@ def _get_illustration_thumbnail(key, thumb_w=120, thumb_h=65):
     """Get a scaled thumbnail of a map illustration. Cached."""
     if key in _illustration_cache:
         return _illustration_cache[key]
-    try:
-        img = pygame.image.load(normalize_asset_path("illustrations", f"{key}.png")).convert_alpha()
-        thumb = pygame.transform.smoothscale(img, (thumb_w, thumb_h))
-        _illustration_cache[key] = thumb
-        return thumb
-    except Exception:
-        return None
+
+    # Support both human-readable labels (e.g. "Classic Race") and file-style keys
+    # (e.g. "ClassicRace") for illustration asset lookup.
+    candidates = []
+    raw_key = str(key)
+    normalized = "".join(ch for ch in raw_key if ch.isalnum())
+    for name in (raw_key, normalized):
+        if name and name not in candidates:
+            candidates.append(name)
+
+    for candidate in candidates:
+        try:
+            img = pygame.image.load(normalize_asset_path("illustrations", f"{candidate}.png")).convert_alpha()
+            thumb = pygame.transform.smoothscale(img, (thumb_w, thumb_h))
+            _illustration_cache[key] = thumb
+            return thumb
+        except Exception:
+            continue
+
+    return None
 
 def _resolve_car_folder(car_type):
     """Resolve car folder using case-insensitive lookup from available cars."""
@@ -1578,9 +1592,9 @@ def get_color(const_var):
 def draw_modes_panel(ui_surf, stage_path, stage3):
     mode_rects = [
         Button("Follow Cursor", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.45, const.BTN_WIDTH, const.BTN_HEIGHT, get_color(const.CURSOR_FOLLOW), 
-                                [["menu", "settings", "modes"], ["lobby", "settings", "modes"], ["mode1", "settings", "modes"], ["mode2", "settings", "modes"]], lambda: switch_cursor_follow_mode(stage3)),
+                                [["menu", "settings", "modes"], ["lobby", "settings", "modes"], ["mode1", "settings", "modes"], ["mode2", "settings", "modes"], ["mode3", "settings", "modes"]], lambda: switch_cursor_follow_mode(stage3)),
         Button("AI AutoPilot", const.WINDOW_WIDTH//2-const.BTN_WIDTH//2, const.WINDOW_HEIGHT*0.55, const.BTN_WIDTH, const.BTN_HEIGHT, get_color(const.AI_PATH_FOLLOW), 
-                               [["mode1", "settings", "modes"], ["mode2", "settings", "modes"]], lambda: switch_ai_path_mode(stage3))
+                               [["mode1", "settings", "modes"], ["mode2", "settings", "modes"], ["mode3", "settings", "modes"]], lambda: switch_ai_path_mode(stage3))
     ]
     for button in mode_rects: button.draw(ui_surf, stage_path)
     return stage3

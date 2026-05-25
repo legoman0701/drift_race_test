@@ -1,0 +1,42 @@
+{
+    "id": "quattro",
+    "metadata": {
+        "year": 1985,
+        "manufacturer": "Audi",
+        "model": "Sport Quattro S1 E2",
+        "short": "Quattro S1E2",
+        "country": "Germany"
+    },
+    "specs": {
+        "mass": 1090,
+        "horsepower": 480,
+        "drivetrain": "AWD",
+        "dimensions": {
+            "length": 4240,
+            "width": 1860,
+            "height": 1344,
+            "wheelbase": 2224
+        },
+        "default_pallet": [[231, 231, 231], [242, 183, 5], [120, 83, 60]]
+    },
+    "engine": {
+        "type": "2.1L Turbo I5",
+        "sound_id": "i5t",
+        "max_rpm": 8000,
+        "gear_ratios": [3.91, 2.36, 1.69, 1.31, 1.0, 0.79],
+        "final_drive": 3.91
+    },
+    "physics": {
+        "braking": {
+            "max_torque": 5800,
+            "bias": 0.70,
+            "handbrake_force": 0.1
+        },
+        "wheels": {
+            "front_grip": 1.2,
+            "rear_grip": 1.2,
+            "stiffness_factor": 0.96
+        },
+        "cornering_stiffness": 0.98
+    }
+}

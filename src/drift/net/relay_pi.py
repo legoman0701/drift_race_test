@@ -96,6 +96,73 @@ def sendto_json(sock, addr, obj):
     except Exception:
         pass
 
+
+def _encode_world_packet(world):
+    """Encode world snapshot, compacting optional fields to stay under MAX_PACKET."""
+    try:
+        data = json.dumps(world, separators=(",", ":")).encode("utf-8")
+    except Exception:
+        return None
+    if len(data) <= MAX_PACKET:
+        return data
+
+    players = world.get("players", {})
+    if not isinstance(players, dict):
+        players = {}
+
+    keep_sets = [
+        ("x", "y", "a", "vx", "vy", "name", "has_grip", "car_type", "ts", "ps", "pl", "sq", "drift_score"),
+        ("x", "y", "a", "vx", "vy", "name", "car_type", "drift_score"),
+        ("x", "y", "a", "name", "car_type", "drift_score"),
+        ("x", "y", "a", "name"),
+    ]
+
+    for include_results in (True, False):
+        for keep_keys in keep_sets:
+            compact_players = {}
+            for pid, st in players.items():
+                if not isinstance(st, dict):
+                    continue
+                compact_players[pid] = {k: st.get(k) for k in keep_keys if k in st}
+
+            compact_world = {
+                "t": "world",
+                "code": world.get("code", ""),
+                "players": compact_players,
+                "results": world.get("results", {}) if include_results else {},
+                "host_name": world.get("host_name", ""),
+                "host_id": world.get("host_id", ""),
+                "race_started": bool(world.get("race_started", False)),
+                "mode": world.get("mode", "mode1"),
+                "track": world.get("track", "track1"),
+                "choice": world.get("choice", 0),
+            }
+
+            try:
+                data = json.dumps(compact_world, separators=(",", ":")).encode("utf-8")
+            except Exception:
+                continue
+            if len(data) <= MAX_PACKET:
+                return data
+
+    # Last-resort minimal world packet (keeps session alive under extreme load).
+    fallback_world = {
+        "t": "world",
+        "code": world.get("code", ""),
+        "players": {},
+        "results": {},
+        "host_name": world.get("host_name", ""),
+        "host_id": world.get("host_id", ""),
+        "race_started": bool(world.get("race_started", False)),
+        "mode": world.get("mode", "mode1"),
+        "track": world.get("track", "track1"),
+        "choice": world.get("choice", 0),
+    }
+    try:
+        return json.dumps(fallback_world, separators=(",", ":")).encode("utf-8")
+    except Exception:
+        return None
+
 def broadcast_world(sock, code, room): # update world screen
     now = time.time()
     room["last_broadcast"] = now
@@ -111,8 +178,15 @@ def broadcast_world(sock, code, room): # update world screen
         "track": room.get("track", "track1"),
         "choice": room.get("choice", 0),
     }
+    data = _encode_world_packet(world)
+    if data is None:
+        room["dirty"] = False
+        return
     for caddr in list(room["clients"].keys()):
-        sendto_json(sock, caddr, world)
+        try:
+            sock.sendto(data, caddr)
+        except Exception:
+            pass
     room["dirty"] = False
 
 def loop():
@@ -277,6 +351,13 @@ def loop():
                 # pass through sequence number for client-side packet-loss detection
                 "sq": msg.get("sq"),
             }
+            # Optional live drift score published by client/host.
+            try:
+                d = msg.get("drift_score")
+                if d is not None:
+                    st["drift_score"] = round(float(d), 4)
+            except Exception:
+                pass
             # timestamp for pruning stale AI states later
             try:
                 st["last"] = now
@@ -394,6 +475,15 @@ def loop():
                     bval = float(best)
                     if bval >= 0.0:
                         room["results"][pid]["best_lap"] = round(bval, 4)
+            except Exception:
+                pass
+            # include optional drift score if provided by client
+            try:
+                drift_score = msg.get("drift_score")
+                if drift_score is not None:
+                    dval = float(drift_score)
+                    if dval >= 0.0:
+                        room["results"][pid]["drift_score"] = round(dval, 4)
             except Exception:
                 pass
             room["dirty"] = True
