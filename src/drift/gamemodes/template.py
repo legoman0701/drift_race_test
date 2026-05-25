@@ -75,14 +75,18 @@ class BaseGameMode(ABC):
             self.player_states[local_player_id] = PlayerRaceState(local_player_id, name="You", car_type=const.CAR_ID)
 
     def on_exit(self, save_manager):
-        local_ps = self.player_states.get(self.local_player_id)
-        # print(f"local_ps.best_lap_time : {local_ps.best_lap_time if local_ps else 'N/A'}")
-        if local_ps: save_manager.record_race_stats(self.race_time, local_ps.best_lap_time, const.MAP_NUM)
+        pb = self.get_pb()
+        save_manager.record_race_stats(self.race_time, pb, const.MAP_NUM, const.MODE_INDEX)
         self.active = False
         self.leaderboard.clear()
         self.player_states.clear()
         const.AI_PATH_FOLLOW = False
         const.CURSOR_FOLLOW = False
+
+    @abstractmethod
+    def get_pb(self):
+        """return either best lap time or best score depending on the mode"""
+        pass
 
     @abstractmethod
     def update(self, dt, players, my_car, is_host=False):

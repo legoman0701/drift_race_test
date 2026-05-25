@@ -21,7 +21,7 @@ class DriftAngleRace(ClassicRace):
         self.drift_score = 0.0
         self.local_drift_score = 0.0
         self._real_drift_active = False
-
+        
         # Per-player drift state.
         self.player_drift_scores = {}
         self.player_combo_scores = {}
@@ -48,6 +48,9 @@ class DriftAngleRace(ClassicRace):
         self.player_combo_scores = {pid: 0.0 for pid in ids}
         self.player_active_sides = {pid: 0 for pid in ids}
         self.player_real_drift = {pid: False for pid in ids}
+
+    def get_pb(self):
+        return round(self.drift_score / (self.race_time or 1), 2)
 
     def _ensure_player_buckets(self):
         for pid in self.player_states.keys():
@@ -241,7 +244,7 @@ class DriftAngleRace(ClassicRace):
         if not self.sorted:
             self.sort_leaderboard()
             self.sorted = True
-
+        # print(self.race_time)
         result = {}
 
         overlay = pygame.Surface((const.WINDOW_WIDTH, const.WINDOW_HEIGHT), pygame.SRCALPHA)
@@ -255,6 +258,7 @@ class DriftAngleRace(ClassicRace):
         col_name_x = col_rank_x + 70
         col_car_x = col_name_x + 170
         col_score_x = col_car_x + 140
+        col_avg_x = col_score_x + 140
         header_y = 120
 
         for label, lx in [
@@ -262,6 +266,7 @@ class DriftAngleRace(ClassicRace):
             ("Player", col_name_x),
             ("Car", col_car_x),
             ("Drift Score", col_score_x),
+            ("Average", col_avg_x),
         ]:
             hdr = font_medium.render(label, True, const.GREY_200)
             ui_surf.blit(hdr, (lx, header_y))
@@ -274,11 +279,14 @@ class DriftAngleRace(ClassicRace):
             car_s = font_medium.render(ps.car_type, True, const.GREY_200)
             score = int(self.player_drift_scores.get(ps.player_id, 0.0))
             score_s = font_medium.render(str(score), True, (255, 220, 80))
+            avg = score / (ps.finish_time if ps.finish_time else 1)
+            avg_s = font_medium.render(f"{avg:.1f}/s", True, (255, 220, 80))
 
             ui_surf.blit(rank_s, (col_rank_x, row_y))
             ui_surf.blit(name_s, (col_name_x, row_y))
             ui_surf.blit(car_s, (col_car_x, row_y))
             ui_surf.blit(score_s, (col_score_x, row_y))
+            ui_surf.blit(avg_s, (col_avg_x, row_y))
             row_y += 36
 
         if is_host:

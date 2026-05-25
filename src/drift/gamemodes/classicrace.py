@@ -51,6 +51,10 @@ class ClassicRace(BaseGameMode):
         for ps in self.player_states.values():
             ps._lap_start_time = 0.0
 
+    def get_pb(self):
+        local_ps = self.player_states.get(self.local_player_id)
+        return local_ps.best_lap_time
+
     def update(self, dt, players, my_car, is_host=False): # per frame upadte
         """Returns dict with optional 'movement_locked' and 'stage_transition' keys."""
         result = {"movement_locked": False, "stage_transition": None}

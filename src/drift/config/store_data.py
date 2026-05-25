@@ -24,8 +24,8 @@ class SaveManager:
                 "quattro": {"games_played": 0, "palette": None}  
             }, 
             "maps": {
-                "1": {"games_played": 0, "best_time": None}, 
-                "2": {"games_played": 0, "best_time": None}, 
+                "1": {"games_played": 0, "best_time": None, "best_score": None}, 
+                "2": {"games_played": 0, "best_time": None, "best_score": None}
             }
         }
 
@@ -68,21 +68,25 @@ class SaveManager:
                 const.PALETTES[car] = tuple(tuple(c) for c in data["palette"])
 
     # Inside your SaveManager class
-    def record_race_stats(self, race_duration, pb, pb_index):
+    def record_race_stats(self, race_duration, pb, pb_index, mode_index):
         """update stats after a race"""
         data = self.load_settings()
         
         data["stats"]["total_races"] += 1
-        data["stats"]["total_playtime"] += round(race_duration, 2)
+        data["stats"]["total_playtime"] += round(race_duration)
 
         if const.CAR_ID not in data["cars"]: data["cars"][const.CAR_ID] = {"games_played": 0, "palette": None}
         data["cars"][const.CAR_ID]["games_played"] += 1
 
-        if str(pb_index) not in data["maps"]: data["maps"][(str(pb_index))] = {"games_played": 0, "best_time": None}
+        if str(pb_index) not in data["maps"]: data["maps"][(str(pb_index))] = {"games_played": 0, "best_time": None, "best_score": None}
         data["maps"][(str(pb_index))]["games_played"] += 1
 
-        if pb is not None and (data["maps"][str(pb_index)]["best_time"] is None or pb < data["maps"][str(pb_index)]["best_time"]):
-            data["maps"][str(pb_index)]["best_time"] = round(pb, 2)
+        if mode_index in [0, 1]: # classic race, best lap
+            if pb is not None and (data["maps"][str(pb_index)]["best_time"] is None or pb < data["maps"][str(pb_index)]["best_time"]):
+                data["maps"][str(pb_index)]["best_time"] = round(pb, 2)
+        elif mode_index in [2]: # drift race
+            if pb is not None and (data["maps"][str(pb_index)]["best_score"] is None or pb > data["maps"][str(pb_index)]["best_score"]):
+                data["maps"][str(pb_index)]["best_score"] = round(pb)
         
         self.save_settings(data=data)
 
@@ -118,7 +122,8 @@ class SaveManager:
             "maps": {
                 str(index): {
                     "games_played": saved_settings.get("maps", {}).get(str(index), {}).get("games_played", 0),
-                    "best_time": saved_settings.get("maps", {}).get(str(index), {}).get("best_time", None)
+                    "best_time": saved_settings.get("maps", {}).get(str(index), {}).get("best_time", None),
+                    "best_score": saved_settings.get("maps", {}).get(str(index), {}).get("best_score", None)
                 } for index in range(1, const.TOTAL_MAPS +1) # -1 bc of tuto map
             }
         }

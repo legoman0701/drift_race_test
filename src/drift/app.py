@@ -273,7 +273,7 @@ def load_engine_audio_system(audio_initialized, engine_sound_id):
     try:
         if audio_initialized:
             engine_audio = V8EngineAudio(engine_sound_id=engine_sound_id)
-            print(f"Engine audio system initialized for {engine_sound_id}")
+            # print(f"Engine audio system initialized for {engine_sound_id}")
         else:
             print("Audio system disabled due to initialization failure")
     except Exception as e:
