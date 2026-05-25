@@ -1048,7 +1048,7 @@ def _format_time(seconds):
 
 def get_stats(save_data):
     map_names = {"1": "Acres Fields", "2": "Map 2", "3": "Tutorial"}
-    car_names = {"911": "911 SC", "AE86": "AE86 Sprinter", "barracuda": "Barracuda", "mustang": "Mustang 289", "r34": "GTR R34"}
+    car_names = {"911": "911 SC", "AE86": "AE86 Sprinter", "barracuda": "Barracuda 440", "mustang": "Mustang 289", "r34": "GTR R34"}
 
     # --- lines ---
     lines = []
