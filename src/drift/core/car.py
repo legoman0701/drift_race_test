@@ -379,7 +379,7 @@ class Car:
         
         self._init_spring_points(specs_vals)
 
-    def step(self, inputs, dt, players, bounds, cam=None, collision_mesh=None):        
+    def step(self, inputs, dt, players, bounds, cam=None, collision_mesh=None, compute_debug=False):        
         # Use cached specs values (updated only on set_car_type or __init__)
         specs_vals = self._cached_specs_vals
         CAR_LEN = specs_vals["CAR_LEN"]
