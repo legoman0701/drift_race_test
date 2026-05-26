@@ -377,8 +377,8 @@ def _build_edge_segments(polyline, half_width=70):
     left, right = [], []
     n = len(polyline)
     for i in range(n):
-        ax, ay = polyline[i]
-        bx, by = polyline[(i + 1) % n]
+        ax, ay , _= polyline[i]
+        bx, by , _= polyline[(i + 1) % n]
         dx, dy = bx - ax, by - ay
         length = math.hypot(dx, dy)
         if length < 1e-6:
@@ -539,8 +539,8 @@ def _nearest_on_polyline(px, py, poly, hint_seg=0, search_window=60):
     for off in range(search_window * 2 + 1):
         i = (start + off) % n
         j = (i + 1) % n
-        ax, ay = poly[i]
-        bx, by = poly[j]
+        ax, ay, _ = poly[i]
+        bx, by, _ = poly[j]
         vx, vy = bx - ax, by - ay
         denom = vx * vx + vy * vy
         if denom < 1e-8:
@@ -609,8 +609,8 @@ def _relative_angle_to_path_tangent(car_angle, poly, seg_idx, t, lookahead_dista
 def _signed_distance(px, py, poly, seg_idx, t):
     """Signed distance: positive = left of path, negative = right."""
     n = len(poly)
-    ax, ay = poly[seg_idx]
-    bx, by = poly[(seg_idx + 1) % n]
+    ax, ay = poly[seg_idx][0], poly[seg_idx][1]
+    bx, by = poly[(seg_idx + 1) % n][0], poly[(seg_idx + 1) % n][1]
     dx, dy = bx - ax, by - ay
     length = math.hypot(dx, dy)
     if length < 1e-8:
@@ -628,8 +628,8 @@ def _point_in_closed_poly(px, py, poly):
     inside = False
     j = n - 1
     for i in range(n):
-        xi, yi = poly[i]
-        xj, yj = poly[j]
+        xi, yi = poly[i][0], poly[i][1]
+        xj, yj = poly[j][0], poly[j][1]
         if ((yi > py) != (yj > py)) and (px < (xj - xi) * (py - yi) / (yj - yi) + xi):
             inside = not inside
         j = i
