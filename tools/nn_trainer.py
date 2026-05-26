@@ -1029,7 +1029,7 @@ def draw_poly_checkpoints(surface, polyline, checkpoint_segments, scale=0.5):
         return
 
     for cp_idx, seg_idx in enumerate(checkpoint_segments):
-        x, y = polyline[seg_idx]
+        x, y = polyline[seg_idx][0], polyline[seg_idx][1]
         sx = int(x * scale)
         sy = int(y * scale)
 
@@ -1098,8 +1098,8 @@ def draw_debug_view(surface, car, edge_segments, ray_angles_rad, edge_grid,
     for off in range(-40, 41):
         i = (seg_hint + off) % n_poly
         j = (i + 1) % n_poly
-        ax, ay = polyline[i]
-        bx, by = polyline[j]
+        ax, ay = polyline[i][0], polyline[i][1]
+        bx, by = polyline[j][0], polyline[j][1]
         pygame.draw.line(surface, (40, 50, 65), w2s(ax, ay), w2s(bx, by), 1)
 
     # -- virtual checkpoints from polyline --
@@ -1107,7 +1107,7 @@ def draw_debug_view(surface, car, edge_segments, ray_angles_rad, edge_grid,
     if checkpoint_segments:
         next_cp_seg = checkpoint_segments[next_checkpoint_idx % len(checkpoint_segments)]
         for cp_idx, cp_seg in enumerate(checkpoint_segments):
-            cpx, cpy = polyline[cp_seg]
+            cpx, cpy = polyline[cp_seg][0], polyline[cp_seg][1]
             if (cpx - cx_w) ** 2 + (cpy - cy_w) ** 2 > view_r2:
                 continue
             pt = w2s(cpx, cpy)
