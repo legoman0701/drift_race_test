@@ -2610,7 +2610,8 @@ def main():
                 lb_result = game_mode.draw_leaderboard(ui_surf, font_big, font_medium, font_small, I_AM_HOST)
                 _return_btn_rect = lb_result.get("return_btn_rect")
             elif stage1.startswith("mode"):
-                game_mode.draw_hud(ui_surf, cam, font_big, font_medium, font_small)
+                show_timers = not (stage1 == "mode_tutorial")
+                game_mode.draw_hud(ui_surf, cam, font_big, font_medium, font_small, show_timers=show_timers)
 
         if show_frame_analysis:
             draw_frame_analysis(ui_surf, profiler)
