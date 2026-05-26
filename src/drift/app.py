@@ -191,50 +191,6 @@ def _compute_nn_input_for_car(trainer_mod, path_poly, car):
     elif len(obs) < trainer_mod.INPUT_SIZE:
         obs += [0.0] * (trainer_mod.INPUT_SIZE - len(obs))
     return obs
-
-
-def _remap_nn_brake(raw_brake: float) -> float:
-    """Remap NN brake output: values in [0.5,1] -> [0,1]. Below 0.5 => 0."""
-    try:
-        b = float(raw_brake)
-    except Exception:
-        return 0.0
-    if b <= 0.5:
-        return 0.0
-    # linear map from [0.5,1] to [0,1]
-    mapped = (b - 0.5) / 0.5
-    if mapped < 0.0:
-        mapped = 0.0
-    if mapped > 1.0:
-        mapped = 1.0
-    return mapped
-
-
-def _apply_brake_hold_penalty(car, controls: dict, hold_limit: int = 200, throttle_penalty: float = 0.2):
-    """Track consecutive frames where brakes are held and apply a throttle penalty.
-
-    - `controls` is mutated in-place.
-    - when consecutive brake frames > hold_limit, throttle is multiplied by `throttle_penalty`.
-    """
-    try:
-        br = float(controls.get("br", 0.0))
-    except Exception:
-        br = 0.0
-    if not hasattr(car, "_brake_hold_frames"):
-        try:
-            car._brake_hold_frames = 0
-        except Exception:
-            return
-    if br > 0.01:
-        car._brake_hold_frames += 1
-    else:
-        car._brake_hold_frames = 0
-
-    if car._brake_hold_frames > hold_limit:
-        try:
-            controls["th"] = float(controls.get("th", 0.0)) * throttle_penalty
-        except Exception:
-            pass
 from drift.gamemodes.classicrace import ClassicRace
 from drift.gamemodes.bestlap import BestLap
 from drift.gamemodes.driftangle import DriftAngleRace
@@ -1766,14 +1722,7 @@ def main():
                                 else:
                                     use_inp = inp
                                 act = _nn_net.forward(use_inp)
-                                br_mapped = _remap_nn_brake(float(act[2]))
-                                controls = {"th": float(act[0]), "st": float(act[1]), "br": br_mapped}
-                                # if player car is in autopilot (tagged is_ai), apply brake-hold penalty
-                                try:
-                                    if getattr(my_car, 'is_ai', False):
-                                        _apply_brake_hold_penalty(my_car, controls, hold_limit=200, throttle_penalty=0.2)
-                                except Exception:
-                                    pass
+                                controls = {"th": float(act[0]), "st": float(act[1]), "br": float(act[2])}
                                 ai_controls_ok = True
                                 ai_debug_surface = _ai_debug_surf
                             except Exception:
@@ -2424,18 +2373,11 @@ def main():
                                         use_inp = inp[:_nn_input_size]
                                     else:
                                         use_inp = inp
-                                        act = _nn_net.forward(use_inp)
-                                        # remap brake channel and store mapped value
-                                        br_mapped = _remap_nn_brake(float(act[2]))
-                                        ai._nn_last_action = {"th": float(act[0]), "st": float(act[1]), "br": br_mapped}
+                                    act = _nn_net.forward(use_inp)
+                                    ai._nn_last_action = {"th": float(act[0]), "st": float(act[1]), "br": float(act[2])}
                                 else:
                                     print("[nn] using cached action")
                                 ai_controls = ai._nn_last_action
-                                # track brake hold frames and apply penalty if needed
-                                try:
-                                    _apply_brake_hold_penalty(ai, ai_controls, hold_limit=200, throttle_penalty=0.2)
-                                except Exception:
-                                    pass
                             except Exception as e:
                                 print(f"[nn] inference error: {e}")
                                 ai_controls = None

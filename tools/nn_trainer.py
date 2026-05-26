@@ -85,6 +85,9 @@ LOOKAHEAD_DIST_1 = 300.0
 LOOKAHEAD_DIST_2 = 600.0
 LOOKAHEAD_DIST_3 = 900.0
 DEAD_FRAME_PENALTY = -200.0 * REWARD_SCALE
+# Penalty applied per frame when brake is held continuously beyond threshold
+BRAKE_HOLD_THRESHOLD_FRAMES = 200
+BRAKE_HOLD_PENALTY_PER_FRAME = 10.0 * REWARD_SCALE
 
 # Available car types (folder names under assets/cars/)
 CAR_TYPES = ["911", "AE86", "barracuda", "mustang", "r34"]
@@ -729,6 +732,7 @@ class TrainingEnv:
         self.car_oob_frames = []
         self.car_alive = []
         self.smoothed_actions = []    # low-pass filtered inputs per car
+        self.car_brake_frames = []    # consecutive frames the brake was held
         self.debug_car_idx = -1       # index of car that gets compute_debug=True
         self.epoch_car_type = None
 
@@ -747,6 +751,7 @@ class TrainingEnv:
         self.car_oob_frames = [0] * self.num_cars
         self.car_alive = [True] * self.num_cars
         self.smoothed_actions = [np.array([0.0, 0.0, 0.0]) for _ in range(self.num_cars)]
+        self.car_brake_frames = [0] * self.num_cars
 
         # Find the closest polyline segment to the spawn (full search, once)
         _, _, spawn_seg, _, _ = _nearest_on_polyline(
@@ -812,9 +817,15 @@ class TrainingEnv:
             return DEAD_FRAME_PENALTY, np.zeros(INPUT_SIZE, dtype=np.float32), False, self.in_bounds[i], 0, self.car_prev_seg[i]
 
         # Low-pass filter the raw NN output
+        # Remap brake neuron: only values in [0.5..1] map to brake [0..1]
+        b_raw = float(np.clip(action[2], 0, 1))
+        if b_raw <= 0.5:
+            b_mapped = 0.0
+        else:
+            b_mapped = (b_raw - 0.5) * 2.0
         raw = np.array([float(np.clip(action[0], -1, 1)),
                         float(np.clip(action[1], -1, 1)),
-                        float(np.clip(action[2], 0, 1))])
+                        float(np.clip(b_mapped, 0, 1))])
         prev = self.smoothed_actions[i]
         smoothed = prev + INPUT_ALPHA * (raw - prev)
         self.smoothed_actions[i] = smoothed
@@ -932,6 +943,18 @@ class TrainingEnv:
 
         if not alive and not wrong_way_kill:
             reward -= 2000.0 * REWARD_SCALE
+
+        # Update brake-hold counter and apply penalty if held too long
+        try:
+            if inp["br"] > 0.0:
+                self.car_brake_frames[i] += 1
+            else:
+                self.car_brake_frames[i] = 0
+        except Exception:
+            self.car_brake_frames[i] = 0
+
+        if self.car_brake_frames[i] > BRAKE_HOLD_THRESHOLD_FRAMES:
+            reward -= BRAKE_HOLD_PENALTY_PER_FRAME
 
         if not ib and not wrong_way_kill:
             reward = 0.0
