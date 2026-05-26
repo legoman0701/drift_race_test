@@ -33,15 +33,15 @@ def _load_network_from_pickle(path, trainer_mod):
     with open(path, "rb") as f:
         d = pickle.load(f)
     arch = d.get("arch") or d.get("architecture") or {}
-    in_s = arch.get("in") or arch.get("input_size") or trainer_mod.INPUT_SIZE
+    saved_in = arch.get("in") or arch.get("input_size") or trainer_mod.INPUT_SIZE
     hid = arch.get("hidden") or arch.get("hidden_sizes") or list(trainer_mod.HIDDEN_SIZES)
     out_s = arch.get("out") or arch.get("output_size") or trainer_mod.OUTPUT_SIZE
-    net = trainer_mod.NeuralNetwork(in_s, list(hid), out_s)
+    net = trainer_mod.NeuralNetwork(saved_in, list(hid), out_s)
     net.set_weights(d["weights"])
-    return net
+    return net, int(saved_in)
 
 
-def evaluate(net, trainer_mod, map_num=None, episodes=5):
+def evaluate(net, trainer_mod, map_num=None, episodes=5, net_input_size=None):
     if map_num is None:
         map_num = trainer_mod.const.MAP_NUM
 
@@ -77,7 +77,19 @@ def evaluate(net, trainer_mod, map_num=None, episodes=5):
         left_edge, right_edge = trainer_mod._build_edge_segments(polyline, half_width=70)
         edge_segs = trainer_mod._segments_from_polyline(left_edge) + trainer_mod._segments_from_polyline(right_edge)
         while True:
-            action = net.forward(obs[0])
+            inp = obs[0]
+            # adapt observation size to network's expected input size
+            if net_input_size is not None:
+                if len(inp) >= net_input_size:
+                    use_inp = inp[:net_input_size]
+                else:
+                    # pad with zeros
+                    pad = [0.0] * (net_input_size - len(inp))
+                    use_inp = list(inp) + pad
+            else:
+                use_inp = inp
+
+            action = net.forward(use_inp)
             actions = [action]
             obs, rewards, done = env.step(actions)
             total_reward += float(rewards[0])
@@ -163,9 +175,9 @@ def main():
         return
 
     print(f"Loading model: {MODEL_PATH}")
-    net = _load_network_from_pickle(MODEL_PATH, trainer_mod)
+    net, net_input_size = _load_network_from_pickle(MODEL_PATH, trainer_mod)
     print("Starting evaluation...")
-    evaluate(net, trainer_mod, map_num=MAP_NUM, episodes=EPISODES)
+    evaluate(net, trainer_mod, map_num=MAP_NUM, episodes=EPISODES, net_input_size=net_input_size)
 
 
 if __name__ == "__main__":
