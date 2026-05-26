@@ -559,8 +559,8 @@ def _nearest_on_polyline(px, py, poly, hint_seg=0, search_window=60):
 def _path_tangent_angle(poly, seg_idx):
     """Angle of the tangent at segment seg_idx."""
     n = len(poly)
-    ax, ay = poly[seg_idx]
-    bx, by = poly[(seg_idx + 1) % n]
+    ax, ay = poly[seg_idx][0], poly[seg_idx][1]
+    bx, by = poly[(seg_idx + 1) % n][0], poly[(seg_idx + 1) % n][1]
     return math.atan2(by - ay, bx - ax)
 
 
@@ -579,8 +579,8 @@ def _advance_along_polyline(poly, seg_idx, t, distance):
     remaining = max(0.0, float(distance))
 
     while True:
-        ax, ay = poly[i]
-        bx, by = poly[(i + 1) % n]
+        ax, ay = poly[i][0], poly[i][1]
+        bx, by = poly[(i + 1) % n][0], poly[(i + 1) % n][1]
         dx, dy = bx - ax, by - ay
         seg_len = math.hypot(dx, dy)
         if seg_len < 1e-8:
