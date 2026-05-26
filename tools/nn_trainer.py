@@ -77,7 +77,7 @@ _SQRT2            = math.sqrt(2)       # undo isometric Y compensation from car.
 # === GLOBAL REWARD SCALING ===
 REWARD_SCALE = 1.0 / 1000.0
 
-CHECKPOINT_REWARD = 20.0 * REWARD_SCALE
+CHECKPOINT_REWARD = 50.0 * REWARD_SCALE
 ## Drift reward/penalty removed
 WRONG_WAY_ANGLE_THRESHOLD = math.pi * 0.75
 WRONG_WAY_KILL_PENALTY = 4000.0 * REWARD_SCALE
@@ -340,9 +340,13 @@ def _downsample_polyline(pts, min_dist=12.0):
 
 
 def _load_path_polyline(map_num=1):
-    """Discover the track center-line polyline (same algorithm as path_finder)."""
-    from drift.ai.path_finder import discover_track
-    img_path = str(normalize_asset_path("track", f"map{map_num}", "main.png"))
+    """Discover the track center-line polyline (same algorithm as path_finder).
+
+    Use the asynchronous discovery implementation (`discover_track_async`) to
+    avoid the synchronous variant's end-of-loop rotation glitch.
+    """
+    from drift.ai.path_finder import discover_track_async
+    img_path = str(normalize_asset_path("track", f"map{map_num}", "main_tr.png"))
 
     # Load map_meta for start position
     meta_path = normalize_asset_path("track", f"map{map_num}", "map_meta.json")
@@ -351,17 +355,27 @@ def _load_path_polyline(map_num=1):
 
     starts = meta.get("start", [])
     if starts:
-        sx, sy = starts[0]["x"], starts[0]["y"]
-        sa = math.degrees(starts[0].get("a", math.pi / 2))
+        sx = sum(s.get("x", 0.0) for s in starts) / len(starts)
+        sy = sum(s.get("y", 0.0) for s in starts) / len(starts)
+        sa = math.degrees(sum(s.get("a", math.pi / 2) for s in starts) / len(starts))
     else:
         sx, sy, sa = 220, 1700, 90
 
     print(f"  Discovering track polyline from map{map_num} ...")
-    poly = discover_track(img_path, start_pos=(sx, sy), start_angle=sa,
-                          sample_rate=4, max_iterations=20000)
+    # Use the async discovery helper to avoid the synchronous discovery's
+    # end-of-loop rotation glitch. This returns a Future; wait for result.
+    try:
+        # Use a larger iteration limit (default used elsewhere) to ensure
+        # the discovery probe has enough steps to align correctly.
+        fut = discover_track_async(img_path, start_pos=(sx, sy), start_angle=sa, max_iterations=10000)
+        poly = fut.result(timeout=60)
+    except Exception as e:
+        # Fall back to the synchronous call if async discovery fails for any reason
+        from drift.ai.path_finder import discover_track
+        print(f"  async discovery failed: {e}; falling back to sync discover_track()")
+        poly = discover_track(img_path, start_pos=(sx, sy), start_angle=sa, max_iterations=10000)
     print(f"  Raw polyline: {len(poly)} points")
-    poly = _downsample_polyline(poly, min_dist=12.0)
-    print(f"  Downsampled:  {len(poly)} points")
+    print(poly)
     return poly, meta
 
 
@@ -377,8 +391,8 @@ def _build_edge_segments(polyline, half_width=70):
     left, right = [], []
     n = len(polyline)
     for i in range(n):
-        ax, ay , _= polyline[i]
-        bx, by , _= polyline[(i + 1) % n]
+        ax, ay , _ = polyline[i]
+        bx, by , _ = polyline[(i + 1) % n]
         dx, dy = bx - ax, by - ay
         length = math.hypot(dx, dy)
         if length < 1e-6:
@@ -559,8 +573,8 @@ def _nearest_on_polyline(px, py, poly, hint_seg=0, search_window=60):
 def _path_tangent_angle(poly, seg_idx):
     """Angle of the tangent at segment seg_idx."""
     n = len(poly)
-    ax, ay = poly[seg_idx][0], poly[seg_idx][1]
-    bx, by = poly[(seg_idx + 1) % n][0], poly[(seg_idx + 1) % n][1]
+    ax, ay, _ = poly[seg_idx]
+    bx, by, _ = poly[(seg_idx + 1) % n]
     return math.atan2(by - ay, bx - ax)
 
 
@@ -571,7 +585,7 @@ def _advance_along_polyline(poly, seg_idx, t, distance):
     """
     n = len(poly)
     if n < 2:
-        ax, ay = poly[0]
+        ax, ay, _ = poly[0]
         return ax, ay, 0, 0.0
 
     i = seg_idx % n
@@ -579,8 +593,8 @@ def _advance_along_polyline(poly, seg_idx, t, distance):
     remaining = max(0.0, float(distance))
 
     while True:
-        ax, ay = poly[i][0], poly[i][1]
-        bx, by = poly[(i + 1) % n][0], poly[(i + 1) % n][1]
+        ax, ay, _ = poly[i]
+        bx, by, _ = poly[(i + 1) % n]
         dx, dy = bx - ax, by - ay
         seg_len = math.hypot(dx, dy)
         if seg_len < 1e-8:
@@ -609,8 +623,8 @@ def _relative_angle_to_path_tangent(car_angle, poly, seg_idx, t, lookahead_dista
 def _signed_distance(px, py, poly, seg_idx, t):
     """Signed distance: positive = left of path, negative = right."""
     n = len(poly)
-    ax, ay = poly[seg_idx][0], poly[seg_idx][1]
-    bx, by = poly[(seg_idx + 1) % n][0], poly[(seg_idx + 1) % n][1]
+    ax, ay, _ = poly[seg_idx]
+    bx, by, _ = poly[(seg_idx + 1) % n]
     dx, dy = bx - ax, by - ay
     length = math.hypot(dx, dy)
     if length < 1e-8:
@@ -628,8 +642,8 @@ def _point_in_closed_poly(px, py, poly):
     inside = False
     j = n - 1
     for i in range(n):
-        xi, yi = poly[i][0], poly[i][1]
-        xj, yj = poly[j][0], poly[j][1]
+        xi, yi, _ = poly[i]
+        xj, yj, _ = poly[j]
         if ((yi > py) != (yj > py)) and (px < (xj - xi) * (py - yi) / (yj - yi) + xi):
             inside = not inside
         j = i
@@ -893,7 +907,7 @@ class TrainingEnv:
         reward = 0.0
         wrong_way_kill = False
         #reward += seg_advance * 5.0 * REWARD_SCALE
-        reward += (fwd*3.0 if fwd > 0 else fwd * 7.0) * REWARD_SCALE
+        reward += (fwd*6.0 if fwd > 0 else fwd * 7.0) * REWARD_SCALE
         reward += checkpoint_reward
         reward -= abs(dist_from_path) * REWARD_SCALE
         if abs_angle_diff > WRONG_WAY_ANGLE_THRESHOLD:
@@ -1029,7 +1043,7 @@ def draw_poly_checkpoints(surface, polyline, checkpoint_segments, scale=0.5):
         return
 
     for cp_idx, seg_idx in enumerate(checkpoint_segments):
-        x, y = polyline[seg_idx][0], polyline[seg_idx][1]
+        x, y, _ = polyline[seg_idx]
         sx = int(x * scale)
         sy = int(y * scale)
 
@@ -1098,8 +1112,8 @@ def draw_debug_view(surface, car, edge_segments, ray_angles_rad, edge_grid,
     for off in range(-40, 41):
         i = (seg_hint + off) % n_poly
         j = (i + 1) % n_poly
-        ax, ay = polyline[i][0], polyline[i][1]
-        bx, by = polyline[j][0], polyline[j][1]
+        ax, ay, _ = polyline[i]
+        bx, by, _ = polyline[j]
         pygame.draw.line(surface, (40, 50, 65), w2s(ax, ay), w2s(bx, by), 1)
 
     # -- virtual checkpoints from polyline --
@@ -1107,7 +1121,7 @@ def draw_debug_view(surface, car, edge_segments, ray_angles_rad, edge_grid,
     if checkpoint_segments:
         next_cp_seg = checkpoint_segments[next_checkpoint_idx % len(checkpoint_segments)]
         for cp_idx, cp_seg in enumerate(checkpoint_segments):
-            cpx, cpy = polyline[cp_seg][0], polyline[cp_seg][1]
+            cpx, cpy, _ = polyline[cp_seg]
             if (cpx - cx_w) ** 2 + (cpy - cy_w) ** 2 > view_r2:
                 continue
             pt = w2s(cpx, cpy)

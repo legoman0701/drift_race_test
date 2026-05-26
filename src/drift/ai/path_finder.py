@@ -143,8 +143,8 @@ def _discovery_steps(raycast_fn, start_pos, start_angle, sample_rate, max_iterat
         )
 
     for iteration in range(max_iterations):
-        left_angle  = angle - 70
-        right_angle = angle + 70
+        left_angle  = angle - 50
+        right_angle = angle + 50
         left_dist   = raycast_fn((fx, fy), left_angle)
         right_dist  = raycast_fn((fx, fy), right_angle)
         left_width  = raycast_fn((fx, fy), angle - 90)

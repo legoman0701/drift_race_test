@@ -1,0 +1,44 @@
+{
+    "header" : {
+	    "version" : 1
+    },
+    "eventName" : "event:>Engine>mod_engine",
+    "samples" :
+    [
+	    [
+		    ["art/sound/engine/v8ferrari_1_eng/1000.wav", 1000],
+		    ["art/sound/engine/v8ferrari_1_eng/1500.wav", 1500],
+		    ["art/sound/engine/v8ferrari_1_eng/2000.wav", 2000],
+		    ["art/sound/engine/v8ferrari_1_eng/3000.wav", 3000],
+		    ["art/sound/engine/v8ferrari_1_eng/3500.wav", 3500],
+		    ["art/sound/engine/v8ferrari_1_eng/4000.wav", 4000],
+		    ["art/sound/engine/v8ferrari_1_eng/4500.wav", 4500],
+		    ["art/sound/engine/v8ferrari_1_eng/5000.wav", 5000],
+		    ["art/sound/engine/v8ferrari_1_eng/5500.wav", 5500],
+		    ["art/sound/engine/v8ferrari_1_eng/6000.wav", 6000],
+		    ["art/sound/engine/v8ferrari_1_eng/6500.wav", 6500],
+		    ["art/sound/engine/v8ferrari_1_eng/7000.wav", 7000],
+		    ["art/sound/engine/v8ferrari_1_eng/7500.wav", 7500],
+		    ["art/sound/engine/v8ferrari_1_eng/8000.wav", 8000],
+		    ["art/sound/engine/v8ferrari_1_eng/9000.wav", 9000]
+	    ]
+	    ,
+	    [
+		    ["art/sound/engine/v8ferrari_1_eng/1000.wav", 1000],
+		    ["art/sound/engine/v8ferrari_1_eng/1500.wav", 1500],
+		    ["art/sound/engine/v8ferrari_1_eng/2000.wav", 2000],
+		    ["art/sound/engine/v8ferrari_1_eng/3000.wav", 3000],
+		    ["art/sound/engine/v8ferrari_1_eng/3500.wav", 3500],
+		    ["art/sound/engine/v8ferrari_1_eng/4000.wav", 4000],
+		    ["art/sound/engine/v8ferrari_1_eng/4500.wav", 4500],
+		    ["art/sound/engine/v8ferrari_1_eng/5000.wav", 5000],
+		    ["art/sound/engine/v8ferrari_1_eng/5500.wav", 5500],
+		    ["art/sound/engine/v8ferrari_1_eng/6000.wav", 6000],
+		    ["art/sound/engine/v8ferrari_1_eng/6500.wav", 6500],
+		    ["art/sound/engine/v8ferrari_1_eng/7000.wav", 7000],
+		    ["art/sound/engine/v8ferrari_1_eng/7500.wav", 7500],
+		    ["art/sound/engine/v8ferrari_1_eng/8000.wav", 8000],
+		    ["art/sound/engine/v8ferrari_1_eng/9000.wav", 9000]
+	    ]
+    ]
+}

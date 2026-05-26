@@ -27,6 +27,214 @@ from drift.ui.ui import handle_game_events, draw_stage_ui, draw_scoreboard, inva
 from drift.ui.draw_stage import set_palette_colors_from_car, get_palette_colors, get_game_options, get_game_setup, set_game_option
 from drift.ai.ai import ai_algorithme
 import drift.ai.path_finder as path_finder
+import importlib.util
+import pickle
+
+# Neural-net AI (lazy-loaded for Hard difficulty)
+_nn_trainer_mod = None
+_nn_net = None
+_nn_input_size = None
+_nn_loaded = False
+_nn_frame_counter = 0
+
+
+def _ensure_nn_loaded():
+    """Load trainer module and network from ai_models/best_network.pkl if present."""
+    global _nn_trainer_mod, _nn_net, _nn_input_size, _nn_loaded
+    if _nn_loaded:
+        return _nn_net is not None
+    _nn_loaded = True
+    try:
+        # load trainer module from tools/nn_trainer.py (same as nn_tester)
+        path = os.path.join(os.path.dirname(__file__), "..", "..", "tools", "nn_trainer.py")
+        path = os.path.normpath(path)
+        spec = importlib.util.spec_from_file_location("nn_trainer_module", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _nn_trainer_mod = mod
+        print(f"[nn] trainer module loaded from: {path}")
+
+        model_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "ai_models", "best_network.pkl")
+        if not os.path.exists(model_path):
+            print(f"[nn] model file not found: {model_path}")
+            return False
+        with open(model_path, "rb") as f:
+            d = pickle.load(f)
+        arch = d.get("arch") or d.get("architecture") or {}
+        saved_in = arch.get("in") or arch.get("input_size") or mod.INPUT_SIZE
+        hid = arch.get("hidden") or arch.get("hidden_sizes") or list(mod.HIDDEN_SIZES)
+        out_s = arch.get("out") or arch.get("output_size") or mod.OUTPUT_SIZE
+        net = mod.NeuralNetwork(saved_in, list(hid), out_s)
+        net.set_weights(d["weights"])
+        _nn_net = net
+        _nn_input_size = int(saved_in)
+        print(f"[nn] loaded network: {model_path} (input_size={_nn_input_size})")
+        return True
+    except Exception as e:
+        print(f"[nn] load error: {e}")
+        _nn_trainer_mod = None
+        _nn_net = None
+        _nn_input_size = None
+        return False
+
+
+def _compute_nn_input_for_car(trainer_mod, path_poly, car):
+    """Build the NN input vector for `car` matching trainer's observation layout."""
+    import math
+    # Ensure path_poly entries are (x,y,angle). Some code paths may provide (x,y).
+    def _normalize_poly(poly):
+        if not poly:
+            return poly
+        need_norm = any(len(p) < 3 for p in poly)
+        if not need_norm:
+            return poly
+        n = len(poly)
+        new = []
+        for i, p in enumerate(poly):
+            if len(p) >= 3:
+                new.append((float(p[0]), float(p[1]), float(p[2])))
+            else:
+                x, y = float(p[0]), float(p[1])
+                # try next point for tangent, fall back to previous
+                nx, ny = None, None
+                try:
+                    np = poly[(i + 1) % n]
+                    nx, ny = float(np[0]), float(np[1])
+                except Exception:
+                    try:
+                        pp = poly[i - 1]
+                        nx, ny = float(pp[0]), float(pp[1])
+                    except Exception:
+                        nx, ny = x + 1.0, y
+                ang = math.atan2(ny - y, nx - x)
+                new.append((x, y, ang))
+        print(f"[nn] normalized path_poly: converted {sum(1 for p in poly if len(p) < 3)} entries to triples")
+        return new
+
+    path_poly = _normalize_poly(path_poly)
+    # basic frame transforms
+    fwd_x, fwd_y = math.cos(car.angle), math.sin(car.angle)
+    rgt_x, rgt_y = -fwd_y, fwd_x
+    # velocities (px/frame normalized like trainer)
+    vx_fwd = (car.vx * fwd_x + car.vy * fwd_y) * trainer_mod.SIM_DT / trainer_mod.SPEED_NORM_FRAME
+    vx_lat = (car.vx * rgt_x + car.vy * rgt_y) * trainer_mod.SIM_DT / trainer_mod.SPEED_NORM_FRAME
+    angvel = trainer_mod.clamp(getattr(car, 'v_angle', 0.0) * trainer_mod.SIM_DT / trainer_mod.ANGVEL_NORM_FRAME, -1.0, 1.0)
+    abs_vel = math.hypot(car.vx, car.vy) * trainer_mod.SIM_DT / trainer_mod.SPEED_NORM_FRAME
+
+    # grips
+    grip = getattr(car, 'has_grip', (1.0, 1.0, 1.0, 1.0))
+
+    # nearest on polyline
+    cx, cy, seg, t, d2 = trainer_mod._nearest_on_polyline(car.x, car.y, path_poly, hint_seg=0)
+    dist_from_path = trainer_mod._signed_distance(car.x, car.y, path_poly, seg, t)
+    tang = trainer_mod._path_tangent_angle(path_poly, seg)
+    angle_diff = ((car.angle - tang + math.pi) % (2 * math.pi)) - math.pi
+
+    # raycasts (brute-force segments fallback)
+    left_edge, right_edge = trainer_mod._build_edge_segments(path_poly, half_width=70)
+    segs = trainer_mod._segments_from_polyline(left_edge) + trainer_mod._segments_from_polyline(right_edge)
+    rays = []
+    for a_deg in trainer_mod.RAYCAST_ANGLES_DEG:
+        ang = car.angle + math.radians(a_deg)
+        hx, hy, rd, hit = trainer_mod.raycast_segments(segs, car.x, car.y, ang, trainer_mod.MAX_RAY_DIST)
+        norm_rd = rd / trainer_mod.MAX_RAY_DIST if hit else 1.0
+        rays.append(norm_rd)
+
+    # Build closed track polygon for in-bounds test. Ensure points are 3-tuples
+    combined = left_edge + list(reversed(right_edge))
+    closed_poly = trainer_mod._downsample_polyline(combined, min_dist=20.0)
+    # convert any (x,y) to (x,y,angle0) so trainer functions that expect triples won't fail
+    norm_closed = []
+    for p in closed_poly:
+        try:
+            if len(p) >= 3:
+                norm_closed.append((p[0], p[1], p[2]))
+            else:
+                norm_closed.append((p[0], p[1], 0.0))
+        except Exception:
+            norm_closed.append((p[0], p[1], 0.0))
+    ib_val = 1.0 if trainer_mod._point_in_closed_poly(car.x, car.y, norm_closed) else 0.0
+
+    def _rel_angle_first(dist):
+        try:
+            res = trainer_mod._relative_angle_to_path_tangent(car.angle, path_poly, seg, t, dist)
+            # prefer first element; handle either a scalar or sequence returns
+            if hasattr(res, "__len__"):
+                if len(res) >= 1:
+                    return float(res[0])
+                else:
+                    print(f"[nn] _relative_angle_to_path_tangent returned empty sequence for dist={dist}: {res}")
+                    return 0.0
+            else:
+                return float(res)
+        except Exception as e:
+            print(f"[nn] _relative_angle_to_path_tangent error: {e}")
+            return 0.0
+
+    tang_300 = _rel_angle_first(trainer_mod.LOOKAHEAD_DIST_1)
+    tang_600 = _rel_angle_first(trainer_mod.LOOKAHEAD_DIST_2)
+    tang_900 = _rel_angle_first(trainer_mod.LOOKAHEAD_DIST_3)
+
+    # car spec inputs
+    try:
+        specs = trainer_mod._load_all_car_specs()
+        spec_in = trainer_mod._car_spec_inputs(specs.get(getattr(car, 'car_type', ''), {}))
+    except Exception:
+        spec_in = (0.5, 0.5, 1.0, 1.0, 0.5, 0.5, 0.0)
+
+    obs = [vx_fwd, vx_lat, angvel, abs_vel, grip[0], grip[1], grip[2], grip[3],
+           trainer_mod.clamp(dist_from_path / 150.0, -1.0, 1.0), trainer_mod.clamp(angle_diff / math.pi, -1.0, 1.0),
+           *rays, ib_val, tang_300, tang_600, tang_900, *spec_in]
+    # Ensure length matches trainer's INPUT_SIZE if possible
+    if len(obs) > trainer_mod.INPUT_SIZE:
+        obs = obs[:trainer_mod.INPUT_SIZE]
+    elif len(obs) < trainer_mod.INPUT_SIZE:
+        obs += [0.0] * (trainer_mod.INPUT_SIZE - len(obs))
+    return obs
+
+
+def _remap_nn_brake(raw_brake: float) -> float:
+    """Remap NN brake output: values in [0.5,1] -> [0,1]. Below 0.5 => 0."""
+    try:
+        b = float(raw_brake)
+    except Exception:
+        return 0.0
+    if b <= 0.5:
+        return 0.0
+    # linear map from [0.5,1] to [0,1]
+    mapped = (b - 0.5) / 0.5
+    if mapped < 0.0:
+        mapped = 0.0
+    if mapped > 1.0:
+        mapped = 1.0
+    return mapped
+
+
+def _apply_brake_hold_penalty(car, controls: dict, hold_limit: int = 200, throttle_penalty: float = 0.2):
+    """Track consecutive frames where brakes are held and apply a throttle penalty.
+
+    - `controls` is mutated in-place.
+    - when consecutive brake frames > hold_limit, throttle is multiplied by `throttle_penalty`.
+    """
+    try:
+        br = float(controls.get("br", 0.0))
+    except Exception:
+        br = 0.0
+    if not hasattr(car, "_brake_hold_frames"):
+        try:
+            car._brake_hold_frames = 0
+        except Exception:
+            return
+    if br > 0.01:
+        car._brake_hold_frames += 1
+    else:
+        car._brake_hold_frames = 0
+
+    if car._brake_hold_frames > hold_limit:
+        try:
+            controls["th"] = float(controls.get("th", 0.0)) * throttle_penalty
+        except Exception:
+            pass
 from drift.gamemodes.classicrace import ClassicRace
 from drift.gamemodes.bestlap import BestLap
 from drift.gamemodes.driftangle import DriftAngleRace
@@ -1534,20 +1742,61 @@ def main():
             else:
                 ai_controls_ok = False
                 if const.AI_PATH_FOLLOW and path_poly:
+                    # Prefer a trained NN autopilot when available; fall back to path follower.
+                    tried_nn = False
                     try:
-                        _ai_surf_size = (track_image.get_width(), track_image.get_height())
-                        if _ai_debug_surf is None or _ai_debug_surf.get_size() != _ai_surf_size:
-                            _ai_debug_surf = pygame.Surface(_ai_surf_size, pygame.SRCALPHA)
-                        else:
-                            _ai_debug_surf.fill((0, 0, 0, 0))
-                        controls, ai_debug_surface = ai_algorithme(
-                            path_poly, my_car, ai_path_mode=True,
-                            surface=_ai_debug_surf,
-                            font_small=font_small,
-                        )
-                        ai_controls_ok = True
+                        loaded = _ensure_nn_loaded()
+                        tried_nn = True
                     except Exception:
-                        pass
+                        loaded = False
+
+                    if tried_nn and loaded and _nn_trainer_mod is not None and _nn_net is not None:
+                        try:
+                            _ai_surf_size = (track_image.get_width(), track_image.get_height())
+                            if _ai_debug_surf is None or _ai_debug_surf.get_size() != _ai_surf_size:
+                                _ai_debug_surf = pygame.Surface(_ai_surf_size, pygame.SRCALPHA)
+                            else:
+                                _ai_debug_surf.fill((0, 0, 0, 0))
+
+                            # Build NN input and run inference
+                            try:
+                                inp = _compute_nn_input_for_car(_nn_trainer_mod, path_poly, my_car)
+                                if _nn_input_size is not None and len(inp) >= _nn_input_size:
+                                    use_inp = inp[:_nn_input_size]
+                                else:
+                                    use_inp = inp
+                                act = _nn_net.forward(use_inp)
+                                br_mapped = _remap_nn_brake(float(act[2]))
+                                controls = {"th": float(act[0]), "st": float(act[1]), "br": br_mapped}
+                                # if player car is in autopilot (tagged is_ai), apply brake-hold penalty
+                                try:
+                                    if getattr(my_car, 'is_ai', False):
+                                        _apply_brake_hold_penalty(my_car, controls, hold_limit=200, throttle_penalty=0.2)
+                                except Exception:
+                                    pass
+                                ai_controls_ok = True
+                                ai_debug_surface = _ai_debug_surf
+                            except Exception:
+                                # Fall back to path follower on any NN input/inference error
+                                controls = read_inputs(gp, my_car, cam)
+                                ai_controls_ok = False
+                        except Exception:
+                            ai_controls_ok = False
+                    else:
+                        try:
+                            _ai_surf_size = (track_image.get_width(), track_image.get_height())
+                            if _ai_debug_surf is None or _ai_debug_surf.get_size() != _ai_surf_size:
+                                _ai_debug_surf = pygame.Surface(_ai_surf_size, pygame.SRCALPHA)
+                            else:
+                                _ai_debug_surf.fill((0, 0, 0, 0))
+                            controls, ai_debug_surface = ai_algorithme(
+                                path_poly, my_car, ai_path_mode=True,
+                                surface=_ai_debug_surf,
+                                font_small=font_small,
+                            )
+                            ai_controls_ok = True
+                        except Exception:
+                            pass
                 if not ai_controls_ok:
                     controls = read_inputs(gp, my_car, cam)
 
@@ -2056,6 +2305,11 @@ def main():
                 my_car.vx, my_car.vy = 0.0, 0.0
                 my_car.v_angle = 0.0
             else:
+                # Tag player car as AI-controlled when autopilot mode is enabled
+                try:
+                    my_car.is_ai = bool(const.AI_PATH_FOLLOW)
+                except Exception:
+                    pass
                 player_impact = my_car.step(controls, dt_sim, remotes_with_ai_for_player, world_size, cam=cam, collision_mesh=_collision_mesh)
 
             if tutorial_single_player and tutorial_ctrl is not None and tutorial_rewind_enabled:
@@ -2128,10 +2382,70 @@ def main():
                         ai.v_angle = 0.0
                         ai.time_since_mouvement = time.time() # reset timer when no game is running
                     else:
+                        # If Hard difficulty is selected and a trained network exists,
+                        # use the network to compute actions (downsampled every 2 frames).
+                        use_nn = False
                         try:
-                            ai_controls = ai_algorithme(path_poly, ai)
+                            go = get_game_options()
+                            use_nn = str(go.get("ai_difficulty", "")).lower() == "hard"
                         except Exception:
-                            ai_controls = {"th": 0.0, "st": 0.0, "br": 0.0}
+                            use_nn = False
+
+                        ai_controls = None
+                        if use_nn:
+                            loaded = _ensure_nn_loaded()
+                            print(f"[nn] use_nn=True loaded={loaded} trainer_mod_set={_nn_trainer_mod is not None} net_set={_nn_net is not None} input_size={_nn_input_size}")
+                        if use_nn and loaded and _nn_trainer_mod is not None and _nn_net is not None:
+                            try:
+                                # downsample action computation to every other frame
+                                global _nn_frame_counter
+                                _nn_frame_counter += 1
+                                # debug: show frame counter
+                                print(f"[nn] frame={_nn_frame_counter} ai_has_cached={hasattr(ai, '_nn_last_action')}")
+                                should_compute = (_nn_frame_counter % 2) == 0 or not hasattr(ai, "_nn_last_action")
+                                if should_compute:
+                                    try:
+                                        # debug: inspect path_poly before computing
+                                        try:
+                                            sample = [(type(p).__name__, len(p) if hasattr(p, '__len__') else None, repr(p)[:120]) for p in (path_poly[:6] if path_poly else [])]
+                                        except Exception as _dbg:
+                                            sample = repr(path_poly)[:200]
+                                        print(f"[nn] computing input: car=(x={getattr(ai,'x',None)},y={getattr(ai,'y',None)}), path_poly_sample={sample}")
+                                        inp = _compute_nn_input_for_car(_nn_trainer_mod, path_poly, ai)
+                                    except Exception as e_in:
+                                        print(f"[nn] compute input error: {e_in}")
+                                        try:
+                                            print(f"[nn] trainer.INPUT_SIZE={getattr(_nn_trainer_mod,'INPUT_SIZE',None)} path_poly_len={len(path_poly) if path_poly is not None else 'None'}")
+                                        except Exception:
+                                            pass
+                                        raise
+                                    print(f"[nn] computed input len={len(inp)}")
+                                    if _nn_input_size is not None and len(inp) >= _nn_input_size:
+                                        use_inp = inp[:_nn_input_size]
+                                    else:
+                                        use_inp = inp
+                                        act = _nn_net.forward(use_inp)
+                                        # remap brake channel and store mapped value
+                                        br_mapped = _remap_nn_brake(float(act[2]))
+                                        ai._nn_last_action = {"th": float(act[0]), "st": float(act[1]), "br": br_mapped}
+                                else:
+                                    print("[nn] using cached action")
+                                ai_controls = ai._nn_last_action
+                                # track brake hold frames and apply penalty if needed
+                                try:
+                                    _apply_brake_hold_penalty(ai, ai_controls, hold_limit=200, throttle_penalty=0.2)
+                                except Exception:
+                                    pass
+                            except Exception as e:
+                                print(f"[nn] inference error: {e}")
+                                ai_controls = None
+
+                        if ai_controls is None:
+                            try:
+                                ai_controls = ai_algorithme(path_poly, ai)
+                            except Exception:
+                                ai_controls = {"th": 0.0, "st": 0.0, "br": 0.0}
+
                         ai.step(ai_controls, dt_sim, remotes_with_ai_for_ais, world_size, collision_mesh=_collision_mesh)
 
             cam.update(my_car, world_size)

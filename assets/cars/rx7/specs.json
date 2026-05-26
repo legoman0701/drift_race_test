@@ -1,0 +1,42 @@
+{
+    "id": "rx7",
+    "metadata": {
+        "year": 1991,
+        "manufacturer": "Mazda",
+        "model": "RX-7 Type R FD3S",
+        "short": "RX-7",
+        "country": "Japan"
+    },
+    "specs": {
+        "mass": 1260,
+        "horsepower": 255,
+        "drivetrain": "RWD",
+        "dimensions": {
+            "length": 4280,
+            "width": 1760,
+            "height": 1230,
+            "wheelbase": 2425
+        },
+        "default_palette": [[231, 95, 9], [39, 39, 39], [128, 128, 128]]
+    },
+    "engine": {
+        "type": "1.3L 13B-REW Rotary Twin-Turbo",
+        "sound_id": "v8t",
+        "max_rpm": 8000,
+        "gear_ratios": [3.18, 1.83, 1.26, 1.00, 0.79],
+        "final_drive": 4.10
+    },
+    "physics": {
+        "braking": {
+            "max_torque": 4000,
+            "bias": 1,
+            "handbrake_force": 0.1
+        },
+        "wheels": {
+            "front_grip": 1.0,
+            "rear_grip": 1.0,
+            "stiffness_factor": 0.94
+        },
+        "cornering_stiffness": 0.92
+    }
+}

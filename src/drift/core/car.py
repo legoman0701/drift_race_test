@@ -422,39 +422,54 @@ class Car:
             # Convert mouse position to world coordinates
             world_mouse_x = mouse_pos[0] + cam.x - const.WINDOW_WIDTH / 2
             world_mouse_y = mouse_pos[1] + cam.y - const.WINDOW_HEIGHT / 2
-            
             # Calculate angle from car to mouse
             dx = world_mouse_x - self.x
             dy = world_mouse_y - self.y
             self.target_angle = math.atan2(dy, dx)
+            # Orientation and basis vectors
+            forward_x, forward_y = math.cos(self.angle), math.sin(self.angle)
+            right_x, right_y = -forward_y, forward_x
+            # Velocity in body frame (x: forward, y: right)
+            body_forward_speed = self.vx * forward_x + self.vy * forward_y
+            body_lateral_speed = self.vx * right_x + self.vy * right_y
+            self.is_reversing = body_forward_speed < -5.0
+            # Calculate steering input to reach target angle
+            angle_error = ((self.target_angle - self.angle + math.pi) % (2 * math.pi)) - math.pi
+            steering_input = clamp(angle_error * 2.0, -1.0, 1.0) * math.copysign(1, body_forward_speed)  # P controller with gain 2.0
         else:
-            # Keyboard/joystick mode: accumulate steering input
-            target_angle_change_rate = 2.0  # radians per second
-            self.target_angle += raw_steering_input * target_angle_change_rate * dt
-            # Normalize target angle to [-pi, pi]
-            self.target_angle = ((self.target_angle + math.pi) % (2 * math.pi)) - math.pi
-            
-            # Clamp target angle to maximum difference from current angle
-            max_angle_difference = math.radians(45)  # Maximum 45 degrees difference
-            angle_diff = ((self.target_angle - self.angle + math.pi) % (2 * math.pi)) - math.pi
-            if abs(angle_diff) > max_angle_difference:
-                # Clamp to maximum allowed difference
-                self.target_angle = self.angle + math.copysign(max_angle_difference, angle_diff)
-                # Normalize again
+            # Keyboard/joystick mode: for AI cars use direct steering input instead
+            if getattr(self, 'is_ai', False):
+                # AI provides raw steering commands; use them directly (still apply sign for reversing)
+                forward_x, forward_y = math.cos(self.angle), math.sin(self.angle)
+                right_x, right_y = -forward_y, forward_x
+                body_forward_speed = self.vx * forward_x + self.vy * forward_y
+                body_lateral_speed = self.vx * right_x + self.vy * right_y
+                self.is_reversing = body_forward_speed < -5.0
+                steering_input = raw_steering_input * math.copysign(1, body_forward_speed)
+            else:
+                # Human control: accumulate steering input into a target angle
+                target_angle_change_rate = 2.0  # radians per second
+                self.target_angle += raw_steering_input * target_angle_change_rate * dt
+                # Normalize target angle to [-pi, pi]
                 self.target_angle = ((self.target_angle + math.pi) % (2 * math.pi)) - math.pi
-                
-        # Orientation and basis vectors
-        forward_x, forward_y = math.cos(self.angle), math.sin(self.angle)
-        right_x, right_y = -forward_y, forward_x
-
-        # Velocity in body frame (x: forward, y: right)
-        body_forward_speed = self.vx * forward_x + self.vy * forward_y
-        body_lateral_speed = self.vx * right_x + self.vy * right_y
-        self.is_reversing = body_forward_speed < -5.0
-
-        # Calculate steering input to reach target angle
-        angle_error = ((self.target_angle - self.angle + math.pi) % (2 * math.pi)) - math.pi
-        steering_input = clamp(angle_error * 2.0, -1.0, 1.0) * math.copysign(1, body_forward_speed)  # P controller with gain 2.0
+                # Clamp target angle to maximum difference from current angle
+                max_angle_difference = math.radians(45)  # Maximum 45 degrees difference
+                angle_diff = ((self.target_angle - self.angle + math.pi) % (2 * math.pi)) - math.pi
+                if abs(angle_diff) > max_angle_difference:
+                    # Clamp to maximum allowed difference
+                    self.target_angle = self.angle + math.copysign(max_angle_difference, angle_diff)
+                    # Normalize again
+                    self.target_angle = ((self.target_angle + math.pi) % (2 * math.pi)) - math.pi
+                # Orientation and basis vectors
+                forward_x, forward_y = math.cos(self.angle), math.sin(self.angle)
+                right_x, right_y = -forward_y, forward_x
+                # Velocity in body frame (x: forward, y: right)
+                body_forward_speed = self.vx * forward_x + self.vy * forward_y
+                body_lateral_speed = self.vx * right_x + self.vy * right_y
+                self.is_reversing = body_forward_speed < -5.0
+                # Calculate steering input to reach target angle
+                angle_error = ((self.target_angle - self.angle + math.pi) % (2 * math.pi)) - math.pi
+                steering_input = clamp(angle_error * 2.0, -1.0, 1.0) * math.copysign(1, body_forward_speed)  # P controller with gain 2.0
 
         # Understeer tuning from previous-frame front grip state.
         front_understeer = (self.has_grip[0] < 0.5) or (self.has_grip[1] < 0.5)
