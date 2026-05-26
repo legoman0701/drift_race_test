@@ -2305,7 +2305,7 @@ def main():
                     my_car.is_ai = bool(controls_from_nn)
                 except Exception:
                     pass
-                player_impact = my_car.step(controls, dt_sim, remotes_with_ai_for_player, world_size, cam=cam, collision_mesh=_collision_mesh)
+                player_impact = my_car.step(controls, dt_sim, remotes_with_ai_for_player, world_size, cam=cam, collision_mesh=_collision_mesh if stage1.startswith("mode") else None)
 
             if tutorial_single_player and tutorial_ctrl is not None and tutorial_rewind_enabled:
                 now_mono = time.monotonic()
@@ -2469,7 +2469,7 @@ def main():
                         except Exception:
                             pass
 
-                        ai.step(ai_controls, dt_sim, remotes_with_ai_for_ais, world_size, collision_mesh=_collision_mesh)
+                        ai.step(ai_controls, dt_sim, remotes_with_ai_for_ais, world_size, collision_mesh=_collision_mesh if stage1.startswith("mode") else None)
 
             cam.update(my_car, world_size)
         profiler.end("physics")
@@ -2525,7 +2525,7 @@ def main():
                         pass
 
                 for p in penguins:
-                    p.step(dt_sim, collision_mesh=_collision_mesh, cars=[my_car] + ai_cars)
+                    p.step(dt_sim, collision_mesh=_collision_mesh if stage1.startswith("mode") else None, cars=[my_car] + ai_cars)
             except Exception:
                 pass
             render_stage = stage1 if stage1 != "leaderboard" else "mode1"
