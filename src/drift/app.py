@@ -78,6 +78,17 @@ def _ensure_nn_loaded():
         return False
 
 
+def _remap_nn_brake(b):
+    """Remap network brake output so [0.5..1] -> [0..1], <=0.5 -> 0."""
+    try:
+        bv = float(b)
+    except Exception:
+        return 0.0
+    if bv <= 0.5:
+        return 0.0
+    return min(1.0, (bv - 0.5) * 2.0)
+
+
 def _compute_nn_input_for_car(trainer_mod, path_poly, car):
     """Build the NN input vector for `car` matching trainer's observation layout."""
     import math
@@ -124,8 +135,13 @@ def _compute_nn_input_for_car(trainer_mod, path_poly, car):
     # grips
     grip = getattr(car, 'has_grip', (1.0, 1.0, 1.0, 1.0))
 
-    # nearest on polyline
-    cx, cy, seg, t, d2 = trainer_mod._nearest_on_polyline(car.x, car.y, path_poly, hint_seg=0)
+    # nearest on polyline (use cached hint from previous calls to localize search)
+    hint_seg = getattr(car, '_nn_nearest_hint', 0)
+    cx, cy, seg, t, d2 = trainer_mod._nearest_on_polyline(car.x, car.y, path_poly, hint_seg=hint_seg)
+    try:
+        car._nn_nearest_hint = seg
+    except Exception:
+        pass
     dist_from_path = trainer_mod._signed_distance(car.x, car.y, path_poly, seg, t)
     tang = trainer_mod._path_tangent_angle(path_poly, seg)
     angle_diff = ((car.angle - tang + math.pi) % (2 * math.pi)) - math.pi
@@ -1678,6 +1694,7 @@ def main():
         controls = {"th": 0.0, "st": 0.0, "br": 0.0}
         ai_controls_for_player = {"th": 0.0, "st": 0.0, "br": 0.0}
         ai_debug_surface = None
+        controls_from_nn = False
         if not skip_physics:
             tutorial_allow_ai_takeover = False
             if stage1 == "mode_tutorial":
@@ -1717,14 +1734,43 @@ def main():
                             # Build NN input and run inference
                             try:
                                 inp = _compute_nn_input_for_car(_nn_trainer_mod, path_poly, my_car)
-                                if _nn_input_size is not None and len(inp) >= _nn_input_size:
-                                    use_inp = inp[:_nn_input_size]
+                                # if NN reports out-of-bounds (ib_val at index 17), fallback to path follower
+                                ib_val = None
+                                try:
+                                    if len(inp) > 17:
+                                        ib_val = float(inp[17])
+                                except Exception:
+                                    ib_val = None
+                                if ib_val is not None and ib_val < 0.5:
+                                    # out of track: use standard path follower
+                                    try:
+                                        controls, ai_debug_surface = ai_algorithme(path_poly, my_car, ai_path_mode=True, surface=_ai_debug_surf, font_small=font_small)
+                                        ai_controls_ok = True
+                                        controls_from_nn = False
+                                    except Exception:
+                                        controls = read_inputs(gp, my_car, cam)
+                                        ai_controls_ok = False
                                 else:
-                                    use_inp = inp
-                                act = _nn_net.forward(use_inp)
-                                controls = {"th": float(act[0]), "st": float(act[1]), "br": float(act[2])}
-                                ai_controls_ok = True
-                                ai_debug_surface = _ai_debug_surf
+                                    if _nn_input_size is not None and len(inp) >= _nn_input_size:
+                                        use_inp = inp[:_nn_input_size]
+                                    else:
+                                        use_inp = inp
+                                    act = _nn_net.forward(use_inp)
+                                    # remap brake like trainer (then apply EMA smoothing)
+                                    br_raw = _remap_nn_brake(act[2])
+                                    raw_act = (float(act[0]), float(act[1]), float(br_raw))
+                                    # apply smoothing on player car if available
+                                    alpha = getattr(_nn_trainer_mod, 'INPUT_ALPHA', 0.0) if _nn_trainer_mod is not None else 0.0
+                                    prev = getattr(my_car, '_nn_smoothed_action', None)
+                                    if prev is None:
+                                        sm = list(raw_act)
+                                    else:
+                                        sm = [prev[j] + alpha * (raw_act[j] - prev[j]) for j in range(3)]
+                                    my_car._nn_smoothed_action = sm
+                                    controls = {"th": float(sm[0]), "st": float(sm[1]), "br": float(sm[2])}
+                                    ai_controls_ok = True
+                                    controls_from_nn = True
+                                    ai_debug_surface = _ai_debug_surf
                             except Exception:
                                 # Fall back to path follower on any NN input/inference error
                                 controls = read_inputs(gp, my_car, cam)
@@ -2254,9 +2300,9 @@ def main():
                 my_car.vx, my_car.vy = 0.0, 0.0
                 my_car.v_angle = 0.0
             else:
-                # Tag player car as AI-controlled when autopilot mode is enabled
+                # Tag player car as AI-controlled only if controls came from the NN autopilot
                 try:
-                    my_car.is_ai = bool(const.AI_PATH_FOLLOW)
+                    my_car.is_ai = bool(controls_from_nn)
                 except Exception:
                     pass
                 player_impact = my_car.step(controls, dt_sim, remotes_with_ai_for_player, world_size, cam=cam, collision_mesh=_collision_mesh)
@@ -2341,6 +2387,7 @@ def main():
                             use_nn = False
 
                         ai_controls = None
+                        ai_used_nn = False
                         if use_nn:
                             loaded = _ensure_nn_loaded()
                             print(f"[nn] use_nn=True loaded={loaded} trainer_mod_set={_nn_trainer_mod is not None} net_set={_nn_net is not None} input_size={_nn_input_size}")
@@ -2369,14 +2416,42 @@ def main():
                                             pass
                                         raise
                                     print(f"[nn] computed input len={len(inp)}")
-                                    if _nn_input_size is not None and len(inp) >= _nn_input_size:
-                                        use_inp = inp[:_nn_input_size]
+                                    # if NN reports out-of-bounds (ib_val at index 17), fallback to path follower
+                                    ib_val = None
+                                    try:
+                                        if len(inp) > 17:
+                                            ib_val = float(inp[17])
+                                    except Exception:
+                                        ib_val = None
+                                    if ib_val is not None and ib_val < 0.5:
+                                        # out of track: use standard path follower
+                                        try:
+                                            ai_controls = ai_algorithme(path_poly, ai)
+                                            ai_used_nn = False
+                                        except Exception:
+                                            ai_controls = None
+                                            ai_used_nn = False
                                     else:
-                                        use_inp = inp
-                                    act = _nn_net.forward(use_inp)
-                                    ai._nn_last_action = {"th": float(act[0]), "st": float(act[1]), "br": float(act[2])}
+                                        if _nn_input_size is not None and len(inp) >= _nn_input_size:
+                                            use_inp = inp[:_nn_input_size]
+                                        else:
+                                            use_inp = inp
+                                        act = _nn_net.forward(use_inp)
+                                        # remap brake then smooth per-AI like trainer
+                                        br_raw = _remap_nn_brake(act[2])
+                                        raw_act = (float(act[0]), float(act[1]), float(br_raw))
+                                        alpha = getattr(_nn_trainer_mod, 'INPUT_ALPHA', 0.0)
+                                        prev = getattr(ai, '_nn_smoothed_action', None)
+                                        if prev is None:
+                                            sm = list(raw_act)
+                                        else:
+                                            sm = [prev[j] + alpha * (raw_act[j] - prev[j]) for j in range(3)]
+                                        ai._nn_smoothed_action = sm
+                                        ai._nn_last_action = {"th": float(sm[0]), "st": float(sm[1]), "br": float(sm[2])}
+                                        ai_used_nn = True
                                 else:
                                     print("[nn] using cached action")
+                                    ai_used_nn = hasattr(ai, '_nn_last_action')
                                 ai_controls = ai._nn_last_action
                             except Exception as e:
                                 print(f"[nn] inference error: {e}")
@@ -2387,6 +2462,12 @@ def main():
                                 ai_controls = ai_algorithme(path_poly, ai)
                             except Exception:
                                 ai_controls = {"th": 0.0, "st": 0.0, "br": 0.0}
+
+                        # enable target-angle steering for base AI (non-NN), keep direct steering for NN
+                        try:
+                            ai.is_ai = bool(ai_used_nn)
+                        except Exception:
+                            pass
 
                         ai.step(ai_controls, dt_sim, remotes_with_ai_for_ais, world_size, collision_mesh=_collision_mesh)
 
@@ -2548,6 +2629,31 @@ def main():
                 top_left = cam.x - (const.WINDOW_WIDTH / 2) / cam.zoom, cam.y - (const.WINDOW_HEIGHT / 2) / cam.zoom
                 camera_rect = pygame.Rect(top_left[0], top_left[1], const.WINDOW_WIDTH / cam.zoom, const.WINDOW_HEIGHT / cam.zoom)
                 ui_surf.blit(ai_debug_surface.subsurface(camera_rect), (0, 0))
+            except Exception:
+                pass
+
+        # AI physics debug (trainer-style) when autopilot is active and trainer module is loaded
+        if const.AI_PATH_FOLLOW and _nn_trainer_mod is not None and path_poly:
+            try:
+                tm = _nn_trainer_mod
+                # build edges and grid
+                left_edge, right_edge = tm._build_edge_segments(path_poly, half_width=70)
+                edge_segs = tm._segments_from_polyline(left_edge) + tm._segments_from_polyline(right_edge)
+                edge_grid = tm.SegmentGrid(edge_segs, cell=120.0)
+                ray_angles = [math.radians(a) for a in tm.RAYCAST_ANGLES_DEG]
+                # nearest segment hint for the player car
+                try:
+                    _, _, seg_hint, _, _ = tm._nearest_on_polyline(my_car.x, my_car.y, path_poly, hint_seg=0)
+                except Exception:
+                    seg_hint = 0
+                dbg_size = getattr(tm, 'DEBUG_WIN_SIZE', 400)
+                try:
+                    dbg_surf = pygame.Surface((dbg_size, dbg_size))
+                    tm.draw_debug_view(dbg_surf, my_car, edge_segs, ray_angles, edge_grid, path_poly, seg_hint, left_edge, right_edge)
+                    # blit at top-right corner
+                    ui_surf.blit(dbg_surf, (const.WINDOW_WIDTH - dbg_size - 8, 8))
+                except Exception:
+                    pass
             except Exception:
                 pass
 

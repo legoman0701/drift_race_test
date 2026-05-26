@@ -128,6 +128,14 @@ class CheckpointEditor:
         self.drag_st_idx   = None
         self.drag_st_offset = (0, 0)
 
+        # Line editing state
+        # Use Shift + LeftClick on two checkpoints to create a line between them.
+        self._lines_raw = []
+        self.line_start_idx = None  # checkpoint index where a new line starts
+        # For new behavior: lines are two world positions associated with a checkpoint id
+        self.line_start_coords = None  # (wx, wy) first point when creating a line
+        self.line_preview = None  # world coords for preview end
+
         # Rename state
         self.renaming      = False
         self.rename_text   = ""
@@ -489,6 +497,44 @@ class CheckpointEditor:
         if self.mode == EDIT_CHECKPOINT:
             if event.button == 1:
                 idx, handle = self._get_cp_at(mx, my)
+                # Line creation when Shift held: assign two arbitrary world points to a checkpoint
+                if (mods & pygame.KMOD_SHIFT):
+                    # require a selected checkpoint to attach the line to
+                    if self.sel_cp_idx is None:
+                        # if clicked on a checkpoint, select it
+                        if idx is not None:
+                            self.sel_cp_idx = idx
+                            print(f"Selected checkpoint {self.checkpoints[idx].get('id')} for line")
+                        else:
+                            print("Select a checkpoint first to assign a line (Shift+LClick)")
+                        return
+
+                    # we have a selected checkpoint
+                    # set first point if none
+                    if self.line_start_coords is None:
+                        sx, sy = self._snap(wx, wy)
+                        self.line_start_coords = (int(sx), int(sy))
+                        print(f"Line first point set at {self.line_start_coords} for cp {self.checkpoints[self.sel_cp_idx].get('id')}")
+                        return
+                    else:
+                        ex, ey = self._snap(wx, wy)
+                        start = self.line_start_coords
+                        end = (int(ex), int(ey))
+                        cp_id = self.checkpoints[self.sel_cp_idx].get("id")
+                        # replace existing line for this checkpoint if present
+                        replaced = False
+                        for ln in self._lines_raw:
+                            if ln.get("id") == cp_id:
+                                ln["points"] = [[start[0], start[1]], [end[0], end[1]]]
+                                replaced = True
+                                break
+                        if not replaced:
+                            self._lines_raw.append({"id": cp_id, "points": [[start[0], start[1]], [end[0], end[1]]]})
+                        print(f"Saved line for cp {cp_id}: {start} -> {end}")
+                        self.line_start_coords = None
+                        self.line_preview = None
+                    return
+
                 if idx is not None:
                     self.sel_cp_idx  = idx
                     self.drag_cp_idx = idx
@@ -510,13 +556,21 @@ class CheckpointEditor:
             elif event.button == 3:
                 idx, _ = self._get_cp_at(mx, my)
                 if idx is not None:
-                    name = self.checkpoints[idx].get("name", str(idx))
-                    del self.checkpoints[idx]
-                    if self.sel_cp_idx == idx:
-                        self.sel_cp_idx = None
-                    elif self.sel_cp_idx is not None and self.sel_cp_idx > idx:
-                        self.sel_cp_idx -= 1
-                    print(f"Deleted checkpoint '{name}'")
+                    # If Shift held, delete line associated with this checkpoint
+                    if (mods & pygame.KMOD_SHIFT):
+                        cp_id = self.checkpoints[idx].get("id")
+                        before = len(self._lines_raw)
+                        self._lines_raw = [ln for ln in self._lines_raw if ln.get("id") != cp_id]
+                        after = len(self._lines_raw)
+                        print(f"Deleted {before-after} line(s) for cp {cp_id}")
+                    else:
+                        name = self.checkpoints[idx].get("name", str(idx))
+                        del self.checkpoints[idx]
+                        if self.sel_cp_idx == idx:
+                            self.sel_cp_idx = None
+                        elif self.sel_cp_idx is not None and self.sel_cp_idx > idx:
+                            self.sel_cp_idx -= 1
+                        print(f"Deleted checkpoint '{name}'")
 
             # Scroll to zoom when not start-selected
             elif event.button == 4:
@@ -658,6 +712,13 @@ class CheckpointEditor:
             self.create_cur = (snx, sny)
             return
 
+        # Line creation preview (when a checkpoint and first point selected)
+        if self.line_start_coords is not None and self.mode == EDIT_CHECKPOINT:
+            snx, sny = self._snap(wx, wy)
+            self.line_preview = (snx, sny)
+            return
+            return
+
         # Update hover
         if self.mode == EDIT_CHECKPOINT:
             idx, _ = self._get_cp_at(mx, my)
@@ -716,6 +777,31 @@ class CheckpointEditor:
         _blit(self.map_bg_image if self.map_bg_image is not None else self.map_image)
         if self.show_fg:
             _blit(self.map_fg_image)
+
+    def draw_lines(self):
+        if not self._lines_raw:
+            return
+        for ln in self._lines_raw:
+            pts = ln.get("points") or []
+            if not pts:
+                continue
+            scr = [self._w2s(p[0], p[1]) for p in pts]
+            if len(scr) >= 2:
+                color = (100, 255, 180)
+                width = 3
+                pygame.draw.lines(self.screen, color, False, [(int(x), int(y)) for x, y in scr], width)
+                # draw small circles at points
+                for x, y in scr:
+                    pygame.draw.circle(self.screen, (255,255,255), (int(x), int(y)), 3)
+
+        # draw preview line if present
+        if self.line_start_coords is not None and self.line_preview is not None:
+            s = self._w2s(self.line_start_coords[0], self.line_start_coords[1])
+            e = self._w2s(self.line_preview[0], self.line_preview[1])
+            pygame.draw.line(self.screen, (255,200,80), (int(s[0]), int(s[1])), (int(e[0]), int(e[1])), 2)
+            pygame.draw.circle(self.screen, (255,200,80), (int(s[0]), int(s[1])), 4)
+            pygame.draw.circle(self.screen, (255,200,80), (int(e[0]), int(e[1])), 4)
+
 
     def draw_checkpoints(self):
         # Draw creation preview
@@ -840,6 +926,9 @@ class CheckpointEditor:
             "  LClick (rect body): Move",
             "  LClick (corner): Resize",
             "  RClick: Delete",
+            "  Shift+LClick: With a checkpoint selected, set line endpoints anywhere",
+            "    (first click sets P1, second sets P2)",
+            "  Shift+RClick: Delete the selected checkpoint's line (or Shift+RClick on any checkpoint)",
             "  Enter / F2: Rename selected",
             "",
             "START MODE:",
@@ -951,6 +1040,7 @@ class CheckpointEditor:
             self.screen.fill((30, 30, 30))
             self.draw_grid()
             self.draw_map()
+            self.draw_lines()
             self.draw_checkpoints()
             self.draw_starts()
             self.draw_ui()

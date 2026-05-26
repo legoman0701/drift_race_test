@@ -1343,6 +1343,9 @@ def main():
 
     debug_visible = True
     debug_win_id = debug_win.id
+    # Track consecutive generations where we keep the same car due to poor survival
+    last_epoch_car_type = env.epoch_car_type
+    same_car_failed_gens = 0
 
     while True:
         # -- events ----------------------------------------------------------
@@ -1437,6 +1440,20 @@ def main():
                 print(f"  Majority survived ({alive_n}/{env.num_cars} -> {alive_frac:.2f}); switching car next epoch")
             else:
                 print(f"  Too few survivors ({alive_n}/{env.num_cars} -> {alive_frac:.2f}); keeping car next epoch")
+            # If we've been stuck on the same car for many generations without success,
+            # force a car switch to provide a different learning challenge.
+            current_car_type = env.epoch_car_type
+            if keep_car_type and current_car_type == last_epoch_car_type:
+                same_car_failed_gens += 1
+            else:
+                same_car_failed_gens = 0
+
+            if same_car_failed_gens >= 20:
+                print(f"  No progress on car '{current_car_type}' for {same_car_failed_gens} generations — forcing car switch.")
+                keep_car_type = False
+                same_car_failed_gens = 0
+
+            last_epoch_car_type = current_car_type
             observations = env.reset(keep_car_type=keep_car_type)
             _t_start = time.time()
 
